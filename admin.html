@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro-X Network — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#090c11;
+    --panel:#111722;
+    --panel-2:#161e2b;
+    --line:#26303f;
+    --cyan:#3fd0ff;
+    --cyan-dim:#1c5b70;
+    --amber:#ff9b3d;
+    --amber-dim:#8a5222;
+    --steel:#7c8896;
+    --steel-soft:#4d5762;
+    --text:#e9edf2;
+    --good:#4ade80;
+    --danger:#ff5c5c;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0; background:var(--void); color:var(--text); font-family:'Inter',sans-serif;}
+  h1,h2,h3{font-family:'Chakra Petch',sans-serif; margin:0;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    clip-path:polygon(0 10px,10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%);
+  }
+
+  /* ---------- login gate ---------- */
+  #loginGate{
+    position:fixed; inset:0;
+    background:var(--void);
+    display:flex; align-items:center; justify-content:center;
+    z-index:100;
+  }
+  .login-box{
+    width:100%; max-width:340px;
+    padding:28px;
+    text-align:center;
+  }
+  .login-mark{
+    width:40px; height:40px;
+    margin:0 auto 14px;
+    background:linear-gradient(135deg,var(--amber),var(--cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:16px; color:#0a0d12;
+  }
+  .login-box h1{ font-size:18px; letter-spacing:0.04em; }
+  .login-sub{ font-size:12px; color:var(--steel); margin-top:8px; line-height:1.6; }
+  .login-input{
+    width:100%; margin-top:18px;
+    padding:12px 14px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'Chakra Petch',sans-serif;
+    font-size:15px; text-align:center;
+    outline:none;
+  }
+  .login-input:focus{ border-color:var(--cyan-dim); }
+  .login-error{ color:var(--danger); font-size:11.5px; margin-top:8px; display:none; }
+  .login-error.show{ display:block; }
+
+  /* ---------- shell ---------- */
+  #shell{ display:none; min-height:100vh; }
+  #shell.show{ display:flex; }
+
+  .sidebar{
+    width:220px; flex-shrink:0;
+    background:var(--panel);
+    border-right:1px solid var(--line);
+    display:flex; flex-direction:column;
+    padding:18px 12px;
+    position:sticky; top:0; height:100vh;
+  }
+  .side-brand{ display:flex; align-items:center; gap:8px; padding:0 6px 20px; }
+  .side-mark{
+    width:26px; height:26px;
+    background:linear-gradient(135deg,var(--amber),var(--cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:12px; color:#0a0d12;
+  }
+  .side-title{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; }
+  .side-title span{ color:var(--amber); }
+  .side-sub{ font-size:9.5px; color:var(--steel); letter-spacing:0.1em; padding:0 6px 14px; }
+
+  .side-nav{ display:flex; flex-direction:column; gap:2px; flex:1; }
+  .side-btn{
+    display:flex; align-items:center; gap:10px;
+    padding:10px 10px;
+    background:none; border:none;
+    color:var(--steel);
+    font-family:'Chakra Petch',sans-serif;
+    font-size:12.5px; letter-spacing:0.03em;
+    text-align:left;
+    cursor:pointer;
+    border-left:2px solid transparent;
+  }
+  .side-btn svg{ width:16px; height:16px; flex-shrink:0; }
+  .side-btn:hover{ color:var(--text); }
+  .side-btn.active{ color:var(--cyan); border-left-color:var(--cyan); background:rgba(63,208,255,0.06); }
+
+  .main{ flex:1; padding:26px 32px 60px; max-width:1100px; }
+  .page{ display:none; }
+  .page.active{ display:block; }
+  .page-head{ margin-bottom:22px; }
+  .page-head h2{ font-size:20px; }
+  .page-head .sub{ font-size:12.5px; color:var(--steel); margin-top:4px; }
+
+  /* ---------- stat cards ---------- */
+  .stat-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
+  .stat-card{ padding:16px; }
+  .stat-card .eyebrow{ font-size:10.5px; letter-spacing:0.1em; color:var(--steel); }
+  .stat-card .val{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:22px; margin-top:6px; }
+  .stat-card .val.cyan{ color:var(--cyan); }
+  .stat-card .val.amber{ color:var(--amber); }
+  .stat-card .val.good{ color:var(--good); }
+  .stat-card .val.danger{ color:var(--danger); }
+
+  /* ---------- forms ---------- */
+  .form-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; padding:18px; margin-bottom:16px; }
+  .field label{ display:block; font-size:11px; color:var(--steel); letter-spacing:0.05em; margin-bottom:6px; }
+  .field input, .field select{
+    width:100%;
+    padding:9px 11px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    font-size:13.5px;
+    outline:none;
+  }
+  .field input:focus{ border-color:var(--cyan-dim); }
+  .field input[type=file]{ padding:6px; font-size:12px; color:var(--steel); }
+
+  .btn{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:600; font-size:12.5px; letter-spacing:0.04em;
+    padding:10px 18px;
+    border:none;
+    color:#0a0d12;
+    background:var(--cyan);
+    clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px);
+    cursor:pointer;
+  }
+  .btn.amber{ background:var(--amber); }
+  .btn.danger{ background:var(--danger); color:#1a0a0a; }
+  .btn.good{ background:var(--good); }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--text); clip-path:none; }
+  .btn:disabled{ background:var(--steel-soft); color:#8b96a1; cursor:default; }
+  .btn-row{ display:flex; gap:10px; margin:4px 0 24px; }
+
+  /* ---------- tables ---------- */
+  table{ width:100%; border-collapse:collapse; }
+  .table-wrap{ overflow-x:auto; }
+  th{
+    text-align:left; font-family:'Chakra Petch',sans-serif;
+    font-size:10.5px; letter-spacing:0.08em; color:var(--steel);
+    padding:10px 12px; border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  td{ padding:10px 12px; border-bottom:1px solid var(--line); font-size:13px; white-space:nowrap; }
+  tr:last-child td{ border-bottom:none; }
+  .tag{ font-family:'Chakra Petch',sans-serif; font-size:10.5px; padding:3px 8px; letter-spacing:0.04em; }
+  .tag.active{ background:rgba(74,222,128,0.12); color:var(--good); }
+  .tag.suspended{ background:rgba(255,155,61,0.12); color:var(--amber); }
+  .tag.banned{ background:rgba(255,92,92,0.12); color:var(--danger); }
+  .row-actions{ display:flex; gap:6px; }
+  .row-actions .btn{ padding:6px 10px; font-size:11px; }
+
+  .search-row{ display:flex; gap:10px; margin-bottom:14px; max-width:420px; }
+  .search-row input{
+    flex:1; padding:10px 12px;
+    background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); font-size:13.5px; outline:none;
+  }
+
+  .miner-row{ display:flex; align-items:center; gap:14px; padding:14px 16px; border-bottom:1px solid var(--line); }
+  .miner-row:last-child{ border-bottom:none; }
+  .miner-thumb{
+    width:44px; height:44px; flex-shrink:0;
+    background:var(--panel-2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .miner-thumb img{ width:100%; height:100%; object-fit:contain; }
+  .miner-thumb svg{ width:26px; height:26px; }
+  .miner-fields{ display:grid; grid-template-columns:1.4fr 1fr 1fr auto; gap:10px; flex:1; align-items:end; }
+  .miner-fields .field label{ margin-bottom:4px; }
+  .miner-lvl{ font-family:'Chakra Petch',sans-serif; color:var(--amber); font-size:12px; width:34px; flex-shrink:0; }
+
+  .bg-preview{
+    width:100%; max-width:360px; aspect-ratio:9/13;
+    background:var(--panel-2); border:1px solid var(--line);
+    overflow:hidden; margin-bottom:14px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .bg-preview img{ width:100%; height:100%; object-fit:cover; }
+  .bg-preview .empty{ color:var(--steel); font-size:12px; }
+
+  .toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2); border:1px solid var(--line);
+    padding:11px 18px; font-size:13px; color:var(--text);
+    opacity:0; pointer-events:none; transition:all 0.25s ease; z-index:50;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .note{ font-size:12px; color:var(--steel); line-height:1.6; padding:14px 16px; }
+</style>
+</head>
+<body>
+
+<div id="loginGate">
+  <div class="panel login-box">
+    <div class="login-mark">X</div>
+    <h1>PRO-X ADMIN</h1>
+    <div class="login-sub">Enter the admin passcode to continue.<br>This is a local demo gate — see note below.</div>
+    <input class="login-input" type="password" id="loginInput" placeholder="Passcode" autocomplete="off">
+    <div class="login-error" id="loginError">Incorrect passcode</div>
+    <button class="btn full" style="width:100%; margin-top:14px;" id="loginBtn">ENTER</button>
+    <div class="note" style="padding:14px 0 0; text-align:left;">
+      Default passcode: <strong style="color:var(--text)">proxadmin</strong>. This check runs entirely in the browser — it keeps out casual clicks, but it is not real authentication. Don't rely on it once real funds or user data are involved; that needs a server-side login.
+    </div>
+  </div>
+</div>
+
+<div id="shell">
+  <div class="sidebar">
+    <div class="side-brand">
+      <div class="side-mark">X</div>
+      <div class="side-title">PRO-<span>X</span> ADMIN</div>
+    </div>
+    <div class="side-sub">CONTROL PANEL</div>
+    <div class="side-nav">
+      <button class="side-btn active" data-page="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
+        Dashboard
+      </button>
+      <button class="side-btn" data-page="players">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg>
+        Players
+      </button>
+      <button class="side-btn" data-page="miners">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>
+        Miners
+      </button>
+      <button class="side-btn" data-page="token">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 0 1 0 4H9m0 0h4.5a2 2 0 0 1 0 4H9"/></svg>
+        Token
+      </button>
+      <button class="side-btn" data-page="rewards">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12v8H4v-8M2 8h20v4H2zM12 8v12M12 8c-1.5-3-5-4-6-2s1 3 3 2M12 8c1.5-3 5-4 6-2s-1 3-3 2"/></svg>
+        Rewards
+      </button>
+      <button class="side-btn" data-page="background">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        Background
+      </button>
+      <button class="side-btn" data-page="anticheat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/></svg>
+        Anti-Cheat
+      </button>
+      <button class="side-btn" data-page="audit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+        Audit Log
+      </button>
+    </div>
+    <div class="note" style="padding:14px 6px 0;">Signed in as Admin</div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-head"><h2>Economy Statistics</h2><div class="sub">Computed from players tracked on this device. See note below.</div></div>
+      <div class="stat-grid">
+        <div class="panel stat-card"><div class="eyebrow">TOTAL PLAYERS</div><div class="val cyan" id="statTotalPlayers">0</div></div>
+        <div class="panel stat-card"><div class="eyebrow">ACTIVE</div><div class="val good" id="statActivePlayers">0</div></div>
+        <div class="panel stat-card"><div class="eyebrow">SUSPENDED / BANNED</div><div class="val danger" id="statBadPlayers">0</div></div>
+        <div class="panel stat-card"><div class="eyebrow">m.PXN IN POOLS</div><div class="val amber" id="statTotalMined">0</div></div>
+        <div class="panel stat-card"><div class="eyebrow">EST. TOTAL VALUE</div><div class="val good" id="statTotalUsd">$0.00</div></div>
+        <div class="panel stat-card"><div class="eyebrow">AVG MINER LEVEL</div><div class="val cyan" id="statAvgLevel">0</div></div>
+      </div>
+      <div class="panel note">
+        <strong style="color:var(--text)">How this works:</strong> every player record here comes from someone opening the Mining App in <em>this same browser/device</em> and writing to shared local storage — there's no server pooling data from every player's phone. To get real cross-device statistics (and real player search across your whole user base), the game needs a backend + database that all players' apps report to. I can help design that next if you want it.
+      </div>
+    </div>
+
+    <!-- PLAYERS -->
+    <div class="page" id="page-players">
+      <div class="page-head"><h2>Player Search</h2><div class="sub">Search, suspend, or ban players tracked on this device.</div></div>
+      <div class="search-row">
+        <input type="text" id="playerSearch" placeholder="Search by username or ID...">
+      </div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>USERNAME</th><th>LEVEL</th><th>BALANCE</th><th>REFERRALS</th><th>STATUS</th><th>LAST SEEN</th><th>ACTIONS</th></tr></thead>
+          <tbody id="playersTableBody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="playersEmptyNote" style="display:none;">No players yet — open the Mining App (index.html) in this same browser to generate a demo player record.</div>
+    </div>
+
+    <!-- MINERS -->
+    <div class="page" id="page-miners">
+      <div class="page-head"><h2>Miner Configuration</h2><div class="sub">Edit each tier's name, price, mining speed, and icon. Saved changes apply the next time a player's app loads.</div></div>
+      <div class="panel" id="minerRows"></div>
+      <div class="btn-row"><button class="btn" id="saveMinersBtn">SAVE MINER CONFIG</button><button class="btn ghost" id="resetMinersBtn">RESET TO DEFAULTS</button></div>
+    </div>
+
+    <!-- TOKEN -->
+    <div class="page" id="page-token">
+      <div class="page-head"><h2>Token Configuration</h2><div class="sub">Controls the token label and the estimated USDT conversion shown to players.</div></div>
+      <div class="panel form-grid">
+        <div class="field"><label>IN-APP TOKEN SYMBOL</label><input type="text" id="tokenSymbol" placeholder="m.PXN"></div>
+        <div class="field"><label>LAUNCH TOKEN SYMBOL</label><input type="text" id="tokenLaunchSymbol" placeholder="PXN"></div>
+        <div class="field"><label>NETWORK</label><input type="text" id="tokenNetwork" placeholder="TON"></div>
+        <div class="field"><label>ESTIMATED USDT RATE (per m.PXN)</label><input type="number" step="0.00000001" id="tokenUsdRate" placeholder="0.00005787"></div>
+        <div class="field"><label>DISPLAY DECIMALS</label><input type="number" step="1" min="0" max="8" id="tokenDecimals" placeholder="4"></div>
+      </div>
+      <div class="btn-row"><button class="btn" id="saveTokenBtn">SAVE TOKEN CONFIG</button></div>
+      <div class="panel note">This USDT figure is a display estimate only — it does not come from a live market, since $PXN hasn't launched. Keep it labeled as an estimate in the app copy to stay on the right side of most regions' promotional rules.</div>
+    </div>
+
+    <!-- REWARDS -->
+    <div class="page" id="page-rewards">
+      <div class="page-head"><h2>Token Reward Configuration</h2><div class="sub">Task rewards, referral bonuses, and boost values.</div></div>
+      <div class="panel form-grid" id="taskRewardFields"></div>
+      <div class="panel form-grid">
+        <div class="field"><label>REFERRAL INSTANT REWARD</label><input type="number" step="1" id="rewardReferralInstant"></div>
+        <div class="field"><label>REFERRAL SPEED BONUS (m.PXN/sec)</label><input type="number" step="0.01" id="rewardReferralSpeed"></div>
+        <div class="field"><label>DAILY BOOST MULTIPLIER</label><input type="number" step="0.5" id="rewardBoostMultiplier"></div>
+        <div class="field"><label>DAILY BOOST DURATION (min)</label><input type="number" step="1" id="rewardBoostDuration"></div>
+        <div class="field"><label>TAP BOOST MULTIPLIER</label><input type="number" step="0.5" id="rewardTapMultiplier"></div>
+        <div class="field"><label>TAP BOOST DURATION (sec)</label><input type="number" step="1" id="rewardTapDuration"></div>
+      </div>
+      <div class="btn-row"><button class="btn" id="saveRewardsBtn">SAVE REWARD CONFIG</button></div>
+    </div>
+
+    <!-- BACKGROUND -->
+    <div class="page" id="page-background">
+      <div class="page-head"><h2>Mine Screen Background</h2><div class="sub">Upload an image to replace the Mine screen's background artwork.</div></div>
+      <div class="bg-preview" id="bgPreview"><span class="empty">No custom background set — using the default asset</span></div>
+      <div class="panel form-grid" style="grid-template-columns:1fr;">
+        <div class="field"><label>UPLOAD IMAGE</label><input type="file" id="bgFileInput" accept="image/*"></div>
+      </div>
+      <div class="btn-row"><button class="btn" id="saveBgBtn">SAVE BACKGROUND</button><button class="btn ghost" id="clearBgBtn">REVERT TO DEFAULT</button></div>
+    </div>
+
+    <!-- ANTI-CHEAT -->
+    <div class="page" id="page-anticheat">
+      <div class="page-head"><h2>Anti-Cheat</h2><div class="sub">What's actually enforceable from a static app, and the controls you have.</div></div>
+
+      <div class="panel note" style="margin-bottom:16px;">
+        <strong style="color:var(--text)">State tampering (always on):</strong> every player's saved progress carries an integrity signature. If someone edits their balance directly in browser storage, the app detects the mismatch on next load and resets their progress — logged below as a "CHEAT FLAG". This deters casual editing but not a determined attacker running their own client; only a server-authoritative backend closes that gap completely.
+      </div>
+
+      <div class="panel note" style="margin-bottom:16px;">
+        <strong style="color:var(--text)">Why there's no "1 account per network" control:</strong> a webpage cannot see other devices on the same WiFi or mobile network — there's no browser API for it. Enforcing it server-side via IP address was considered and left out on purpose: mobile carriers put thousands of unrelated phones behind one shared IP (carrier-grade NAT), and every device on a home or office WiFi shares one IP too. IP-based blocking would lock out real, unrelated users far more often than it would catch cheaters.
+      </div>
+
+      <div class="panel form-grid" style="grid-template-columns:1fr;">
+        <div class="field" style="display:flex; align-items:center; gap:10px;">
+          <input type="checkbox" id="blockDupDevice" style="width:16px; height:16px; flex-shrink:0;">
+          <label style="margin:0; flex:1;">Block a 2nd account from opening the app on a device that already has one (shows a "one account per device" popup). <strong style="color:var(--amber)">Off by default</strong> — a determined user can still bypass this by clearing browser data or using a different browser, and it may occasionally flag family members who legitimately share one phone.</label>
+        </div>
+      </div>
+      <div class="btn-row"><button class="btn" id="saveAnticheatBtn">SAVE ANTI-CHEAT SETTINGS</button></div>
+
+      <div class="panel note">
+        <strong style="color:var(--text)">The real fix for multi-accounting:</strong> since this is a Telegram Mini App, each player already carries their real, phone-verified Telegram account ID — the app now uses that as their identity instead of a random code. That's a much stronger "one real person, one account" signal than network or device ever could be, and it works automatically with no extra config.
+      </div>
+    </div>
+
+    <!-- AUDIT LOG -->
+    <div class="page" id="page-audit">
+      <div class="page-head"><h2>Admin Actions Audit Log</h2><div class="sub">Every save, ban, or config change made from this panel is recorded here.</div></div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>TIME</th><th>ACTION</th><th>DETAILS</th></tr></thead>
+          <tbody id="auditTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const ADMIN_CONFIG_KEY = "proxnetwork_admin_config_v1";
+  const PASSCODE = "proxadmin"; // demo-only gate — replace with real server auth before going live
+
+  const DEFAULT_MINERS = [
+    {level:1, name:"Base Drill Unit",      cost:0,     speed:0.10, icon:null},
+    {level:2, name:"Reinforced Bore Rig",  cost:200,   speed:0.22, icon:null},
+    {level:3, name:"Cryo-Cooled Extractor",cost:650,   speed:0.45, icon:null},
+    {level:4, name:"Plasma Cutter Array",  cost:1800,  speed:0.90, icon:null},
+    {level:5, name:"Quantum Drill Core",   cost:4500,  speed:1.75, icon:null},
+    {level:6, name:"Deep Vein Harvester",  cost:11000, speed:3.40, icon:null},
+    {level:7, name:"Fusion Mining Node",   cost:26000, speed:6.50, icon:null},
+  ];
+  const DEFAULT_TASK_META = [
+    {id:"t1", title:"Join Pro-X Network Telegram channel"},
+    {id:"t2", title:"Follow Pro-X Network on X"},
+    {id:"t3", title:"Invite your first friend"},
+    {id:"t4", title:"Reach Miner Level 3"},
+    {id:"t5", title:"Claim rewards 5 times"},
+  ];
+  const DEFAULT_CONFIG = {
+    miners: DEFAULT_MINERS,
+    token: { symbol:"m.PXN", launchSymbol:"PXN", network:"TON", usdRate: 0.5/(0.10*86400), decimals:4 },
+    rewards: {
+      tasks: {t1:80,t2:60,t3:100,t4:150,t5:120},
+      referralInstant:50, referralSpeedBonus:0.05,
+      boostMultiplier:2, boostDurationMin:30,
+      tapBoostMultiplier:2, tapBoostDurationSec:10,
+    },
+    background: null,
+    players: [],
+    auditLog: [],
+    deviceOwners: {},
+    anticheat: { blockDuplicateDevice: false },
+  };
+
+  function loadConfig(){
+    try{
+      const raw = localStorage.getItem(ADMIN_CONFIG_KEY);
+      if(!raw) return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      const parsed = JSON.parse(raw);
+      // shallow-merge with defaults so missing fields don't break the UI
+      return Object.assign({}, DEFAULT_CONFIG, parsed, {
+        miners: Array.isArray(parsed.miners) && parsed.miners.length ? parsed.miners : DEFAULT_MINERS,
+        token: Object.assign({}, DEFAULT_CONFIG.token, parsed.token || {}),
+        rewards: Object.assign({}, DEFAULT_CONFIG.rewards, parsed.rewards || {}, {
+          tasks: Object.assign({}, DEFAULT_CONFIG.rewards.tasks, (parsed.rewards && parsed.rewards.tasks) || {})
+        }),
+        players: Array.isArray(parsed.players) ? parsed.players : [],
+        auditLog: Array.isArray(parsed.auditLog) ? parsed.auditLog : [],
+        deviceOwners: (parsed.deviceOwners && typeof parsed.deviceOwners === "object") ? parsed.deviceOwners : {},
+        anticheat: Object.assign({}, DEFAULT_CONFIG.anticheat, parsed.anticheat || {}),
+      });
+    }catch(e){ return JSON.parse(JSON.stringify(DEFAULT_CONFIG)); }
+  }
+
+  let cfg = loadConfig();
+
+  function saveConfig(){
+    localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg));
+  }
+
+  function logAction(action, details){
+    cfg.auditLog.unshift({ ts: Date.now(), action, details });
+    if(cfg.auditLog.length > 300) cfg.auditLog.length = 300;
+    saveConfig();
+    renderAudit();
+  }
+
+  function toast(msg){
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=> el.classList.remove("show"), 2200);
+  }
+
+  function fmtTime(ts){
+    return new Date(ts).toLocaleString();
+  }
+
+  // ---------- login gate ----------
+  function tryLogin(){
+    const val = document.getElementById("loginInput").value;
+    if(val === PASSCODE){
+      document.getElementById("loginGate").style.display = "none";
+      document.getElementById("shell").classList.add("show");
+      renderAll();
+    } else {
+      document.getElementById("loginError").classList.add("show");
+    }
+  }
+  document.getElementById("loginBtn").addEventListener("click", tryLogin);
+  document.getElementById("loginInput").addEventListener("keydown", e=>{ if(e.key === "Enter") tryLogin(); });
+
+  // ---------- nav ----------
+  document.querySelectorAll(".side-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".side-btn").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("page-" + btn.dataset.page).classList.add("active");
+    });
+  });
+
+  // ---------- dashboard ----------
+  function renderDashboard(){
+    const players = cfg.players || [];
+    const active = players.filter(p=>p.status === "active" || !p.status).length;
+    const bad = players.filter(p=>p.status === "suspended" || p.status === "banned").length;
+    const totalMined = players.reduce((s,p)=> s + (p.minedBalance||0), 0);
+    const avgLevel = players.length ? (players.reduce((s,p)=> s + (p.level||1),0)/players.length) : 0;
+    document.getElementById("statTotalPlayers").textContent = players.length;
+    document.getElementById("statActivePlayers").textContent = active;
+    document.getElementById("statBadPlayers").textContent = bad;
+    document.getElementById("statTotalMined").textContent = totalMined.toLocaleString("en-US",{maximumFractionDigits:2});
+    document.getElementById("statTotalUsd").textContent = "$" + (totalMined * cfg.token.usdRate).toLocaleString("en-US",{maximumFractionDigits:2});
+    document.getElementById("statAvgLevel").textContent = avgLevel.toFixed(1);
+  }
+
+  // ---------- players ----------
+  function renderPlayers(){
+    cfg = loadConfig(); // pick up fresh player pings from the game tab
+    const q = (document.getElementById("playerSearch").value || "").toLowerCase();
+    const players = (cfg.players || []).filter(p =>
+      !q || (p.username||"").toLowerCase().includes(q) || (p.id||"").toLowerCase().includes(q)
+    );
+    const body = document.getElementById("playersTableBody");
+    body.innerHTML = "";
+    document.getElementById("playersEmptyNote").style.display = (cfg.players||[]).length ? "none" : "block";
+    players.forEach(p=>{
+      const status = p.status || "active";
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="color:var(--steel); font-size:11px;">${p.id}</td>
+        <td>${p.username}</td>
+        <td>Lv.${p.level||1}</td>
+        <td>${(p.minedBalance||0).toLocaleString("en-US",{maximumFractionDigits:2})}</td>
+        <td>${p.referrals||0}</td>
+        <td><span class="tag ${status}">${status.toUpperCase()}</span>${p.duplicateDevice ? ' <span class="tag suspended" title="Shares a device fingerprint with another account">⚠ DUPLICATE DEVICE</span>' : ''}</td>
+        <td style="font-size:11px; color:var(--steel);">${p.lastSeen ? fmtTime(p.lastSeen) : '—'}</td>
+        <td>
+          <div class="row-actions">
+            ${status !== "suspended" ? `<button class="btn amber" data-act="suspend" data-id="${p.id}">Suspend</button>` : ""}
+            ${status !== "banned" ? `<button class="btn danger" data-act="ban" data-id="${p.id}">Ban</button>` : ""}
+            ${status !== "active" ? `<button class="btn good" data-act="reinstate" data-id="${p.id}">Reinstate</button>` : ""}
+          </div>
+        </td>`;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-act]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const id = btn.dataset.id;
+        const act = btn.dataset.act;
+        const p = cfg.players.find(x=>x.id===id);
+        if(!p) return;
+        const newStatus = act === "suspend" ? "suspended" : act === "ban" ? "banned" : "active";
+        p.status = newStatus;
+        saveConfig();
+        logAction(act.toUpperCase(), "Player " + p.username + " (" + id + ") → " + newStatus);
+        toast(p.username + " set to " + newStatus);
+        renderPlayers();
+        renderDashboard();
+      });
+    });
+  }
+  document.getElementById("playerSearch").addEventListener("input", renderPlayers);
+
+  // ---------- miners ----------
+  function minerPreviewMarkup(m){
+    if(m.icon) return `<img src="${m.icon}">`;
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>`;
+  }
+  function renderMiners(){
+    const wrap = document.getElementById("minerRows");
+    wrap.innerHTML = "";
+    cfg.miners.forEach((m, idx)=>{
+      const row = document.createElement("div");
+      row.className = "miner-row";
+      row.innerHTML = `
+        <div class="miner-lvl">Lv.${m.level}</div>
+        <div class="miner-thumb" id="minerThumb${idx}">${minerPreviewMarkup(m)}</div>
+        <div class="miner-fields">
+          <div class="field"><label>NAME</label><input type="text" id="minerName${idx}" value="${m.name}"></div>
+          <div class="field"><label>PRICE (m.PXN)</label><input type="number" step="1" id="minerCost${idx}" value="${m.cost}"></div>
+          <div class="field"><label>SPEED (m.PXN/sec)</label><input type="number" step="0.01" id="minerSpeed${idx}" value="${m.speed}"></div>
+          <div class="field"><label>ICON</label><input type="file" accept="image/*" id="minerIcon${idx}"></div>
+        </div>`;
+      wrap.appendChild(row);
+      document.getElementById("minerIcon" + idx).addEventListener("change", (e)=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = ()=>{
+          cfg.miners[idx].icon = reader.result;
+          document.getElementById("minerThumb" + idx).innerHTML = minerPreviewMarkup(cfg.miners[idx]);
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+  }
+  document.getElementById("saveMinersBtn").addEventListener("click", ()=>{
+    cfg.miners.forEach((m, idx)=>{
+      m.name = document.getElementById("minerName"+idx).value || m.name;
+      m.cost = parseFloat(document.getElementById("minerCost"+idx).value) || 0;
+      m.speed = parseFloat(document.getElementById("minerSpeed"+idx).value) || 0;
+    });
+    saveConfig();
+    logAction("MINER CONFIG SAVED", cfg.miners.map(m=>"Lv."+m.level+": "+m.cost+" m.PXN / "+m.speed+"/sec").join(", "));
+    toast("Miner configuration saved");
+  });
+  document.getElementById("resetMinersBtn").addEventListener("click", ()=>{
+    cfg.miners = JSON.parse(JSON.stringify(DEFAULT_MINERS));
+    saveConfig();
+    renderMiners();
+    logAction("MINER CONFIG RESET", "Reverted all tiers to default price/speed/icon");
+    toast("Miners reset to defaults");
+  });
+
+  // ---------- token ----------
+  function renderToken(){
+    document.getElementById("tokenSymbol").value = cfg.token.symbol;
+    document.getElementById("tokenLaunchSymbol").value = cfg.token.launchSymbol;
+    document.getElementById("tokenNetwork").value = cfg.token.network;
+    document.getElementById("tokenUsdRate").value = cfg.token.usdRate;
+    document.getElementById("tokenDecimals").value = cfg.token.decimals;
+  }
+  document.getElementById("saveTokenBtn").addEventListener("click", ()=>{
+    cfg.token.symbol = document.getElementById("tokenSymbol").value || "m.PXN";
+    cfg.token.launchSymbol = document.getElementById("tokenLaunchSymbol").value || "PXN";
+    cfg.token.network = document.getElementById("tokenNetwork").value || "TON";
+    cfg.token.usdRate = parseFloat(document.getElementById("tokenUsdRate").value) || cfg.token.usdRate;
+    cfg.token.decimals = parseInt(document.getElementById("tokenDecimals").value,10) || 4;
+    saveConfig();
+    logAction("TOKEN CONFIG SAVED", cfg.token.symbol + " on " + cfg.token.network + ", rate " + cfg.token.usdRate);
+    toast("Token configuration saved");
+    renderDashboard();
+  });
+
+  // ---------- rewards ----------
+  function renderRewards(){
+    const wrap = document.getElementById("taskRewardFields");
+    wrap.innerHTML = "";
+    DEFAULT_TASK_META.forEach(t=>{
+      const div = document.createElement("div");
+      div.className = "field";
+      div.innerHTML = `<label>${t.title}</label><input type="number" step="1" id="taskReward_${t.id}" value="${cfg.rewards.tasks[t.id]}">`;
+      wrap.appendChild(div);
+    });
+    document.getElementById("rewardReferralInstant").value = cfg.rewards.referralInstant;
+    document.getElementById("rewardReferralSpeed").value = cfg.rewards.referralSpeedBonus;
+    document.getElementById("rewardBoostMultiplier").value = cfg.rewards.boostMultiplier;
+    document.getElementById("rewardBoostDuration").value = cfg.rewards.boostDurationMin;
+    document.getElementById("rewardTapMultiplier").value = cfg.rewards.tapBoostMultiplier;
+    document.getElementById("rewardTapDuration").value = cfg.rewards.tapBoostDurationSec;
+  }
+  document.getElementById("saveRewardsBtn").addEventListener("click", ()=>{
+    DEFAULT_TASK_META.forEach(t=>{
+      const v = parseFloat(document.getElementById("taskReward_"+t.id).value);
+      if(!isNaN(v)) cfg.rewards.tasks[t.id] = v;
+    });
+    cfg.rewards.referralInstant = parseFloat(document.getElementById("rewardReferralInstant").value) || 0;
+    cfg.rewards.referralSpeedBonus = parseFloat(document.getElementById("rewardReferralSpeed").value) || 0;
+    cfg.rewards.boostMultiplier = parseFloat(document.getElementById("rewardBoostMultiplier").value) || 1;
+    cfg.rewards.boostDurationMin = parseFloat(document.getElementById("rewardBoostDuration").value) || 1;
+    cfg.rewards.tapBoostMultiplier = parseFloat(document.getElementById("rewardTapMultiplier").value) || 1;
+    cfg.rewards.tapBoostDurationSec = parseFloat(document.getElementById("rewardTapDuration").value) || 1;
+    saveConfig();
+    logAction("REWARD CONFIG SAVED", "Tasks + referral + boost values updated");
+    toast("Reward configuration saved");
+  });
+
+  // ---------- background ----------
+  function renderBackground(){
+    const preview = document.getElementById("bgPreview");
+    preview.innerHTML = cfg.background
+      ? `<img src="${cfg.background}">`
+      : `<span class="empty">No custom background set — using the default asset</span>`;
+  }
+  let pendingBg = null;
+  document.getElementById("bgFileInput").addEventListener("change", (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      pendingBg = reader.result;
+      document.getElementById("bgPreview").innerHTML = `<img src="${pendingBg}">`;
+    };
+    reader.readAsDataURL(file);
+  });
+  document.getElementById("saveBgBtn").addEventListener("click", ()=>{
+    if(pendingBg){ cfg.background = pendingBg; pendingBg = null; }
+    saveConfig();
+    logAction("BACKGROUND UPDATED", "Mine screen background image changed");
+    toast("Background saved");
+  });
+  document.getElementById("clearBgBtn").addEventListener("click", ()=>{
+    cfg.background = null;
+    pendingBg = null;
+    saveConfig();
+    renderBackground();
+    logAction("BACKGROUND RESET", "Reverted to default asset");
+    toast("Background reverted to default");
+  });
+
+  // ---------- anti-cheat ----------
+  document.getElementById("saveAnticheatBtn").addEventListener("click", ()=>{
+    cfg.anticheat.blockDuplicateDevice = document.getElementById("blockDupDevice").checked;
+    saveConfig();
+    logAction("ANTI-CHEAT SETTINGS SAVED", "Block duplicate device: " + (cfg.anticheat.blockDuplicateDevice ? "ON" : "OFF"));
+    toast("Anti-cheat settings saved");
+  });
+
+  // ---------- audit log ----------
+  function renderAudit(){
+    const body = document.getElementById("auditTableBody");
+    body.innerHTML = "";
+    (cfg.auditLog || []).forEach(entry=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td style="font-size:11.5px; color:var(--steel); white-space:nowrap;">${fmtTime(entry.ts)}</td>
+        <td style="color:var(--cyan); font-family:'Chakra Petch',sans-serif; font-size:11.5px;">${entry.action}</td>
+        <td style="white-space:normal;">${entry.details || ""}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  function renderAll(){
+    cfg = loadConfig();
+    renderDashboard();
+    renderPlayers();
+    renderMiners();
+    renderToken();
+    renderRewards();
+    renderBackground();
+    renderAnticheat();
+    renderAudit();
+  }
+
+  function renderAnticheat(){
+    document.getElementById("blockDupDevice").checked = !!cfg.anticheat.blockDuplicateDevice;
+  }
+
+  // periodically refresh dashboard/players so live pings from the game tab show up
+  setInterval(()=>{
+    if(!document.getElementById("shell").classList.contains("show")) return;
+    cfg = loadConfig();
+    renderDashboard();
+    if(document.getElementById("page-players").classList.contains("active")) renderPlayers();
+  }, 3000);
+})();
+</script>
+</body>
+</html>

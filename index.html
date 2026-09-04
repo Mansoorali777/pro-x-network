@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pro-X Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --void:#090c11;
+    --panel:#111722;
+    --panel-2:#161e2b;
+    --line:#26303f;
+    --cyan:#3fd0ff;
+    --cyan-dim:#1c5b70;
+    --amber:#ff9b3d;
+    --amber-dim:#8a5222;
+    --steel:#7c8896;
+    --steel-soft:#4d5762;
+    --text:#e9edf2;
+    --good:#4ade80;
+    --danger:#ff5c5c;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--void); color:var(--text); font-family:'Inter',sans-serif; overscroll-behavior:none;}
+  body{ -webkit-user-select:none; user-select:none; }
+
+  #app{
+    max-width:460px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--void);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+
+  /* ---------- shared clipped panel ---------- */
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    clip-path:polygon(0 10px,10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%);
+    position:relative;
+  }
+  .panel::before{
+    content:"";
+    position:absolute; inset:0;
+    clip-path:polygon(0 10px,10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%);
+    pointer-events:none;
+    box-shadow:inset 0 0 0 1px rgba(63,208,255,0.04);
+  }
+
+  .eyebrow{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:11px;
+    letter-spacing:0.14em;
+    color:var(--steel);
+  }
+
+  /* ---------- top status bar ---------- */
+  .statusbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 16px 10px;
+    gap:10px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .brand-mark{
+    width:30px; height:30px;
+    background:linear-gradient(135deg,var(--amber),var(--cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:13px; color:#0a0d12;
+  }
+  .brand-name{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:16px;
+    letter-spacing:0.02em;
+  }
+  .brand-name span{color:var(--amber);}
+
+  .balance-chip{
+    display:flex; flex-direction:column; align-items:flex-end;
+  }
+  .balance-num{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:18px;
+    color:var(--cyan);
+    line-height:1;
+  }
+  .balance-label{
+    font-size:10px;
+    color:var(--steel);
+    letter-spacing:0.08em;
+    margin-top:2px;
+  }
+  .balance-usd{
+    font-size:11px;
+    color:var(--good);
+    margin-top:2px;
+    font-family:'Chakra Petch',sans-serif;
+  }
+  .rig-usd{
+    font-size:11.5px;
+    color:var(--good);
+    margin-top:2px;
+    font-family:'Chakra Petch',sans-serif;
+  }
+  .claim-usd{
+    font-size:12px;
+    color:var(--good);
+    margin-top:3px;
+    font-family:'Chakra Petch',sans-serif;
+  }
+
+  /* ---------- screens ---------- */
+  .screen{ display:none; flex:1; flex-direction:column; padding-bottom:86px; }
+  .screen.active{ display:flex; }
+
+  /* MINE screen */
+  .rig{
+    position:relative;
+    margin:6px 14px 0;
+    border-radius:2px;
+    overflow:hidden;
+    height:300px;
+    clip-path:polygon(0 14px,14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);
+    border:1px solid var(--line);
+  }
+  .rig img{
+    width:100%; height:100%; object-fit:cover; object-position:center 20%;
+    display:block;
+    filter:saturate(1.05) contrast(1.05);
+  }
+  .rig-overlay{
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(9,12,17,0.05) 0%, rgba(9,12,17,0.15) 55%, rgba(9,12,17,0.92) 100%);
+  }
+  .rig-content{
+    position:absolute; left:0; right:0; bottom:0;
+    padding:14px;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .rig-title{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    color:var(--steel);
+    letter-spacing:0.1em;
+  }
+  .rig-rate{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:22px;
+    color:#fff;
+  }
+  .rig-rate span{ color:var(--amber); font-size:14px; font-weight:500; }
+  .tap-badge{
+    display:none;
+    margin-left:6px;
+    padding:2px 6px;
+    font-size:10px;
+    font-weight:700;
+    color:#0a0d12;
+    background:var(--good);
+    letter-spacing:0.04em;
+    vertical-align:middle;
+  }
+  .tap-badge.show{ display:inline-block; }
+  .core.boosted{
+    background:radial-gradient(circle at 35% 30%, #163524, #0c1017 70%);
+    box-shadow:0 0 0 6px rgba(74,222,128,0.16), 0 0 40px rgba(74,222,128,0.6);
+    border-color:var(--good);
+  }
+  .core.boosted svg path{ stroke:var(--good); }
+  .core.boosted svg circle{ fill:var(--good); }
+  .core.locked{ cursor:default; }
+  .core.locked:active{ transform:none; }
+
+  /* ---------- captcha modal ---------- */
+  .modal-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(6,8,12,0.82);
+    backdrop-filter:blur(3px);
+    align-items:center; justify-content:center;
+    z-index:50;
+    padding:20px;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-box{
+    width:100%; max-width:320px;
+    padding:22px;
+    text-align:center;
+  }
+  .modal-title{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:18px;
+    margin-top:6px;
+  }
+  .modal-sub{
+    font-size:12px;
+    color:var(--steel);
+    margin-top:8px;
+    line-height:1.5;
+  }
+  .captcha-question{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:26px;
+    color:var(--cyan);
+    margin-top:18px;
+  }
+  .captcha-input{
+    width:100%;
+    margin-top:14px;
+    padding:11px 12px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'Chakra Petch',sans-serif;
+    font-size:16px;
+    text-align:center;
+    outline:none;
+  }
+  .captcha-input:focus{ border-color:var(--cyan-dim); }
+  .captcha-error{
+    display:none;
+    color:var(--danger);
+    font-size:11.5px;
+    margin-top:8px;
+  }
+  .captcha-error.show{ display:block; }
+  .modal-box .btn{ margin-top:16px; }
+
+  .core-wrap{
+    display:flex;
+    justify-content:center;
+    margin-top:-46px;
+    position:relative;
+    z-index:2;
+  }
+  .core{
+    width:92px; height:92px;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #1a2531, #0c1017 70%);
+    border:2px solid var(--cyan-dim);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 6px rgba(63,208,255,0.05), 0 0 28px rgba(63,208,255,0.25);
+    cursor:pointer;
+    transition:transform 0.08s ease;
+  }
+  .core:active{ transform:scale(0.94); }
+  .core svg{ width:36px; height:36px; }
+  .core-plus{
+    position:absolute;
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:13px;
+    color:var(--cyan);
+    pointer-events:none;
+    animation:floatUp 0.9s ease-out forwards;
+  }
+  @keyframes floatUp{
+    0%{ opacity:1; transform:translateY(0);}
+    100%{ opacity:0; transform:translateY(-46px);}
+  }
+
+  .stat-row{
+    display:flex;
+    gap:10px;
+    margin:16px 14px 0;
+  }
+  .stat-box{
+    flex:1;
+    padding:10px 12px;
+  }
+  .stat-box .eyebrow{ margin-bottom:6px; }
+  .stat-val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:16px;
+  }
+  .stat-val.cyan{ color:var(--cyan); }
+  .stat-val.amber{ color:var(--amber); }
+
+  .claim-bar{
+    margin:14px 14px 0;
+    padding:14px;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px;
+  }
+  .claim-info .eyebrow{ margin-bottom:4px; }
+  .claim-info .val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:17px;
+    color:var(--good);
+  }
+  .btn{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    letter-spacing:0.04em;
+    padding:11px 18px;
+    border:none;
+    color:#0a0d12;
+    background:var(--cyan);
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn:disabled{ background:var(--steel-soft); color:#93a0ac; cursor:default; }
+  .btn.secondary{ background:transparent; border:1px solid var(--cyan-dim); color:var(--cyan); clip-path:none; }
+  .btn.full{ width:100%; }
+
+  .section-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin:20px 16px 10px;
+  }
+  .section-head h2{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:14px;
+    letter-spacing:0.08em;
+    margin:0;
+    color:var(--text);
+  }
+  .section-head .eyebrow{ text-transform:uppercase; }
+
+  /* generic list card */
+  .card{
+    margin:0 14px 10px;
+    padding:14px;
+    display:flex; align-items:center; gap:12px;
+  }
+  .card-icon{
+    width:38px; height:38px;
+    flex-shrink:0;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  }
+  .card-icon svg{ width:18px; height:18px; }
+  .card-body{ flex:1; min-width:0; }
+  .card-title{ font-size:13.5px; font-weight:600; }
+  .card-sub{ font-size:11.5px; color:var(--steel); margin-top:2px; }
+  .card-cta{ flex-shrink:0; }
+
+  /* UPGRADE screen */
+  .miner-hero{
+    margin:6px 14px 0;
+    padding:16px;
+    text-align:center;
+  }
+  .miner-hero .level{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:26px;
+    color:var(--amber);
+  }
+  .miner-hero .eyebrow{ margin-bottom:4px; }
+  .miner-hero .desc{ font-size:12px; color:var(--steel); margin-top:6px; }
+  .miner-icon-wrap{
+    position:relative;
+    display:inline-flex;
+    margin-bottom:8px;
+  }
+  .miner-icon-wrap svg{ width:80px; height:80px; }
+  .miner-icon-wrap img{ width:80px; height:80px; object-fit:contain; }
+  .miner-icon-wrap.small svg{ width:100%; height:100%; }
+  .miner-icon-wrap.small img{ width:100%; height:100%; object-fit:contain; }
+  .miner-icon-wrap.small{ margin-bottom:0; }
+  .level-badge{
+    position:absolute;
+    bottom:-3px; right:-8px;
+    background:var(--void);
+    border:1px solid var(--line);
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:10px;
+    padding:2px 5px;
+    color:var(--amber);
+    clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px);
+  }
+  .stat-miner-icon{
+    display:flex; align-items:center; gap:8px;
+  }
+  .stat-miner-icon .miner-icon-wrap{ width:26px; height:26px; margin-bottom:0; }
+  .stat-miner-icon .level-badge{ font-size:8px; padding:1px 3px; bottom:-4px; right:-6px; }
+
+  .bar-track{
+    height:6px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    margin-top:12px;
+    overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;
+    background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));
+  }
+
+  /* TASKS screen */
+  .task-done .card-title{ color:var(--steel); text-decoration:line-through; }
+  .task-done .card-icon{ opacity:0.4; }
+
+  /* FRIENDS screen */
+  .invite-panel{
+    margin:6px 14px 0;
+    padding:18px;
+    text-align:center;
+  }
+  .invite-panel .big{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:30px;
+    color:var(--cyan);
+  }
+  .link-row{
+    display:flex; gap:8px;
+    margin:14px 14px 0;
+  }
+  .link-box{
+    flex:1;
+    padding:11px 12px;
+    font-size:12px;
+    color:var(--steel);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+
+  /* ---------- bottom nav ---------- */
+  .navbar{
+    position:fixed;
+    left:50%; transform:translateX(-50%);
+    bottom:0;
+    width:100%; max-width:460px;
+    background:rgba(17,23,34,0.96);
+    backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    display:flex;
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    z-index:10;
+  }
+  .navbtn{
+    flex:1;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:6px 2px;
+    background:none; border:none;
+    color:var(--steel);
+    font-family:'Chakra Petch',sans-serif;
+    font-size:10px;
+    letter-spacing:0.04em;
+    cursor:pointer;
+  }
+  .navbtn svg{ width:20px; height:20px; }
+  .navbtn.active{ color:var(--cyan); }
+
+  /* toast */
+  .toast{
+    position:fixed; left:50%; bottom:96px; transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2); border:1px solid var(--line);
+    padding:10px 16px;
+    font-size:12.5px;
+    color:var(--text);
+    opacity:0; pointer-events:none;
+    transition:all 0.25s ease;
+    z-index:20;
+    max-width:80%;
+    text-align:center;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  ::-webkit-scrollbar{ display:none; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="statusbar">
+    <div class="brand">
+      <div class="brand-mark">X</div>
+      <div class="brand-name">PRO-<span>X</span> NETWORK</div>
+    </div>
+    <div class="balance-chip">
+      <div class="balance-num" id="topBalance">0.0000</div>
+      <div class="balance-label" id="balanceLabelText">m.PXN MINED</div>
+      <div class="balance-usd" id="topBalanceUsd">≈ $0.0000</div>
+    </div>
+  </div>
+
+  <!-- ============ MINE SCREEN ============ -->
+  <div class="screen active" id="screen-mine">
+    <div class="rig">
+      <img src="assets/bg-mine.png" alt="Pro-X Network mining rig" id="rigImg">
+      <div class="rig-overlay"></div>
+      <div class="rig-content">
+        <div class="rig-title">MINING SPEED <span class="tap-badge" id="tapBoostBadge">2x · 10s</span></div>
+        <div class="rig-rate" id="rateDisplay">0.0000 <span>m.PXN / SEC</span></div>
+        <div class="rig-usd" id="rigUsd">≈ $0.0000 / day</div>
+      </div>
+    </div>
+
+    <div class="core-wrap">
+      <div class="core" id="coreBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.6"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><circle cx="12" cy="12" r="3.2" fill="#3fd0ff" stroke="none"/></svg>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="panel stat-box">
+        <div class="eyebrow">MINER LEVEL</div>
+        <div class="stat-miner-icon">
+          <div class="miner-icon-wrap small" id="statMinerIcon"></div>
+          <div class="stat-val amber" id="statLevel">Lv. 1</div>
+        </div>
+      </div>
+      <div class="panel stat-box">
+        <div class="eyebrow">REFERRALS</div>
+        <div class="stat-val cyan" id="statRefs">0</div>
+      </div>
+    </div>
+
+    <div class="panel claim-bar">
+      <div class="claim-info">
+        <div class="eyebrow">READY TO CLAIM</div>
+        <div class="val" id="claimReady">0.0000 m.PXN</div>
+        <div class="claim-usd" id="claimReadyUsd">≈ $0.0000</div>
+      </div>
+      <button class="btn" id="claimBtn">CLAIM</button>
+    </div>
+
+    <div class="section-head">
+      <h2>DAILY BOOST</h2>
+      <span class="eyebrow" id="boostTimer">AVAILABLE</span>
+    </div>
+    <div class="panel card" id="boostCard">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Watch a boost cycle</div>
+        <div class="card-sub" id="boostCardSub">+2x mining speed for 30 min</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" id="boostBtn">ACTIVATE</button></div>
+    </div>
+  </div>
+
+  <!-- ============ UPGRADE SCREEN ============ -->
+  <div class="screen" id="screen-upgrade">
+    <div class="panel miner-hero">
+      <div class="eyebrow">CURRENT RIG</div>
+      <div class="miner-icon-wrap" id="heroMinerIcon"></div>
+      <div class="level" id="upLevelBig">LEVEL 1</div>
+      <div class="desc" id="upDesc">Base drill unit — 0.10 m.PXN/sec</div>
+      <div class="bar-track"><div class="bar-fill" id="upBar" style="width:20%"></div></div>
+    </div>
+
+    <div class="section-head">
+      <h2>UPGRADE PATH</h2>
+    </div>
+    <div id="upgradeList"></div>
+  </div>
+
+  <!-- ============ TASKS SCREEN ============ -->
+  <div class="screen" id="screen-tasks">
+    <div class="section-head" style="margin-top:16px;">
+      <h2>EARN TASKS</h2>
+      <span class="eyebrow" id="tasksProgress">0 / 0 DONE</span>
+    </div>
+    <div id="taskList"></div>
+  </div>
+
+  <!-- ============ FRIENDS SCREEN ============ -->
+  <div class="screen" id="screen-friends">
+    <div class="panel invite-panel">
+      <div class="eyebrow">TOTAL FRIENDS INVITED</div>
+      <div class="big" id="friendsBig">0</div>
+      <div class="card-sub" style="margin-top:6px;" id="friendsSpeedBonusText">Each friend boosts your mining speed by +0.05 m.PXN/sec</div>
+    </div>
+    <div class="link-row">
+      <div class="panel link-box" id="refLink">t.me/ProXNetworkBot?start=ref_000000</div>
+      <button class="btn" id="copyBtn">COPY</button>
+    </div>
+    <div class="section-head">
+      <h2>INVITE REWARDS</h2>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Invite a friend</div>
+        <div class="card-sub" id="referralRewardSub">+50 m.PXN instantly, +0.05 m.PXN/sec permanently</div>
+      </div>
+    </div>
+    <div class="panel card" style="margin-bottom:16px;">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M12 2 L2 7 L12 12 L22 7 Z"/><path d="M2 17 L12 22 L22 17"/><path d="M2 12 L12 17 L22 12"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Friend reaches Lv. 5</div>
+        <div class="card-sub">+150 m.PXN bonus for you both</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ WALLET SCREEN ============ -->
+  <div class="screen" id="screen-wallet">
+    <div class="panel invite-panel" style="margin-top:6px;">
+      <div class="eyebrow">MINING POOL BALANCE</div>
+      <div class="big" id="walletBig">0.0000</div>
+      <div class="card-sub" style="margin-top:2px;" id="walletBigUsd">≈ $0.0000</div>
+      <div class="card-sub" style="margin-top:8px;" id="walletPoolLabel">m.PXN mined so far — not yet a tradeable token</div>
+    </div>
+
+    <div class="section-head">
+      <h2>TON WALLET</h2>
+      <span class="eyebrow">NOT CONNECTED</span>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="#7c8896" stroke="none"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Connect TON wallet</div>
+        <div class="card-sub">Required before you can withdraw</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <div class="section-head">
+      <h2>WITHDRAW</h2>
+    </div>
+    <div class="panel card" style="margin-bottom:6px;">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Transfer pool to Wallet</div>
+        <div class="card-sub" id="walletSwapText">Swap m.PXN → $PXN once the token is live</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <div class="panel card" style="margin:0 14px 16px; opacity:0.85;">
+      <div class="card-body" style="padding:2px 2px;">
+        <div class="card-sub" style="line-height:1.6;">
+          $PXN hasn't launched yet, so withdrawals aren't open. Everything you mine now stays safely in your m.PXN pool. Once $PXN goes live on TON, you'll be able to swap your m.PXN pool for real $PXN and withdraw it to a connected TON wallet, according to the eligibility rules in place at launch.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-overlay" id="captchaOverlay">
+    <div class="panel modal-box">
+      <div class="eyebrow">SECURITY CHECK</div>
+      <div class="modal-title">Verify you're human</div>
+      <div class="modal-sub">We noticed unusually regular tapping. Solve this to keep mining.</div>
+      <div class="captcha-question" id="captchaQuestion">? + ? = ?</div>
+      <input class="captcha-input" type="number" inputmode="numeric" id="captchaInput" placeholder="Your answer">
+      <div class="captcha-error" id="captchaError">Incorrect — try again</div>
+      <button class="btn full" id="captchaSubmit">VERIFY</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="banOverlay" style="z-index:60;">
+    <div class="panel modal-box">
+      <div class="eyebrow">ACCOUNT STATUS</div>
+      <div class="modal-title" id="banOverlayTitle" style="color:var(--danger);">Account Suspended</div>
+      <div class="modal-sub" id="banOverlayMsg">This account has been suspended by an administrator. Mining is disabled.</div>
+    </div>
+  </div>
+
+  <div class="navbar">
+    <button class="navbtn active" data-screen="mine">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/></svg>
+      MINE
+    </button>
+    <button class="navbtn" data-screen="upgrade">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>
+      UPGRADE
+    </button>
+    <button class="navbtn" data-screen="tasks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      TASKS
+    </button>
+    <button class="navbtn" data-screen="friends">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg>
+      FRIENDS
+    </button>
+    <button class="navbtn" data-screen="wallet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+      WALLET
+    </button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const tg = window.Telegram ? window.Telegram.WebApp : null;
+  if(tg){ tg.ready(); tg.expand(); }
+
+  const STORAGE_KEY = "proxnetwork_state_v1";
+  const ADMIN_CONFIG_KEY = "proxnetwork_admin_config_v1"; // shared with admin.html (same-origin only)
+
+  function loadAdminConfig(){
+    try{
+      const raw = localStorage.getItem(ADMIN_CONFIG_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+  const adminConfig = loadAdminConfig();
+
+  const UPGRADES = [
+    {level:1, name:"Base Drill Unit",      cost:0,     speed:0.10},
+    {level:2, name:"Reinforced Bore Rig",  cost:200,   speed:0.22},
+    {level:3, name:"Cryo-Cooled Extractor",cost:650,   speed:0.45},
+    {level:4, name:"Plasma Cutter Array",  cost:1800,  speed:0.90},
+    {level:5, name:"Quantum Drill Core",   cost:4500,  speed:1.75},
+    {level:6, name:"Deep Vein Harvester",  cost:11000, speed:3.40},
+    {level:7, name:"Fusion Mining Node",   cost:26000, speed:6.50},
+  ];
+
+  // apply admin-configured price/speed/name/custom-icon overrides, if any
+  if(adminConfig && Array.isArray(adminConfig.miners)){
+    adminConfig.miners.forEach(override=>{
+      const tier = UPGRADES.find(u => u.level === override.level);
+      if(!tier) return;
+      if(typeof override.cost === "number") tier.cost = override.cost;
+      if(typeof override.speed === "number") tier.speed = override.speed;
+      if(typeof override.name === "string" && override.name.trim()) tier.name = override.name;
+      if(override.icon) tier.icon = override.icon; // data URL, replaces the built-in SVG glyph
+    });
+  }
+
+  const TOKEN_SYMBOL = (adminConfig && adminConfig.token && adminConfig.token.symbol) || "m.PXN";
+
+  // ---------- per-level miner icons ----------
+  // Each tier gets a distinct, increasingly complex glyph so the rig's
+  // appearance itself signals its level, independent of the text label.
+  const MINER_ICON_INNER = {
+    1: `<rect x="24" y="12" width="16" height="24" rx="2" fill="none" stroke="#9aa5b1" stroke-width="2.2"/>
+        <path d="M32 6 L40 18 H24 Z" fill="#9aa5b1"/>
+        <rect x="20" y="36" width="24" height="7" fill="none" stroke="#9aa5b1" stroke-width="2.2"/>`,
+    2: `<polygon points="32,4 54,16 54,40 32,52 10,40 10,16" fill="none" stroke="#3fd0ff" stroke-width="2"/>
+        <rect x="24" y="14" width="16" height="22" rx="2" fill="none" stroke="#d7dde4" stroke-width="2.2"/>
+        <path d="M32 10 L40 22 H24 Z" fill="#d7dde4"/>`,
+    3: `<polygon points="32,4 54,16 54,40 32,52 10,40 10,16" fill="none" stroke="#3fd0ff" stroke-width="2"/>
+        <rect x="24" y="14" width="16" height="22" rx="2" fill="none" stroke="#e9edf2" stroke-width="2.2"/>
+        <path d="M32 10 L40 22 H24 Z" fill="#e9edf2"/>
+        <path d="M12 20 L16 11 L20 20 Z" fill="#3fd0ff" opacity="0.85"/>
+        <path d="M44 20 L48 11 L52 20 Z" fill="#3fd0ff" opacity="0.85"/>
+        <path d="M27 45 L32 55 L37 45 Z" fill="#3fd0ff" opacity="0.85"/>`,
+    4: `<polygon points="32,4 54,16 54,40 32,52 10,40 10,16" fill="none" stroke="#ff9b3d" stroke-width="2"/>
+        <circle cx="32" cy="28" r="9" fill="none" stroke="#3fd0ff" stroke-width="2.2"/>
+        <line x1="15" y1="11" x2="49" y2="45" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round"/>
+        <line x1="49" y1="11" x2="15" y2="45" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="32" cy="28" r="3.4" fill="#3fd0ff"/>`,
+    5: `<circle cx="32" cy="28" r="6.5" fill="#ff9b3d"/>
+        <circle cx="32" cy="28" r="14" fill="none" stroke="#3fd0ff" stroke-width="1.6" stroke-dasharray="3 3"/>
+        <ellipse cx="32" cy="28" rx="23" ry="10" fill="none" stroke="#3fd0ff" stroke-width="1.6" stroke-dasharray="3 3" transform="rotate(28 32 28)"/>
+        <ellipse cx="32" cy="28" rx="23" ry="10" fill="none" stroke="#ff9b3d" stroke-width="1.4" stroke-dasharray="2 4" transform="rotate(-28 32 28)"/>`,
+    6: `<circle cx="32" cy="30" r="8" fill="#ff9b3d"/>
+        <path d="M32 8 C23 14 17 22 20 30 C13 26 7 31 5 39 C14 41 19 36 23 31" fill="none" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M32 8 C41 14 47 22 44 30 C51 26 57 31 59 39 C50 41 45 36 41 31" fill="none" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M32 8 L32 21" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="32" cy="30" r="15" fill="none" stroke="#3fd0ff" stroke-width="1.4" opacity="0.55"/>`,
+    7: `<polygon points="32,6 50,17 50,39 32,50 14,39 14,17" fill="none" stroke="#ff9b3d" stroke-width="2.2"/>
+        <circle cx="32" cy="28" r="19" fill="none" stroke="#3fd0ff" stroke-width="1.6"/>
+        <circle cx="32" cy="28" r="7.5" fill="#ff9b3d"/>
+        <line x1="32" y1="9" x2="32" y2="20" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="32" y1="36" x2="32" y2="47" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="15" y1="18.5" x2="24" y2="24" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="49" y1="18.5" x2="40" y2="24" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="15" y1="37.5" x2="24" y2="32" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="49" y1="37.5" x2="40" y2="32" stroke="#3fd0ff" stroke-width="2"/>
+        <circle cx="32" cy="28" r="2.6" fill="#0a0d12"/>`
+  };
+
+  function minerIconSvg(level){
+    const tier = UPGRADES.find(u => u.level === level);
+    if(tier && tier.icon){
+      return `<img src="${tier.icon}" alt="Miner Lv.${level}">`;
+    }
+    const inner = MINER_ICON_INNER[level] || MINER_ICON_INNER[1];
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+  }
+
+  function minerIconWithBadge(level){
+    return minerIconSvg(level) + `<div class="level-badge">L${level}</div>`;
+  }
+
+  const DEFAULT_TASKS = [
+    {id:"t1", title:"Join Pro-X Network Telegram channel", sub:"Verify membership to claim", reward:80, type:"telegram"},
+    {id:"t2", title:"Follow Pro-X Network on X", sub:"Verify follow to claim", reward:60, type:"twitter"},
+    {id:"t3", title:"Invite your first friend", sub:"Use your referral link", reward:100, type:"referral"},
+    {id:"t4", title:"Reach Miner Level 3", sub:"Upgrade your rig", reward:150, type:"level"},
+    {id:"t5", title:"Claim rewards 5 times", sub:"Come back and claim daily", reward:120, type:"claims"},
+  ];
+
+  // admin-configured reward economy, with built-in defaults
+  const REWARDS_CONFIG = {
+    referralInstant: 50,
+    referralSpeedBonus: 0.05,
+    boostMultiplier: 2,
+    boostDurationMin: 30,
+    tapBoostMultiplier: 2,
+    tapBoostDurationSec: 10,
+  };
+  if(adminConfig && adminConfig.rewards){
+    Object.assign(REWARDS_CONFIG, adminConfig.rewards);
+    if(adminConfig.rewards.tasks){
+      DEFAULT_TASKS.forEach(t=>{
+        if(typeof adminConfig.rewards.tasks[t.id] === "number"){
+          t.reward = adminConfig.rewards.tasks[t.id];
+        }
+      });
+    }
+  }
+
+
+  function defaultState(){
+    return {
+      minedBalance: 0,      // total ever mined (lifetime, shown top bar)
+      pendingClaim: 0,      // accumulated since last claim
+      level: 1,
+      lastTick: Date.now(),
+      referrals: 0,
+      tasksDone: {},
+      claimCount: 0,
+      boostUntil: 0,
+      refCode: "ref_" + Math.floor(100000 + Math.random()*899999)
+    };
+  }
+
+  // ---------- state-integrity anti-cheat ----------
+  // A lightweight signature over the value-bearing fields. This does NOT stop a
+  // determined attacker who reads this source and recomputes it themselves — no
+  // client-side check can. It DOES catch the common case: someone opening dev
+  // tools and hand-editing a number in localStorage without recalculating this.
+  function simpleHash(str){
+    let h = 5381;
+    for(let i=0; i<str.length; i++){ h = ((h*33) ^ str.charCodeAt(i)) >>> 0; }
+    return h.toString(36);
+  }
+  function computeStateSignature(s){
+    const raw = [s.minedBalance, s.pendingClaim, s.level, s.referrals,
+                 s.claimCount, s.claimedTotal||0, s.boostUntil].map(v => (typeof v === "number" ? v.toFixed(4) : v)).join("|");
+    return simpleHash(raw + "::proxsalt");
+  }
+
+  let tamperDetectedThisLoad = false;
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return defaultState();
+      const parsed = JSON.parse(raw);
+      const s = Object.assign(defaultState(), parsed);
+      if(parsed.__sig !== undefined && parsed.__sig !== computeStateSignature(s)){
+        // values were edited outside the game (localStorage tampering) — reset for fair play
+        tamperDetectedThisLoad = true;
+        return defaultState();
+      }
+      return s;
+    }catch(e){ return defaultState(); }
+  }
+
+  function saveState(){
+    try{
+      state.__sig = computeStateSignature(state);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){}
+  }
+
+  let state = loadState();
+  let tapBoostUntil = 0; // session-only 2x boost triggered by tapping the core
+
+  // ---------- tap bot-detection (captcha) ----------
+  let lastTapAt = 0;
+  let lastTapInterval = null;
+  let consistentTapStreak = 0;
+  let captchaActive = false;
+  let captchaAnswer = null;
+  const TAP_INTERVAL_TOLERANCE_MS = 150; // "exact" repeat window
+  const TAP_INTERVAL_MIN_MS = 4500;      // ~5s
+  const TAP_INTERVAL_MAX_MS = 13500;     // ~13s
+
+  function newCaptchaQuestion(){
+    const a = 1 + Math.floor(Math.random()*9);
+    const b = 1 + Math.floor(Math.random()*9);
+    captchaAnswer = a + b;
+    document.getElementById("captchaQuestion").textContent = a + " + " + b + " = ?";
+    document.getElementById("captchaInput").value = "";
+  }
+
+  function openCaptcha(){
+    captchaActive = true;
+    newCaptchaQuestion();
+    document.getElementById("captchaError").classList.remove("show");
+    document.getElementById("captchaOverlay").classList.add("show");
+    document.getElementById("coreBtn").classList.add("locked");
+    setTimeout(()=> document.getElementById("captchaInput").focus(), 50);
+  }
+
+  function closeCaptchaSuccess(){
+    captchaActive = false;
+    tapBoostUntil = 0;
+    lastTapAt = 0;
+    lastTapInterval = null;
+    consistentTapStreak = 0;
+    document.getElementById("captchaOverlay").classList.remove("show");
+    render();
+    toast("Verified — mining taps re-enabled");
+  }
+
+  document.getElementById("captchaSubmit").addEventListener("click", ()=>{
+    const val = parseInt(document.getElementById("captchaInput").value, 10);
+    if(val === captchaAnswer){
+      closeCaptchaSuccess();
+    } else {
+      document.getElementById("captchaError").classList.add("show");
+      newCaptchaQuestion();
+    }
+  });
+  document.getElementById("captchaInput").addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") document.getElementById("captchaSubmit").click();
+  });
+
+  function currentSpeed(){
+    const tier = UPGRADES.find(u => u.level === state.level) || UPGRADES[0];
+    let speed = tier.speed + (state.referrals * REWARDS_CONFIG.referralSpeedBonus);
+    if(state.boostUntil > Date.now()) speed *= REWARDS_CONFIG.boostMultiplier;
+    if(tapBoostUntil > Date.now()) speed *= REWARDS_CONFIG.tapBoostMultiplier;
+    return speed;
+  }
+
+  // Conversion rate for the estimated USDT display only (m.PXN is an in-app point,
+  // not a tradeable asset — this is a display estimate for players, not a live price feed).
+  // Defaults so Level 1, mining 24h with no taps, earns ~$0.50 worth of m.PXN — overridable from the admin panel.
+  let PXN_USD_RATE = 0.5 / (UPGRADES[0].speed * 86400); // ≈ 0.00005787 USDT per m.PXN
+  if(adminConfig && adminConfig.token && typeof adminConfig.token.usdRate === "number"){
+    PXN_USD_RATE = adminConfig.token.usdRate;
+  }
+
+  function fmt(n, decimals){
+    decimals = decimals === undefined ? 4 : decimals;
+    return n.toLocaleString("en-US",{minimumFractionDigits:decimals, maximumFractionDigits:decimals});
+  }
+
+  function fmtUsd(coins){
+    return "≈ $" + (coins * PXN_USD_RATE).toLocaleString("en-US",{minimumFractionDigits:4, maximumFractionDigits:4});
+  }
+
+  function toast(msg){
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=> el.classList.remove("show"), 1800);
+  }
+
+  // ---------- offline / tick accrual ----------
+  let clockTamperFlaggedThisSession = false;
+  const MAX_OFFLINE_ACCRUAL_SEC = 24*3600; // caps earnings if lastTick was rolled back to fake huge offline gains
+
+  function accrue(){
+    const now = Date.now();
+    const rawElapsedSec = (now - state.lastTick) / 1000;
+    let elapsedSec = Math.max(0, rawElapsedSec);
+    if(elapsedSec > MAX_OFFLINE_ACCRUAL_SEC){
+      elapsedSec = MAX_OFFLINE_ACCRUAL_SEC;
+      if(!clockTamperFlaggedThisSession){
+        clockTamperFlaggedThisSession = true;
+        flagCheatEvent("CLOCK/OFFLINE ANOMALY", "Elapsed time since last tick exceeded " + (MAX_OFFLINE_ACCRUAL_SEC/3600) + "h — earnings capped");
+      }
+    }
+    const speed = currentSpeed();
+    const gained = elapsedSec * speed;
+    state.pendingClaim += gained;
+    state.minedBalance += gained;
+    state.lastTick = now;
+  }
+
+  // ---------- render ----------
+  function render(){
+    document.getElementById("topBalance").textContent = fmt(state.minedBalance);
+    document.getElementById("balanceLabelText").textContent = TOKEN_SYMBOL + " MINED";
+    document.getElementById("topBalanceUsd").textContent = fmtUsd(state.minedBalance);
+    const speed = currentSpeed();
+    document.getElementById("rateDisplay").innerHTML = fmt(speed) + ' <span>' + TOKEN_SYMBOL + ' / SEC</span>';
+    document.getElementById("rigUsd").textContent = fmtUsd(speed * 86400) + " / day";
+
+    const tapBadge = document.getElementById("tapBoostBadge");
+    const core = document.getElementById("coreBtn");
+    if(captchaActive){
+      tapBadge.classList.remove("show");
+      core.classList.remove("boosted");
+      core.classList.add("locked");
+    } else if(tapBoostUntil > Date.now()){
+      const secsLeft = Math.ceil((tapBoostUntil - Date.now())/1000);
+      tapBadge.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x · " + secsLeft + "s";
+      tapBadge.classList.add("show");
+      core.classList.add("boosted");
+      core.classList.add("locked");
+    } else {
+      tapBadge.classList.remove("show");
+      core.classList.remove("boosted");
+      core.classList.remove("locked");
+    }
+    document.getElementById("statLevel").textContent = "Lv. " + state.level;
+    document.getElementById("statMinerIcon").innerHTML = minerIconWithBadge(state.level);
+    document.getElementById("statRefs").textContent = state.referrals;
+    document.getElementById("claimReady").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
+    document.getElementById("claimReadyUsd").textContent = fmtUsd(state.pendingClaim);
+    document.getElementById("claimBtn").disabled = state.pendingClaim < 0.0001;
+    document.getElementById("boostCardSub").textContent = "+" + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " min";
+    document.getElementById("referralRewardSub").textContent = "+" + REWARDS_CONFIG.referralInstant + " " + TOKEN_SYMBOL + " instantly, +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec permanently";
+
+    // boost
+    const boostBtn = document.getElementById("boostBtn");
+    const boostTimer = document.getElementById("boostTimer");
+    if(state.boostUntil > Date.now()){
+      const mins = Math.ceil((state.boostUntil - Date.now())/60000);
+      boostTimer.textContent = "ACTIVE · " + mins + "M LEFT";
+      boostBtn.textContent = "ACTIVE";
+      boostBtn.disabled = true;
+    } else {
+      boostTimer.textContent = "AVAILABLE";
+      boostBtn.textContent = "ACTIVATE";
+      boostBtn.disabled = false;
+    }
+
+    renderUpgrade();
+    renderTasks();
+    renderFriends();
+    renderWallet();
+  }
+
+  function renderWallet(){
+    document.getElementById("walletBig").textContent = fmt(state.minedBalance);
+    document.getElementById("walletBigUsd").textContent = fmtUsd(state.minedBalance);
+    document.getElementById("walletPoolLabel").textContent = TOKEN_SYMBOL + " mined so far — not yet a tradeable token";
+    document.getElementById("walletSwapText").textContent = "Swap " + TOKEN_SYMBOL + " → $PXN once the token is live";
+  }
+
+  function renderUpgrade(){
+    const tier = UPGRADES.find(u => u.level === state.level);
+    const next = UPGRADES.find(u => u.level === state.level + 1);
+    document.getElementById("upLevelBig").textContent = "LEVEL " + state.level;
+    document.getElementById("upDesc").textContent = tier.name + " — " + tier.speed.toFixed(2) + " " + TOKEN_SYMBOL + "/sec base";
+    document.getElementById("upBar").style.width = Math.min(100, (state.level / UPGRADES.length) * 100) + "%";
+    document.getElementById("heroMinerIcon").innerHTML = minerIconWithBadge(state.level);
+
+    const list = document.getElementById("upgradeList");
+    list.innerHTML = "";
+    UPGRADES.forEach(u => {
+      const owned = u.level <= state.level;
+      const isNext = next && u.level === next.level;
+      const div = document.createElement("div");
+      div.className = "panel card";
+      div.innerHTML = `
+        <div class="card-icon miner-icon-wrap small" style="opacity:${owned ? '1' : '0.55'}">${minerIconSvg(u.level)}</div>
+        <div class="card-body">
+          <div class="card-title">Lv.${u.level} · ${u.name}</div>
+          <div class="card-sub">${u.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec ${owned ? '· owned' : '· cost ' + fmt(u.cost) + ' ' + TOKEN_SYMBOL}</div>
+        </div>
+        <div class="card-cta">
+          ${owned
+            ? `<button class="btn secondary" disabled>OWNED</button>`
+            : `<button class="btn" ${isNext ? '' : 'disabled'} data-upgrade="${u.level}">UPGRADE</button>`}
+        </div>`;
+      list.appendChild(div);
+    });
+
+    list.querySelectorAll("[data-upgrade]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const lvl = parseInt(btn.dataset.upgrade,10);
+        const u = UPGRADES.find(x=>x.level===lvl);
+        if(state.minedBalance < u.cost){ toast("Not enough m.PXN mined yet"); return; }
+        // spend from lifetime-mined pool is unrealistic; spend from pendingClaim+claimed pool instead
+        if(state.claimedTotal === undefined) state.claimedTotal = 0;
+        if(state.claimedTotal < u.cost){ toast("Claim more m.PXN first"); return; }
+        state.claimedTotal -= u.cost;
+        state.level = lvl;
+        saveState(); render();
+        toast("Rig upgraded to Level " + lvl);
+      });
+    });
+  }
+
+  function renderTasks(){
+    const list = document.getElementById("taskList");
+    list.innerHTML = "";
+    let done = 0;
+    DEFAULT_TASKS.forEach(t=>{
+      const isDone = !!state.tasksDone[t.id];
+      if(isDone) done++;
+      const div = document.createElement("div");
+      div.className = "panel card" + (isDone ? " task-done" : "");
+      div.innerHTML = `
+        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="${isDone ? '#4ade80' : '#3fd0ff'}" stroke-width="1.8"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">${t.title}</div>
+          <div class="card-sub">${isDone ? 'Reward claimed' : t.sub + ' · +' + t.reward + ' ' + TOKEN_SYMBOL}</div>
+        </div>
+        <div class="card-cta">
+          ${isDone
+            ? `<button class="btn secondary" disabled>DONE</button>`
+            : `<button class="btn" data-task="${t.id}">CLAIM</button>`}
+        </div>`;
+      list.appendChild(div);
+    });
+    document.getElementById("tasksProgress").textContent = done + " / " + DEFAULT_TASKS.length + " DONE";
+
+    list.querySelectorAll("[data-task]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const id = btn.dataset.task;
+        const t = DEFAULT_TASKS.find(x=>x.id===id);
+        state.tasksDone[id] = true;
+        state.minedBalance += t.reward;
+        if(state.claimedTotal === undefined) state.claimedTotal = 0;
+        state.claimedTotal += t.reward;
+        saveState(); render();
+        toast("+" + t.reward + " " + TOKEN_SYMBOL + " added to your balance");
+      });
+    });
+  }
+
+  function renderFriends(){
+    document.getElementById("friendsBig").textContent = state.referrals;
+    document.getElementById("refLink").textContent = "t.me/ProXNetworkBot?start=" + state.refCode;
+    document.getElementById("friendsSpeedBonusText").textContent = "Each friend boosts your mining speed by +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec";
+  }
+
+  // ---------- interactions ----------
+  // Tapping the core only starts the 2x speed boost — it never adds coins directly.
+  // All coin income (including the boosted rate) is still applied only by the
+  // once-per-second mining tick below.
+  document.getElementById("coreBtn").addEventListener("click", (e)=>{
+    if(captchaActive) return;
+
+    const now = Date.now();
+    if(lastTapAt){
+      const interval = now - lastTapAt;
+      if(interval >= TAP_INTERVAL_MIN_MS && interval <= TAP_INTERVAL_MAX_MS
+         && lastTapInterval !== null
+         && Math.abs(interval - lastTapInterval) <= TAP_INTERVAL_TOLERANCE_MS){
+        consistentTapStreak++;
+      } else {
+        consistentTapStreak = 1;
+      }
+      lastTapInterval = interval;
+    }
+    lastTapAt = now;
+
+    if(consistentTapStreak >= 10){
+      openCaptcha();
+      return;
+    }
+
+    if(tapBoostUntil > Date.now()) return; // cooldown: ignore taps until the current boost ends
+    tapBoostUntil = Date.now() + REWARDS_CONFIG.tapBoostDurationSec*1000;
+    render();
+
+    if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  });
+
+  document.getElementById("claimBtn").addEventListener("click", ()=>{
+    accrue();
+    if(state.pendingClaim < 0.01) return;
+    if(state.claimedTotal === undefined) state.claimedTotal = 0;
+    state.claimedTotal += state.pendingClaim;
+    toast("Claimed " + fmt(state.pendingClaim) + " " + TOKEN_SYMBOL + " to your in-game balance");
+    state.pendingClaim = 0;
+    state.claimCount += 1;
+    if(state.claimCount >= 5) state.tasksDone["t5"] = true;
+    saveState(); render();
+  });
+
+  document.getElementById("boostBtn").addEventListener("click", ()=>{
+    if(state.boostUntil > Date.now()) return;
+    state.boostUntil = Date.now() + REWARDS_CONFIG.boostDurationMin*60*1000;
+    saveState(); render();
+    toast("Boost active — " + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " minutes");
+  });
+
+  document.getElementById("copyBtn").addEventListener("click", ()=>{
+    const text = "t.me/ProXNetworkBot?start=" + state.refCode;
+    if(navigator.clipboard){ navigator.clipboard.writeText(text).catch(()=>{}); }
+    toast("Referral link copied");
+  });
+
+  // demo helper: tapping the friends "big" number simulates an invite (for testing without real backend)
+  document.getElementById("friendsBig").addEventListener("click", ()=>{
+    state.referrals += 1;
+    state.minedBalance += REWARDS_CONFIG.referralInstant;
+    if(state.claimedTotal === undefined) state.claimedTotal = 0;
+    state.claimedTotal += REWARDS_CONFIG.referralInstant;
+    if(state.referrals >= 1) state.tasksDone["t3"] = true;
+    saveState(); render();
+    toast("Friend joined — +" + REWARDS_CONFIG.referralInstant + " " + TOKEN_SYMBOL + ", +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec");
+  });
+
+  // ---------- device identity ----------
+  // Telegram gives each real account a phone-verified, hard-to-fake user ID —
+  // when running inside Telegram, that's what we use as the player's identity
+  // (far stronger than IP/network, which a webpage can't see anyway).
+  const telegramUser = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user : null;
+  const PLAYER_ID = telegramUser ? ("tg_" + telegramUser.id) : state.refCode;
+  const PLAYER_NAME = telegramUser
+    ? ("@" + (telegramUser.username || telegramUser.first_name || PLAYER_ID))
+    : ("player_" + state.refCode.slice(4));
+
+  function getDeviceFingerprint(){
+    const DFP_KEY = "proxnetwork_device_fp_v1";
+    try{
+      let fp = localStorage.getItem(DFP_KEY);
+      if(fp) return fp;
+      const raw = [navigator.userAgent, screen.width, screen.height, navigator.language,
+                   Intl.DateTimeFormat().resolvedOptions().timeZone].join("|");
+      fp = simpleHash(raw) + "_" + Math.random().toString(36).slice(2,8);
+      localStorage.setItem(DFP_KEY, fp);
+      return fp;
+    }catch(e){ return "unknown"; }
+  }
+  const DEVICE_FP = getDeviceFingerprint();
+
+  // ---------- shared sync with admin panel (same-origin/local demo) ----------
+  function getFreshAdminConfig(){
+    try{
+      const raw = localStorage.getItem(ADMIN_CONFIG_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+
+  function flagCheatEvent(type, details){
+    const cfg = getFreshAdminConfig();
+    if(!Array.isArray(cfg.auditLog)) cfg.auditLog = [];
+    cfg.auditLog.unshift({ ts: Date.now(), action: "CHEAT FLAG: " + type, details: PLAYER_NAME + " (" + PLAYER_ID + ") — " + details });
+    if(cfg.auditLog.length > 300) cfg.auditLog.length = 300;
+    try{ localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+  }
+
+  function syncPlayerRecord(){
+    const cfg = getFreshAdminConfig();
+    if(!Array.isArray(cfg.players)) cfg.players = [];
+    if(!cfg.deviceOwners) cfg.deviceOwners = {};
+    let p = cfg.players.find(x => x.id === PLAYER_ID);
+    const now = Date.now();
+    if(!p){
+      p = { id: PLAYER_ID, username: PLAYER_NAME, status: "active", joinedAt: now, deviceFp: DEVICE_FP };
+      cfg.players.push(p);
+    }
+    p.level = state.level;
+    p.minedBalance = Math.round(state.minedBalance * 10000) / 10000;
+    p.referrals = state.referrals;
+    p.lastSeen = now;
+    p.deviceFp = DEVICE_FP;
+
+    // first account seen on a device "claims" it; a different account showing up
+    // later on the same device fingerprint gets flagged (and optionally blocked)
+    if(!cfg.deviceOwners[DEVICE_FP]){
+      cfg.deviceOwners[DEVICE_FP] = PLAYER_ID;
+    } else if(cfg.deviceOwners[DEVICE_FP] !== PLAYER_ID){
+      p.duplicateDevice = true;
+    }
+    try{ localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+  }
+
+  // returns { blocked:false } or { blocked:true, reason }
+  function checkAccessStatus(){
+    const cfg = getFreshAdminConfig();
+    const players = Array.isArray(cfg.players) ? cfg.players : [];
+    const p = players.find(x => x.id === PLAYER_ID);
+    if(p && (p.status === "banned" || p.status === "suspended")){
+      return { blocked:true, reason: p.status };
+    }
+    const anticheat = cfg.anticheat || {};
+    if(anticheat.blockDuplicateDevice){
+      const owner = cfg.deviceOwners && cfg.deviceOwners[DEVICE_FP];
+      if(owner && owner !== PLAYER_ID){
+        return { blocked:true, reason:"duplicate_device" };
+      }
+    }
+    return { blocked:false };
+  }
+
+  function showBlockOverlay(reason){
+    if(reason === "duplicate_device"){
+      document.getElementById("banOverlayTitle").textContent = "One Account Per Device";
+      document.getElementById("banOverlayMsg").textContent = "Only one Pro-X Network account is allowed per device. This device is already linked to a different account.";
+    } else {
+      document.getElementById("banOverlayTitle").textContent = reason === "banned" ? "Account Banned" : "Account Suspended";
+      document.getElementById("banOverlayMsg").textContent = reason === "banned"
+        ? "This account has been banned by an administrator. Mining is disabled."
+        : "This account has been temporarily suspended by an administrator.";
+    }
+    document.getElementById("banOverlay").classList.add("show");
+  }
+  function hideBlockOverlay(){
+    document.getElementById("banOverlay").classList.remove("show");
+  }
+
+  if(tamperDetectedThisLoad){
+    flagCheatEvent("STATE TAMPERING", "Saved progress didn't match its integrity signature — balance was reset");
+    toast("Unusual activity detected — progress reset for fair play");
+  }
+
+  // apply admin-configured background image, if set
+  if(adminConfig && adminConfig.background){
+    document.getElementById("rigImg").src = adminConfig.background;
+  }
+
+  // nav
+  document.querySelectorAll(".navbtn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("screen-" + btn.dataset.screen).classList.add("active");
+    });
+  });
+
+  // level-3 task auto check
+  const origRender = render;
+  render = function(){
+    if(state.level >= 3) state.tasksDone["t4"] = true;
+    origRender();
+  };
+
+  // main loop — also re-checks account access (ban/suspend/duplicate-device) each tick
+  setInterval(()=>{
+    const access = checkAccessStatus();
+    if(access.blocked){ showBlockOverlay(access.reason); return; }
+    hideBlockOverlay();
+    accrue(); saveState(); render(); syncPlayerRecord();
+  }, 1000);
+
+  const initialAccess = checkAccessStatus();
+  if(initialAccess.blocked){
+    showBlockOverlay(initialAccess.reason);
+  } else {
+    accrue(); render(); syncPlayerRecord();
+  }
+})();
+</script>
+</body>
+</html>
