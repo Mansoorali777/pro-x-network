@@ -126,44 +126,150 @@
   .screen{ display:none; flex:1; flex-direction:column; padding-bottom:86px; }
   .screen.active{ display:flex; }
 
-  /* MINE screen */
-  .rig{
-    position:relative;
-    margin:6px 14px 0;
-    border-radius:2px;
+  /* MINE screen — backdrop uses the admin-uploaded background image, subtly */
+  .mine-backdrop{
+    position:absolute; inset:0; height:520px;
     overflow:hidden;
-    height:300px;
-    clip-path:polygon(0 14px,14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%);
-    border:1px solid var(--line);
+    pointer-events:none;
+    z-index:0;
   }
-  .rig img{
+  .mine-backdrop img{
     width:100%; height:100%; object-fit:cover; object-position:center 20%;
-    display:block;
-    filter:saturate(1.05) contrast(1.05);
+    opacity:0.16;
+    filter:blur(1px) saturate(1.1);
   }
-  .rig-overlay{
+  .mine-backdrop::after{
+    content:"";
     position:absolute; inset:0;
-    background:linear-gradient(180deg, rgba(9,12,17,0.05) 0%, rgba(9,12,17,0.15) 55%, rgba(9,12,17,0.92) 100%);
+    background:linear-gradient(180deg, rgba(9,12,17,0.4) 0%, var(--void) 88%);
   }
-  .rig-content{
-    position:absolute; left:0; right:0; bottom:0;
-    padding:14px;
-    display:flex; flex-direction:column; gap:6px;
+  .mine-content{ position:relative; z-index:1; display:flex; flex-direction:column; }
+
+  .mine-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 16px 4px;
   }
-  .rig-title{
-    font-family:'Chakra Petch',sans-serif;
-    font-weight:600;
-    font-size:13px;
-    color:var(--steel);
-    letter-spacing:0.1em;
+  .mine-greet{ display:flex; align-items:center; gap:10px; }
+  .mine-avatar{
+    width:38px; height:38px; border-radius:50%;
+    background:linear-gradient(135deg,var(--amber-dim),var(--cyan-dim));
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--text);
+    flex-shrink:0;
   }
-  .rig-rate{
-    font-family:'Chakra Petch',sans-serif;
-    font-weight:700;
-    font-size:22px;
-    color:#fff;
+  .mine-greet-sub{ font-size:11px; color:var(--steel); }
+  .mine-greet-name{ font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:14.5px; }
+  .pill-btn{
+    display:flex; align-items:center; gap:5px;
+    padding:8px 14px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:999px;
+    font-family:'Chakra Petch',sans-serif; font-size:11.5px; color:var(--text);
+    cursor:pointer;
   }
-  .rig-rate span{ color:var(--amber); font-size:14px; font-weight:500; }
+  .pill-btn svg{ width:14px; height:14px; }
+
+  /* organic glowing blob button */
+  .blob-wrap{ display:flex; justify-content:center; padding:18px 0 6px; position:relative; }
+  .blob{
+    width:200px; height:200px;
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    background:radial-gradient(circle at 38% 32%, rgba(74,222,128,0.55), rgba(74,222,128,0.08) 70%);
+    border-radius:42% 58% 63% 37% / 41% 44% 56% 59%;
+    box-shadow:0 0 50px rgba(74,222,128,0.35), inset 0 0 40px rgba(74,222,128,0.25);
+    animation:blobMorph 7s ease-in-out infinite, blobGlow 2.4s ease-in-out infinite;
+    transition:transform 0.08s ease;
+  }
+  .blob:active{ transform:scale(0.95); }
+  @keyframes blobMorph{
+    0%,100%{ border-radius:42% 58% 63% 37% / 41% 44% 56% 59%; }
+    25%{ border-radius:58% 42% 39% 61% / 55% 60% 40% 45%; }
+    50%{ border-radius:48% 52% 57% 43% / 60% 38% 62% 40%; }
+    75%{ border-radius:63% 37% 45% 55% / 44% 58% 42% 56%; }
+  }
+  @keyframes blobGlow{
+    0%,100%{ box-shadow:0 0 50px rgba(74,222,128,0.35), inset 0 0 40px rgba(74,222,128,0.25); }
+    50%{ box-shadow:0 0 78px rgba(74,222,128,0.6), inset 0 0 56px rgba(74,222,128,0.4); }
+  }
+  .blob-inner{ position:relative; z-index:1; text-align:center; }
+  .blob-label{
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:17px;
+    color:#eafff0; text-shadow:0 0 14px rgba(74,222,128,0.8);
+  }
+  .blob-sub{ font-size:10.5px; color:#c6f5d4; margin-top:4px; letter-spacing:0.04em; }
+  .blob.locked{ animation-play-state:paused, paused; opacity:0.55; cursor:default; }
+  .blob.locked:active{ transform:none; }
+  .blob.boosted{
+    background:radial-gradient(circle at 38% 32%, rgba(63,208,255,0.6), rgba(63,208,255,0.1) 70%);
+  }
+  .blob.boosted .blob-label{ text-shadow:0 0 14px rgba(63,208,255,0.8); }
+
+  .action-pills-row{ display:flex; gap:10px; margin:8px 14px 0; }
+  .action-pill{
+    flex:1; display:flex; align-items:center; gap:10px;
+    padding:12px 14px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    clip-path:polygon(0 8px,8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%);
+    cursor:pointer;
+  }
+  .action-pill svg{ width:18px; height:18px; flex-shrink:0; }
+  .action-pill-title{ font-family:'Chakra Petch',sans-serif; font-size:12.5px; font-weight:600; }
+  .action-pill-sub{ font-size:10px; color:var(--steel); margin-top:1px; }
+
+  .ads-caption{
+    text-align:center; font-size:10.5px; color:var(--steel);
+    margin:8px 14px 0;
+  }
+  .ads-caption span{ color:var(--good); font-family:'Chakra Petch',sans-serif; }
+
+  .earned-card{
+    margin:16px 14px 0;
+    padding:18px;
+    text-align:center;
+  }
+  .earned-card .eyebrow{ letter-spacing:0.1em; }
+  .earned-big{
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:32px;
+    margin-top:6px;
+  }
+  .earned-big span{ color:var(--good); font-size:18px; }
+  .earned-underline{
+    height:2px; width:60%; margin:10px auto 0;
+    background:linear-gradient(90deg, transparent, var(--good), transparent);
+    opacity:0.6;
+  }
+  .earned-claim-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:16px; padding-top:14px;
+    border-top:1px solid var(--line);
+  }
+  .earned-claim-info{ text-align:left; }
+  .earned-claim-info .val{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--good); }
+
+  .stats-grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 14px 0; }
+  .stat2-box{ padding:12px 14px; }
+  .stat2-box .eyebrow{ margin-bottom:6px; }
+
+  .daily-banner{
+    margin:16px 14px 0;
+    padding:16px;
+    display:flex; align-items:center; gap:14px;
+  }
+  .daily-banner-icon{
+    width:44px; height:44px; flex-shrink:0;
+    background:var(--panel-2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  }
+  .daily-banner-icon svg{ width:22px; height:22px; }
+  .daily-banner-body{ flex:1; }
+  .daily-banner-title{ font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:13.5px; }
+  .daily-banner-sub{ font-size:11px; color:var(--steel); margin-top:2px; }
+
   .tap-badge{
     display:none;
     margin-left:6px;
@@ -176,15 +282,6 @@
     vertical-align:middle;
   }
   .tap-badge.show{ display:inline-block; }
-  .core.boosted{
-    background:radial-gradient(circle at 35% 30%, #163524, #0c1017 70%);
-    box-shadow:0 0 0 6px rgba(74,222,128,0.16), 0 0 40px rgba(74,222,128,0.6);
-    border-color:var(--good);
-  }
-  .core.boosted svg path{ stroke:var(--good); }
-  .core.boosted svg circle{ fill:var(--good); }
-  .core.locked{ cursor:default; }
-  .core.locked:active{ transform:none; }
 
   /* ---------- captcha modal ---------- */
   .modal-overlay{
@@ -221,6 +318,19 @@
     color:var(--cyan);
     margin-top:18px;
   }
+  .ad-progress-track{
+    height:8px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    margin-top:18px;
+    overflow:hidden;
+  }
+  .ad-progress-fill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));
+    transition:width 0.2s linear;
+  }
   .captcha-input{
     width:100%;
     margin-top:14px;
@@ -242,39 +352,6 @@
   }
   .captcha-error.show{ display:block; }
   .modal-box .btn{ margin-top:16px; }
-
-  .core-wrap{
-    display:flex;
-    justify-content:center;
-    margin-top:-46px;
-    position:relative;
-    z-index:2;
-  }
-  .core{
-    width:92px; height:92px;
-    border-radius:50%;
-    background:radial-gradient(circle at 35% 30%, #1a2531, #0c1017 70%);
-    border:2px solid var(--cyan-dim);
-    display:flex; align-items:center; justify-content:center;
-    box-shadow:0 0 0 6px rgba(63,208,255,0.05), 0 0 28px rgba(63,208,255,0.25);
-    cursor:pointer;
-    transition:transform 0.08s ease;
-  }
-  .core:active{ transform:scale(0.94); }
-  .core svg{ width:36px; height:36px; }
-  .core-plus{
-    position:absolute;
-    font-family:'Chakra Petch',sans-serif;
-    font-weight:700;
-    font-size:13px;
-    color:var(--cyan);
-    pointer-events:none;
-    animation:floatUp 0.9s ease-out forwards;
-  }
-  @keyframes floatUp{
-    0%{ opacity:1; transform:translateY(0);}
-    100%{ opacity:0; transform:translateY(-46px);}
-  }
 
   .stat-row{
     display:flex;
@@ -352,6 +429,7 @@
     clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
   }
   .card-icon svg{ width:18px; height:18px; }
+  .card-icon.task-icon-wrap img{ width:100%; height:100%; object-fit:contain; }
   .card-body{ flex:1; min-width:0; }
   .card-title{ font-size:13.5px; font-weight:600; }
   .card-sub{ font-size:11.5px; color:var(--steel); margin-top:2px; }
@@ -439,6 +517,52 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
 
+  /* ---------- marketplace ---------- */
+  .market-tabs{ display:flex; gap:6px; margin:0 14px 12px; }
+  .market-tab{
+    flex:1; padding:9px 6px;
+    background:var(--panel-2); border:1px solid var(--line);
+    color:var(--steel);
+    font-family:'Chakra Petch',sans-serif; font-size:11px; letter-spacing:0.04em;
+    cursor:pointer;
+  }
+  .market-tab.active{ color:var(--cyan); border-color:var(--cyan-dim); background:rgba(63,208,255,0.08); }
+  .market-pane{ display:none; }
+  .market-pane.active{ display:block; }
+  .sell-form{ margin:0 14px 6px; }
+  .msel, .mnum{
+    width:100%;
+    padding:10px 11px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    outline:none;
+  }
+  .msel:focus, .mnum:focus{ border-color:var(--cyan-dim); }
+  .mnum{ flex:1; }
+  .listing-offers{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+  .listing-offer-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; font-size:12px; }
+  .listing-offer-row .who{ color:var(--steel); }
+  .listing-offer-row .amt{ font-family:'Chakra Petch',sans-serif; color:var(--good); }
+  .offer-actions{ display:flex; gap:6px; }
+  .offer-actions button{ padding:6px 10px; font-size:10.5px; }
+  .make-offer-row{ display:flex; gap:6px; margin-top:10px; }
+  .make-offer-row input{ flex:1; }
+  .make-offer-row button{ padding:9px 10px; font-size:10.5px; }
+  .empty-note{ margin:8px 14px 16px; font-size:12px; color:var(--steel); text-align:center; }
+  .lb-row{ display:flex; align-items:center; gap:12px; margin:0 14px 8px; padding:10px 14px; }
+  .lb-rank{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--steel); width:24px; flex-shrink:0; }
+  .lb-rank.gold{ color:#ffd54a; }
+  .lb-rank.silver{ color:#cfd8e3; }
+  .lb-rank.bronze{ color:#d98a4d; }
+  .lb-name{ flex:1; font-size:13px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lb-amt{ font-family:'Chakra Petch',sans-serif; color:var(--cyan); font-size:12.5px; flex-shrink:0; }
+  .prize-logo{ width:52px; height:52px; object-fit:contain; }
+  .prize-name{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--amber); }
+  .prize-sub{ font-size:11px; color:var(--steel); }
+
   /* ---------- bottom nav ---------- */
   .navbar{
     position:fixed;
@@ -501,56 +625,96 @@
 
   <!-- ============ MINE SCREEN ============ -->
   <div class="screen active" id="screen-mine">
-    <div class="rig">
-      <img src="assets/bg-mine.png" alt="Pro-X Network mining rig" id="rigImg">
-      <div class="rig-overlay"></div>
-      <div class="rig-content">
-        <div class="rig-title">MINING SPEED <span class="tap-badge" id="tapBoostBadge">2x · 10s</span></div>
-        <div class="rig-rate" id="rateDisplay">0.0000 <span>m.PXN / SEC</span></div>
-        <div class="rig-usd" id="rigUsd">≈ $0.0000 / day</div>
-      </div>
-    </div>
+    <div class="mine-backdrop"><img src="assets/bg-mine.png" alt="" id="rigImg"></div>
+    <div class="mine-content">
 
-    <div class="core-wrap">
-      <div class="core" id="coreBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.6"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><circle cx="12" cy="12" r="3.2" fill="#3fd0ff" stroke="none"/></svg>
+      <div class="mine-header">
+        <div class="mine-greet">
+          <div class="mine-avatar" id="mineAvatar">P</div>
+          <div>
+            <div class="mine-greet-sub">Welcome back</div>
+            <div class="mine-greet-name" id="mineGreetName">Player</div>
+          </div>
+        </div>
+        <button class="pill-btn" id="roadmapBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19l5-14 6 10 5-14"/></svg>
+          Roadmap
+        </button>
       </div>
-    </div>
 
-    <div class="stat-row">
-      <div class="panel stat-box">
-        <div class="eyebrow">MINER LEVEL</div>
-        <div class="stat-miner-icon">
-          <div class="miner-icon-wrap small" id="statMinerIcon"></div>
-          <div class="stat-val amber" id="statLevel">Lv. 1</div>
+      <div class="blob-wrap">
+        <div class="blob" id="coreBtn">
+          <div class="blob-inner">
+            <div class="blob-label" id="blobLabel">TAP TO BOOST</div>
+            <div class="blob-sub" id="blobSub">2x speed for 10s</div>
+          </div>
         </div>
       </div>
-      <div class="panel stat-box">
-        <div class="eyebrow">REFERRALS</div>
-        <div class="stat-val cyan" id="statRefs">0</div>
-      </div>
-    </div>
 
-    <div class="panel claim-bar">
-      <div class="claim-info">
-        <div class="eyebrow">READY TO CLAIM</div>
-        <div class="val" id="claimReady">0.0000 m.PXN</div>
-        <div class="claim-usd" id="claimReadyUsd">≈ $0.0000</div>
+      <div class="action-pills-row">
+        <div class="action-pill" id="watchAdBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.8"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M10 9l5 3-5 3z" fill="#3fd0ff" stroke="none"/></svg>
+          <div>
+            <div class="action-pill-title">Watch Ad</div>
+            <div class="action-pill-sub" id="adsTimer">0 / 5 today</div>
+          </div>
+        </div>
+        <div class="action-pill" id="goFriendsBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg>
+          <div>
+            <div class="action-pill-title">Invite Friends</div>
+            <div class="action-pill-sub">Earn +speed per friend</div>
+          </div>
+        </div>
       </div>
-      <button class="btn" id="claimBtn">CLAIM</button>
-    </div>
+      <div class="ads-caption" id="adsCardSub">+2x mining speed for 8 hours after your 5th ad today</div>
 
-    <div class="section-head">
-      <h2>DAILY BOOST</h2>
-      <span class="eyebrow" id="boostTimer">AVAILABLE</span>
-    </div>
-    <div class="panel card" id="boostCard">
-      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg></div>
-      <div class="card-body">
-        <div class="card-title">Watch a boost cycle</div>
-        <div class="card-sub" id="boostCardSub">+2x mining speed for 30 min</div>
+      <div class="panel earned-card">
+        <div class="eyebrow">YOU HAVE EARNED</div>
+        <div class="earned-big" id="earnedBig">0.0000 <span>m.PXN</span></div>
+        <div class="earned-underline"></div>
+        <div class="earned-claim-row">
+          <div class="earned-claim-info">
+            <div class="eyebrow">READY TO CLAIM</div>
+            <div class="val" id="claimReady">0.0000 m.PXN</div>
+            <div class="claim-usd" id="claimReadyUsd">≈ $0.0000</div>
+          </div>
+          <button class="btn" id="claimBtn">CLAIM</button>
+        </div>
       </div>
-      <div class="card-cta"><button class="btn secondary" id="boostBtn">ACTIVATE</button></div>
+
+      <div class="stats-grid-2">
+        <div class="panel stat2-box">
+          <div class="eyebrow">MINER LEVEL</div>
+          <div class="stat-miner-icon">
+            <div class="miner-icon-wrap small" id="statMinerIcon"></div>
+            <div class="stat-val amber" id="statLevel">Lv. 1</div>
+          </div>
+        </div>
+        <div class="panel stat2-box">
+          <div class="eyebrow">REFERRALS</div>
+          <div class="stat-val cyan" id="statRefs">0</div>
+        </div>
+        <div class="panel stat2-box">
+          <div class="eyebrow">MINING RATE</div>
+          <div class="stat-val cyan" id="rateDisplay" style="font-size:14px;">0.0000 <span style="color:var(--amber); font-size:11px;">m.PXN/sec</span></div>
+        </div>
+        <div class="panel stat2-box">
+          <div class="eyebrow">EST. VALUE</div>
+          <div class="stat-val good" id="rigUsd" style="font-size:14px;">≈ $0.0000/day</div>
+        </div>
+      </div>
+
+      <div class="panel daily-banner" id="boostCard">
+        <div class="daily-banner-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg></div>
+        <div class="daily-banner-body">
+          <div class="daily-banner-title">Daily Boost <span class="tap-badge" id="tapBoostBadge">2x · 10s</span></div>
+          <div class="daily-banner-sub" id="boostCardSub">+2x mining speed for 30 min</div>
+          <div class="daily-banner-sub" id="boostTimer" style="color:var(--good); margin-top:2px;">AVAILABLE</div>
+        </div>
+        <button class="btn secondary" id="boostBtn">ACTIVATE</button>
+      </div>
+
     </div>
   </div>
 
@@ -565,9 +729,47 @@
     </div>
 
     <div class="section-head">
-      <h2>UPGRADE PATH</h2>
+      <h2>MINER STORE</h2>
     </div>
     <div id="upgradeList"></div>
+  </div>
+
+  <!-- ============ MARKETPLACE SCREEN ============ -->
+  <div class="screen" id="screen-market">
+    <div class="section-head" style="margin-top:16px;">
+      <h2>MARKETPLACE</h2>
+    </div>
+    <div class="market-tabs">
+      <button class="market-tab active" data-mtab="browse">BROWSE</button>
+      <button class="market-tab" data-mtab="mine">MY LISTINGS</button>
+      <button class="market-tab" data-mtab="leaderboard">LEADERBOARD</button>
+    </div>
+
+    <div class="market-pane active" id="mpane-browse">
+      <div class="panel card sell-form" style="flex-direction:column; align-items:stretch; gap:10px;">
+        <div class="eyebrow">LIST ONE OF YOUR MINERS</div>
+        <select class="msel" id="sellMinerSelect"></select>
+        <div style="display:flex; gap:8px;">
+          <input class="mnum" type="number" min="1" step="1" id="sellPriceInput" placeholder="Asking price (m.PXN)">
+          <button class="btn" id="listMinerBtn">LIST</button>
+        </div>
+      </div>
+      <div class="section-head"><h2>ACTIVE LISTINGS</h2></div>
+      <div id="marketListings"></div>
+    </div>
+
+    <div class="market-pane" id="mpane-mine">
+      <div class="section-head" style="margin-top:16px;"><h2>YOUR LISTINGS</h2></div>
+      <div id="myListings"></div>
+      <div class="section-head"><h2>YOUR SENT OFFERS</h2></div>
+      <div id="myOffers"></div>
+    </div>
+
+    <div class="market-pane" id="mpane-leaderboard">
+      <div class="panel card" id="leaderboardPrizeBanner" style="margin-top:16px; flex-direction:column; align-items:center; text-align:center; gap:6px;"></div>
+      <div class="section-head"><h2 id="leaderboardMonthLabel">THIS MONTH</h2></div>
+      <div id="leaderboardList"></div>
+    </div>
   </div>
 
   <!-- ============ TASKS SCREEN ============ -->
@@ -674,6 +876,16 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="adOverlay">
+    <div class="panel modal-box">
+      <div class="eyebrow">ADVERTISEMENT</div>
+      <div class="modal-title">Ad Playing…</div>
+      <div class="modal-sub">Please wait for the ad to finish to earn credit.</div>
+      <div class="ad-progress-track"><div class="ad-progress-fill" id="adProgressFill"></div></div>
+      <div class="captcha-question" id="adCountdown" style="font-size:30px;">5</div>
+    </div>
+  </div>
+
   <div class="navbar">
     <button class="navbtn active" data-screen="mine">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/></svg>
@@ -681,7 +893,11 @@
     </button>
     <button class="navbtn" data-screen="upgrade">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>
-      UPGRADE
+      STORE
+    </button>
+    <button class="navbtn" data-screen="market">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9Z"/><path d="M9 13a3 3 0 0 0 6 0"/></svg>
+      MARKET
     </button>
     <button class="navbtn" data-screen="tasks">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
@@ -715,8 +931,8 @@
   }
   const adminConfig = loadAdminConfig();
 
-  const UPGRADES = [
-    {level:1, name:"Base Drill Unit",      cost:0,     speed:0.10},
+  const DEFAULT_UPGRADES = [
+    {level:1, name:"Miner Power",          cost:0,     speed:0.10, icon:"data:image/webp;base64,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"},
     {level:2, name:"Reinforced Bore Rig",  cost:200,   speed:0.22},
     {level:3, name:"Cryo-Cooled Extractor",cost:650,   speed:0.45},
     {level:4, name:"Plasma Cutter Array",  cost:1800,  speed:0.90},
@@ -725,23 +941,18 @@
     {level:7, name:"Fusion Mining Node",   cost:26000, speed:6.50},
   ];
 
-  // apply admin-configured price/speed/name/custom-icon overrides, if any
-  if(adminConfig && Array.isArray(adminConfig.miners)){
-    adminConfig.miners.forEach(override=>{
-      const tier = UPGRADES.find(u => u.level === override.level);
-      if(!tier) return;
-      if(typeof override.cost === "number") tier.cost = override.cost;
-      if(typeof override.speed === "number") tier.speed = override.speed;
-      if(typeof override.name === "string" && override.name.trim()) tier.name = override.name;
-      if(override.icon) tier.icon = override.icon; // data URL, replaces the built-in SVG glyph
-    });
-  }
+  // The admin panel fully owns this list (add/remove/edit miners, any count).
+  // Falls back to the built-in 7-tier set only if nothing's been configured yet.
+  const UPGRADES = (adminConfig && Array.isArray(adminConfig.miners) && adminConfig.miners.length)
+    ? adminConfig.miners.map(m => ({level:m.level, name:m.name, cost:m.cost, speed:m.speed, icon:m.icon||null}))
+    : JSON.parse(JSON.stringify(DEFAULT_UPGRADES));
 
   const TOKEN_SYMBOL = (adminConfig && adminConfig.token && adminConfig.token.symbol) || "m.PXN";
 
   // ---------- per-level miner icons ----------
-  // Each tier gets a distinct, increasingly complex glyph so the rig's
-  // appearance itself signals its level, independent of the text label.
+  // Built-in glyphs used only when a tier has no admin-uploaded icon. Levels
+  // beyond the built-in set (admin-added miners) fall back to a generic glyph
+  // that still scales in glow/complexity with level.
   const MINER_ICON_INNER = {
     1: `<rect x="24" y="12" width="16" height="24" rx="2" fill="none" stroke="#9aa5b1" stroke-width="2.2"/>
         <path d="M32 6 L40 18 H24 Z" fill="#9aa5b1"/>
@@ -778,7 +989,10 @@
         <line x1="49" y1="18.5" x2="40" y2="24" stroke="#3fd0ff" stroke-width="2"/>
         <line x1="15" y1="37.5" x2="24" y2="32" stroke="#3fd0ff" stroke-width="2"/>
         <line x1="49" y1="37.5" x2="40" y2="32" stroke="#3fd0ff" stroke-width="2"/>
-        <circle cx="32" cy="28" r="2.6" fill="#0a0d12"/>`
+        <circle cx="32" cy="28" r="2.6" fill="#0a0d12"/>`,
+    default: `<circle cx="32" cy="28" r="8" fill="#ff9b3d"/>
+        <circle cx="32" cy="28" r="20" fill="none" stroke="#3fd0ff" stroke-width="1.6" stroke-dasharray="4 3"/>
+        <path d="M32 6 L32 16 M32 40 L32 50 M10 28 L20 28 M44 28 L54 28" stroke="#3fd0ff" stroke-width="2" stroke-linecap="round"/>`
   };
 
   function minerIconSvg(level){
@@ -786,7 +1000,7 @@
     if(tier && tier.icon){
       return `<img src="${tier.icon}" alt="Miner Lv.${level}">`;
     }
-    const inner = MINER_ICON_INNER[level] || MINER_ICON_INNER[1];
+    const inner = MINER_ICON_INNER[level] || MINER_ICON_INNER.default;
     return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
   }
 
@@ -795,12 +1009,22 @@
   }
 
   const DEFAULT_TASKS = [
-    {id:"t1", title:"Join Pro-X Network Telegram channel", sub:"Verify membership to claim", reward:80, type:"telegram"},
-    {id:"t2", title:"Follow Pro-X Network on X", sub:"Verify follow to claim", reward:60, type:"twitter"},
-    {id:"t3", title:"Invite your first friend", sub:"Use your referral link", reward:100, type:"referral"},
-    {id:"t4", title:"Reach Miner Level 3", sub:"Upgrade your rig", reward:150, type:"level"},
-    {id:"t5", title:"Claim rewards 5 times", sub:"Come back and claim daily", reward:120, type:"claims"},
+    {id:"t1", title:"Join Pro-X Network Telegram channel", sub:"Verify membership to claim", reward:80, icon:null},
+    {id:"t2", title:"Follow Pro-X Network on X", sub:"Verify follow to claim", reward:60, icon:null},
+    {id:"t3", title:"Invite your first friend", sub:"Use your referral link", reward:100, icon:null},
+    {id:"t4", title:"Reach Miner Level 3", sub:"Upgrade your rig", reward:150, icon:null},
+    {id:"t5", title:"Claim rewards 5 times", sub:"Come back and claim daily", reward:120, icon:null},
   ];
+
+  // The admin panel fully owns the task list (add/remove/edit tasks + icons).
+  const TASKS = (adminConfig && adminConfig.rewards && Array.isArray(adminConfig.rewards.tasksList) && adminConfig.rewards.tasksList.length)
+    ? adminConfig.rewards.tasksList.map(t => ({id:t.id, title:t.title, sub:t.sub, reward:t.reward, icon:t.icon||null}))
+    : JSON.parse(JSON.stringify(DEFAULT_TASKS));
+
+  function taskIconMarkup(task, done){
+    if(task.icon) return `<img src="${task.icon}" alt="">`;
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="${done ? '#4ade80' : '#3fd0ff'}" stroke-width="1.8"><path d="M5 13l4 4L19 7"/></svg>`;
+  }
 
   // admin-configured reward economy, with built-in defaults
   const REWARDS_CONFIG = {
@@ -810,18 +1034,21 @@
     boostDurationMin: 30,
     tapBoostMultiplier: 2,
     tapBoostDurationSec: 10,
+    adsRequiredForBoost: 5,
+    adBoostMultiplier: 2,
+    adBoostDurationHours: 8,
+    adSimSeconds: 5, // length of the simulated ad — see note near watchAdBtn
   };
   if(adminConfig && adminConfig.rewards){
     Object.assign(REWARDS_CONFIG, adminConfig.rewards);
-    if(adminConfig.rewards.tasks){
-      DEFAULT_TASKS.forEach(t=>{
-        if(typeof adminConfig.rewards.tasks[t.id] === "number"){
-          t.reward = adminConfig.rewards.tasks[t.id];
-        }
-      });
-    }
+    delete REWARDS_CONFIG.tasksList; // task list is handled via TASKS, not merged into REWARDS_CONFIG
   }
 
+
+  function currentMonthKey(d){
+    d = d || new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
 
   function defaultState(){
     return {
@@ -833,6 +1060,13 @@
       tasksDone: {},
       claimCount: 0,
       boostUntil: 0,
+      adsWatchedToday: 0,
+      adsWindowStart: 0,
+      adBoostUntil: 0,
+      claimedTotal: 0,       // spendable balance, used for store purchases + marketplace
+      inventory: [],         // owned miner units — [{uid, level, name, icon, speed}]
+      monthlyPoints: 0,      // leaderboard activity score — resets every calendar month
+      monthlyPeriodKey: currentMonthKey(),
       refCode: "ref_" + Math.floor(100000 + Math.random()*899999)
     };
   }
@@ -849,7 +1083,8 @@
   }
   function computeStateSignature(s){
     const raw = [s.minedBalance, s.pendingClaim, s.level, s.referrals,
-                 s.claimCount, s.claimedTotal||0, s.boostUntil].map(v => (typeof v === "number" ? v.toFixed(4) : v)).join("|");
+                 s.claimCount, s.claimedTotal||0, s.boostUntil,
+                 s.adsWatchedToday||0, s.adBoostUntil||0].map(v => (typeof v === "number" ? v.toFixed(4) : v)).join("|");
     return simpleHash(raw + "::proxsalt");
   }
 
@@ -879,6 +1114,43 @@
 
   let state = loadState();
   let tapBoostUntil = 0; // session-only 2x boost triggered by tapping the core
+
+  // ---------- inventory bootstrap & helpers ----------
+  // Miners bought from the Store become individually-owned units (so they can
+  // later be listed on the Marketplace). Existing/new players start owning
+  // whatever their current tier is.
+  if(!Array.isArray(state.inventory)) state.inventory = [];
+  if(state.inventory.length === 0){
+    const starterTier = UPGRADES.find(u => u.level === state.level) || UPGRADES[0];
+    state.inventory.push({
+      uid: "inv_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+      level: starterTier.level, name: starterTier.name, icon: starterTier.icon || null, speed: starterTier.speed
+    });
+  }
+  if(state.claimedTotal === undefined) state.claimedTotal = 0;
+  if(state.monthlyPoints === undefined) state.monthlyPoints = 0;
+  if(!state.monthlyPeriodKey) state.monthlyPeriodKey = currentMonthKey();
+
+  function recomputeLevel(){
+    state.level = (state.inventory || []).reduce((m,u)=> Math.max(m, u.level||1), 1);
+  }
+  recomputeLevel();
+
+  function checkMonthlyReset(){
+    const key = currentMonthKey();
+    if(state.monthlyPeriodKey !== key){
+      state.monthlyPeriodKey = key;
+      state.monthlyPoints = 0;
+    }
+  }
+
+  // ---------- leaderboard activity points ----------
+  // 1 task completed = 1 pt · 1 ad watched = 1 pt · daily-boost activation = 0.5 pt
+  // marketplace trade completion = 50 pt each for BOTH the buyer and the seller
+  function addPoints(amount){
+    checkMonthlyReset();
+    state.monthlyPoints = (state.monthlyPoints || 0) + amount;
+  }
 
   // ---------- tap bot-detection (captcha) ----------
   let lastTapAt = 0;
@@ -932,17 +1204,19 @@
   });
 
   function currentSpeed(){
-    const tier = UPGRADES.find(u => u.level === state.level) || UPGRADES[0];
-    let speed = tier.speed + (state.referrals * REWARDS_CONFIG.referralSpeedBonus);
+    const base = (state.inventory || []).reduce((s,u)=> s + (u.speed||0), 0);
+    let speed = base + (state.referrals * REWARDS_CONFIG.referralSpeedBonus);
     if(state.boostUntil > Date.now()) speed *= REWARDS_CONFIG.boostMultiplier;
     if(tapBoostUntil > Date.now()) speed *= REWARDS_CONFIG.tapBoostMultiplier;
+    if(state.adBoostUntil > Date.now()) speed *= REWARDS_CONFIG.adBoostMultiplier;
     return speed;
   }
 
   // Conversion rate for the estimated USDT display only (m.PXN is an in-app point,
   // not a tradeable asset — this is a display estimate for players, not a live price feed).
-  // Defaults so Level 1, mining 24h with no taps, earns ~$0.50 worth of m.PXN — overridable from the admin panel.
-  let PXN_USD_RATE = 0.5 / (UPGRADES[0].speed * 86400); // ≈ 0.00005787 USDT per m.PXN
+  // Defaults so Level 1, mining 24h with no taps, earns ~$0.25 worth of m.PXN
+  // (reduced 50% from the original $0.50 baseline) — overridable from the admin panel.
+  let PXN_USD_RATE = 0.25 / (UPGRADES[0].speed * 86400); // ≈ 0.0000289 USDT per m.PXN
   if(adminConfig && adminConfig.token && typeof adminConfig.token.usdRate === "number"){
     PXN_USD_RATE = adminConfig.token.usdRate;
   }
@@ -969,6 +1243,7 @@
   const MAX_OFFLINE_ACCRUAL_SEC = 24*3600; // caps earnings if lastTick was rolled back to fake huge offline gains
 
   function accrue(){
+    checkMonthlyReset();
     const now = Date.now();
     const rawElapsedSec = (now - state.lastTick) / 1000;
     let elapsedSec = Math.max(0, rawElapsedSec);
@@ -991,26 +1266,37 @@
     document.getElementById("topBalance").textContent = fmt(state.minedBalance);
     document.getElementById("balanceLabelText").textContent = TOKEN_SYMBOL + " MINED";
     document.getElementById("topBalanceUsd").textContent = fmtUsd(state.minedBalance);
+    document.getElementById("earnedBig").innerHTML = fmt(state.minedBalance) + ' <span>' + TOKEN_SYMBOL + '</span>';
+    document.getElementById("mineGreetName").textContent = PLAYER_NAME;
+    document.getElementById("mineAvatar").textContent = PLAYER_NAME.replace("@","").charAt(0).toUpperCase() || "P";
     const speed = currentSpeed();
     document.getElementById("rateDisplay").innerHTML = fmt(speed) + ' <span>' + TOKEN_SYMBOL + ' / SEC</span>';
     document.getElementById("rigUsd").textContent = fmtUsd(speed * 86400) + " / day";
 
     const tapBadge = document.getElementById("tapBoostBadge");
     const core = document.getElementById("coreBtn");
+    const blobLabel = document.getElementById("blobLabel");
+    const blobSub = document.getElementById("blobSub");
     if(captchaActive){
       tapBadge.classList.remove("show");
       core.classList.remove("boosted");
       core.classList.add("locked");
+      blobLabel.textContent = "VERIFY REQUIRED";
+      blobSub.textContent = "Solve the check to keep mining";
     } else if(tapBoostUntil > Date.now()){
       const secsLeft = Math.ceil((tapBoostUntil - Date.now())/1000);
       tapBadge.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x · " + secsLeft + "s";
       tapBadge.classList.add("show");
       core.classList.add("boosted");
       core.classList.add("locked");
+      blobLabel.textContent = "BOOSTED " + REWARDS_CONFIG.tapBoostMultiplier + "x";
+      blobSub.textContent = secsLeft + "s remaining";
     } else {
       tapBadge.classList.remove("show");
       core.classList.remove("boosted");
       core.classList.remove("locked");
+      blobLabel.textContent = "TAP TO BOOST";
+      blobSub.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x speed for " + REWARDS_CONFIG.tapBoostDurationSec + "s";
     }
     document.getElementById("statLevel").textContent = "Lv. " + state.level;
     document.getElementById("statMinerIcon").innerHTML = minerIconWithBadge(state.level);
@@ -1035,7 +1321,25 @@
       boostBtn.disabled = false;
     }
 
+    // watch-ads boost
+    checkAdsWindowReset();
+    const adsTimerEl = document.getElementById("adsTimer");
+    const adsCardSub = document.getElementById("adsCardSub");
+    const watchAdBtn = document.getElementById("watchAdBtn");
+    adsCardSub.textContent = "+" + REWARDS_CONFIG.adBoostMultiplier + "x mining speed for " + REWARDS_CONFIG.adBoostDurationHours + " hours after your " +
+      REWARDS_CONFIG.adsRequiredForBoost + (REWARDS_CONFIG.adsRequiredForBoost === 1 ? "st" : "th") + " ad today";
+    if(state.adBoostUntil > Date.now()){
+      const hrsLeft = (state.adBoostUntil - Date.now()) / 3600000;
+      const label = hrsLeft >= 1 ? Math.ceil(hrsLeft) + "h left" : Math.ceil(hrsLeft*60) + "m left";
+      adsTimerEl.textContent = REWARDS_CONFIG.adBoostMultiplier + "x active · " + label;
+    } else {
+      adsTimerEl.textContent = state.adsWatchedToday + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today";
+    }
+    watchAdBtn.style.opacity = captchaActive ? "0.5" : "1";
+    watchAdBtn.style.pointerEvents = captchaActive ? "none" : "auto";
+
     renderUpgrade();
+    renderMarket();
     renderTasks();
     renderFriends();
     renderWallet();
@@ -1049,47 +1353,402 @@
   }
 
   function renderUpgrade(){
-    const tier = UPGRADES.find(u => u.level === state.level);
-    const next = UPGRADES.find(u => u.level === state.level + 1);
+    const tier = UPGRADES.find(u => u.level === state.level) || UPGRADES[0];
     document.getElementById("upLevelBig").textContent = "LEVEL " + state.level;
-    document.getElementById("upDesc").textContent = tier.name + " — " + tier.speed.toFixed(2) + " " + TOKEN_SYMBOL + "/sec base";
+    document.getElementById("upDesc").textContent = state.inventory.length + " miner" + (state.inventory.length===1?"":"s") + " owned — " + currentSpeed().toFixed(2) + " " + TOKEN_SYMBOL + "/sec total";
     document.getElementById("upBar").style.width = Math.min(100, (state.level / UPGRADES.length) * 100) + "%";
     document.getElementById("heroMinerIcon").innerHTML = minerIconWithBadge(state.level);
 
     const list = document.getElementById("upgradeList");
     list.innerHTML = "";
     UPGRADES.forEach(u => {
-      const owned = u.level <= state.level;
-      const isNext = next && u.level === next.level;
+      const ownedCount = state.inventory.filter(i => i.level === u.level).length;
+      const canAfford = state.claimedTotal >= u.cost;
       const div = document.createElement("div");
       div.className = "panel card";
       div.innerHTML = `
-        <div class="card-icon miner-icon-wrap small" style="opacity:${owned ? '1' : '0.55'}">${minerIconSvg(u.level)}</div>
+        <div class="card-icon miner-icon-wrap small">${minerIconSvg(u.level)}</div>
         <div class="card-body">
-          <div class="card-title">Lv.${u.level} · ${u.name}</div>
-          <div class="card-sub">${u.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec ${owned ? '· owned' : '· cost ' + fmt(u.cost) + ' ' + TOKEN_SYMBOL}</div>
+          <div class="card-title">Lv.${u.level} · ${u.name}${ownedCount ? ' <span style="color:var(--good); font-size:11px;">× ' + ownedCount + '</span>' : ''}</div>
+          <div class="card-sub">${u.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec each · cost ${fmt(u.cost)} ${TOKEN_SYMBOL}</div>
         </div>
         <div class="card-cta">
-          ${owned
-            ? `<button class="btn secondary" disabled>OWNED</button>`
-            : `<button class="btn" ${isNext ? '' : 'disabled'} data-upgrade="${u.level}">UPGRADE</button>`}
+          <button class="btn" ${canAfford ? '' : 'disabled'} data-buy="${u.level}">BUY</button>
         </div>`;
       list.appendChild(div);
     });
 
-    list.querySelectorAll("[data-upgrade]").forEach(btn=>{
+    list.querySelectorAll("[data-buy]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        const lvl = parseInt(btn.dataset.upgrade,10);
+        const lvl = parseInt(btn.dataset.buy,10);
         const u = UPGRADES.find(x=>x.level===lvl);
-        if(state.minedBalance < u.cost){ toast("Not enough m.PXN mined yet"); return; }
-        // spend from lifetime-mined pool is unrealistic; spend from pendingClaim+claimed pool instead
-        if(state.claimedTotal === undefined) state.claimedTotal = 0;
-        if(state.claimedTotal < u.cost){ toast("Claim more m.PXN first"); return; }
+        if(state.claimedTotal < u.cost){ toast("Claim more " + TOKEN_SYMBOL + " first"); return; }
         state.claimedTotal -= u.cost;
-        state.level = lvl;
+        state.inventory.push({
+          uid: "inv_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          level: u.level, name: u.name, icon: u.icon || null, speed: u.speed
+        });
+        recomputeLevel();
         saveState(); render();
-        toast("Rig upgraded to Level " + lvl);
+        toast("Bought " + u.name + " — added to your inventory");
       });
+    });
+  }
+
+  // ---------- marketplace (offchain, shared-local-storage demo — same scope note as admin sync) ----------
+  function ensureMarketplaceDefaults(cfg){
+    if(!cfg.marketplace) cfg.marketplace = { feePercent: 0, listings: [], settlements: [] };
+    if(!Array.isArray(cfg.marketplace.listings)) cfg.marketplace.listings = [];
+    if(!Array.isArray(cfg.marketplace.settlements)) cfg.marketplace.settlements = [];
+    if(!cfg.leaderboard) cfg.leaderboard = { prizes: [{ rank:1, name:"Monthly Champion", logo:null }] };
+    if(!Array.isArray(cfg.leaderboard.prizes)) cfg.leaderboard.prizes = [];
+    return cfg;
+  }
+  function getMarketConfig(){ return ensureMarketplaceDefaults(getFreshAdminConfig()); }
+  function saveMarketConfig(cfg){ try{ localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){} }
+  function genId(prefix){ return prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  function processSettlements(){
+    const cfg = getMarketConfig();
+    if(!cfg.marketplace.settlements.length) return;
+    const mine = [], rest = [];
+    cfg.marketplace.settlements.forEach(s => (s.playerId === PLAYER_ID ? mine : rest).push(s));
+    if(!mine.length) return;
+    mine.forEach(s=>{
+      if(s.kind === "credit"){
+        state.minedBalance += s.amount;
+        state.claimedTotal += s.amount;
+        addPoints(50);
+        toast("Marketplace: +" + fmt(s.amount) + " " + TOKEN_SYMBOL + (s.note ? " — " + s.note : ""));
+      } else if(s.kind === "refund"){
+        state.claimedTotal += s.amount;
+        toast("Marketplace refund: +" + fmt(s.amount) + " " + TOKEN_SYMBOL + (s.note ? " — " + s.note : ""));
+      } else if(s.kind === "itemAdd" && s.item){
+        state.inventory.push(s.item);
+        recomputeLevel();
+        addPoints(50);
+        toast("You won a marketplace miner: " + s.item.name);
+      } else if(s.kind === "itemReturn" && s.item){
+        state.inventory.push(s.item);
+        recomputeLevel();
+        toast("A listing was removed — " + s.item.name + " was returned to you");
+      }
+    });
+    cfg.marketplace.settlements = rest;
+    saveMarketConfig(cfg);
+    saveState();
+  }
+
+  function listMinerForSale(uid, price){
+    if(!(price > 0)){ toast("Enter a valid asking price"); return; }
+    if(state.inventory.length <= 1){ toast("You need at least one working miner — can't list your last unit"); return; }
+    const idx = state.inventory.findIndex(i=>i.uid===uid);
+    if(idx === -1){ toast("Miner not found"); return; }
+    const item = state.inventory.splice(idx,1)[0];
+    recomputeLevel();
+    const cfg = getMarketConfig();
+    cfg.marketplace.listings.push({ id:genId("lst"), sellerId:PLAYER_ID, sellerName:PLAYER_NAME, item, price, offers:[], createdAt:Date.now() });
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Listed " + item.name + " for " + fmt(price) + " " + TOKEN_SYMBOL);
+    renderMarket();
+  }
+
+  function buyListing(listingId){
+    const cfg = getMarketConfig();
+    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
+    if(idx === -1){ toast("Listing no longer available"); renderMarket(); return; }
+    const listing = cfg.marketplace.listings[idx];
+    if(listing.sellerId === PLAYER_ID){ toast("You can't buy your own listing"); return; }
+    if(state.claimedTotal < listing.price){ toast("Not enough claimed " + TOKEN_SYMBOL); return; }
+    state.claimedTotal -= listing.price;
+    state.inventory.push(listing.item);
+    recomputeLevel();
+    addPoints(50);
+    (listing.offers||[]).forEach(o=>{
+      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing sold to another buyer" });
+    });
+    cfg.marketplace.listings.splice(idx,1);
+    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:listing.sellerId, kind:"credit", amount:listing.price, ts:Date.now(), note:"Sold " + listing.item.name });
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Purchased " + listing.item.name + " for " + fmt(listing.price) + " " + TOKEN_SYMBOL);
+    renderMarket();
+  }
+
+  function makeOffer(listingId, amount){
+    if(!(amount > 0)){ toast("Enter a valid offer amount"); return; }
+    const cfg = getMarketConfig();
+    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
+    if(!listing){ toast("Listing no longer available"); renderMarket(); return; }
+    if(listing.sellerId === PLAYER_ID){ toast("You can't offer on your own listing"); return; }
+    if(state.claimedTotal < amount){ toast("Not enough claimed " + TOKEN_SYMBOL + " to offer that"); return; }
+    state.claimedTotal -= amount;
+    listing.offers = listing.offers || [];
+    listing.offers.push({ id:genId("off"), buyerId:PLAYER_ID, buyerName:PLAYER_NAME, amount, ts:Date.now() });
+    saveMarketConfig(cfg);
+    saveState();
+    toast("Offer of " + fmt(amount) + " " + TOKEN_SYMBOL + " sent — held in escrow");
+    renderMarket();
+  }
+
+  function cancelOffer(listingId, offerId){
+    const cfg = getMarketConfig();
+    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
+    if(!listing) return;
+    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId && o.buyerId===PLAYER_ID);
+    if(oi === -1) return;
+    const off = listing.offers.splice(oi,1)[0];
+    state.claimedTotal += off.amount;
+    saveMarketConfig(cfg);
+    saveState();
+    toast("Offer withdrawn — " + fmt(off.amount) + " " + TOKEN_SYMBOL + " refunded");
+    renderMarket();
+  }
+
+  function acceptOffer(listingId, offerId){
+    const cfg = getMarketConfig();
+    const lidx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
+    if(lidx === -1) return;
+    const listing = cfg.marketplace.listings[lidx];
+    if(listing.sellerId !== PLAYER_ID) return;
+    const accepted = (listing.offers||[]).find(o=>o.id===offerId);
+    if(!accepted) return;
+    state.minedBalance += accepted.amount;
+    state.claimedTotal += accepted.amount;
+    addPoints(50);
+    (listing.offers||[]).forEach(o=>{
+      if(o.id !== offerId){
+        cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Seller accepted a different offer" });
+      }
+    });
+    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:accepted.buyerId, kind:"itemAdd", item:listing.item, ts:Date.now(), note:"Offer accepted on " + listing.item.name });
+    cfg.marketplace.listings.splice(lidx,1);
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Offer accepted — " + fmt(accepted.amount) + " " + TOKEN_SYMBOL + " added to your balance");
+    renderMarket();
+  }
+
+  function declineOffer(listingId, offerId){
+    const cfg = getMarketConfig();
+    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
+    if(!listing || listing.sellerId !== PLAYER_ID) return;
+    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId);
+    if(oi === -1) return;
+    const off = listing.offers.splice(oi,1)[0];
+    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:off.buyerId, kind:"refund", amount:off.amount, ts:Date.now(), note:"Seller declined your offer" });
+    saveMarketConfig(cfg);
+    toast("Offer declined — buyer refunded");
+    renderMarket();
+  }
+
+  function cancelListing(listingId){
+    const cfg = getMarketConfig();
+    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
+    if(idx === -1) return;
+    const listing = cfg.marketplace.listings[idx];
+    if(listing.sellerId !== PLAYER_ID) return;
+    (listing.offers||[]).forEach(o=>{
+      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing cancelled by seller" });
+    });
+    cfg.marketplace.listings.splice(idx,1);
+    state.inventory.push(listing.item);
+    recomputeLevel();
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Listing cancelled — miner returned to your inventory");
+    renderMarket();
+  }
+
+  function marketItemThumb(item){
+    if(item.icon) return `<img src="${item.icon}" alt="">`;
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER[item.level] || MINER_ICON_INNER.default}</svg>`;
+  }
+
+  function renderMarket(){
+    const cfg = getMarketConfig();
+
+    // sell form
+    const sel = document.getElementById("sellMinerSelect");
+    sel.innerHTML = "";
+    state.inventory.forEach(item=>{
+      const opt = document.createElement("option");
+      opt.value = item.uid;
+      opt.textContent = "Lv." + item.level + " · " + item.name + " (" + item.speed.toFixed(2) + " " + TOKEN_SYMBOL + "/sec)";
+      sel.appendChild(opt);
+    });
+
+    // browse: other players' listings
+    const listingsWrap = document.getElementById("marketListings");
+    listingsWrap.innerHTML = "";
+    const others = cfg.marketplace.listings.filter(l=>l.sellerId !== PLAYER_ID);
+    if(!others.length){
+      listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+    }
+    others.forEach(l=>{
+      const myOffer = (l.offers||[]).find(o=>o.buyerId===PLAYER_ID);
+      const div = document.createElement("div");
+      div.className = "panel card";
+      div.style.flexDirection = "column";
+      div.style.alignItems = "stretch";
+      div.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="card-icon miner-icon-wrap small">${marketItemThumb(l.item)}</div>
+          <div class="card-body">
+            <div class="card-title">Lv.${l.item.level} · ${l.item.name}</div>
+            <div class="card-sub">${l.item.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${l.sellerName}</div>
+          </div>
+          <div class="card-cta" style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+            <div class="stat-val cyan" style="font-size:14px;">${fmt(l.price,0)} ${TOKEN_SYMBOL}</div>
+            <button class="btn" data-buy-listing="${l.id}">BUY NOW</button>
+          </div>
+        </div>
+        ${myOffer
+          ? `<div class="make-offer-row"><span class="empty-note" style="margin:0; flex:1; text-align:left;">Your offer: ${fmt(myOffer.amount,0)} ${TOKEN_SYMBOL} (pending)</span><button class="btn secondary" data-withdraw-offer="${l.id}|${myOffer.id}">WITHDRAW</button></div>`
+          : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (${TOKEN_SYMBOL})" id="offer-${l.id}"><button class="btn secondary" data-make-offer="${l.id}">OFFER</button></div>`}
+      `;
+      listingsWrap.appendChild(div);
+    });
+    listingsWrap.querySelectorAll("[data-buy-listing]").forEach(btn=>{
+      btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing));
+    });
+    listingsWrap.querySelectorAll("[data-make-offer]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const lid = btn.dataset.makeOffer;
+        const val = parseFloat(document.getElementById("offer-" + lid).value);
+        makeOffer(lid, val);
+      });
+    });
+    listingsWrap.querySelectorAll("[data-withdraw-offer]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const [lid, oid] = btn.dataset.withdrawOffer.split("|");
+        cancelOffer(lid, oid);
+      });
+    });
+
+    // my listings
+    const mine = cfg.marketplace.listings.filter(l=>l.sellerId === PLAYER_ID);
+    const myListingsWrap = document.getElementById("myListings");
+    myListingsWrap.innerHTML = "";
+    if(!mine.length){
+      myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
+    }
+    mine.forEach(l=>{
+      const div = document.createElement("div");
+      div.className = "panel card";
+      div.style.flexDirection = "column";
+      div.style.alignItems = "stretch";
+      const offersHtml = (l.offers||[]).length
+        ? `<div class="listing-offers">` + l.offers.map(o=>`
+            <div class="listing-offer-row">
+              <span class="who">${o.buyerName}</span>
+              <span class="amt">${fmt(o.amount,0)} ${TOKEN_SYMBOL}</span>
+              <div class="offer-actions">
+                <button class="btn good" data-accept="${l.id}|${o.id}">ACCEPT</button>
+                <button class="btn danger" data-decline="${l.id}|${o.id}">DECLINE</button>
+              </div>
+            </div>`).join("") + `</div>`
+        : "";
+      div.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="card-icon miner-icon-wrap small">${marketItemThumb(l.item)}</div>
+          <div class="card-body">
+            <div class="card-title">Lv.${l.item.level} · ${l.item.name}</div>
+            <div class="card-sub">Asking ${fmt(l.price,0)} ${TOKEN_SYMBOL} · ${(l.offers||[]).length} offer(s)</div>
+          </div>
+          <div class="card-cta"><button class="btn secondary" data-cancel-listing="${l.id}">CANCEL</button></div>
+        </div>
+        ${offersHtml}
+      `;
+      myListingsWrap.appendChild(div);
+    });
+    myListingsWrap.querySelectorAll("[data-cancel-listing]").forEach(btn=>{
+      btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing));
+    });
+    myListingsWrap.querySelectorAll("[data-accept]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.accept.split("|"); acceptOffer(lid,oid); });
+    });
+    myListingsWrap.querySelectorAll("[data-decline]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid); });
+    });
+
+    // my sent offers (across everyone's listings)
+    const myOffersWrap = document.getElementById("myOffers");
+    myOffersWrap.innerHTML = "";
+    const sentOffers = [];
+    cfg.marketplace.listings.forEach(l=>{
+      (l.offers||[]).forEach(o=>{ if(o.buyerId === PLAYER_ID) sentOffers.push({ listing:l, offer:o }); });
+    });
+    if(!sentOffers.length){
+      myOffersWrap.innerHTML = `<div class="empty-note">You haven't made any offers.</div>`;
+    }
+    sentOffers.forEach(({listing,offer})=>{
+      const div = document.createElement("div");
+      div.className = "panel card";
+      div.innerHTML = `
+        <div class="card-icon miner-icon-wrap small">${marketItemThumb(listing.item)}</div>
+        <div class="card-body">
+          <div class="card-title">Lv.${listing.item.level} · ${listing.item.name}</div>
+          <div class="card-sub">Your offer: ${fmt(offer.amount,0)} ${TOKEN_SYMBOL} · seller ${listing.sellerName}</div>
+        </div>
+        <div class="card-cta"><button class="btn secondary" data-withdraw="${listing.id}|${offer.id}">WITHDRAW</button></div>
+      `;
+      myOffersWrap.appendChild(div);
+    });
+    myOffersWrap.querySelectorAll("[data-withdraw]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid); });
+    });
+
+    // leaderboard
+    renderLeaderboard(cfg);
+  }
+
+  function renderLeaderboard(cfg){
+    cfg = cfg || getMarketConfig();
+    const monthKey = currentMonthKey();
+    const now = new Date();
+    document.getElementById("leaderboardMonthLabel").textContent = now.toLocaleString("en-US",{month:"long"}).toUpperCase() + " LEADERBOARD";
+
+    const prizes = cfg.leaderboard.prizes || [];
+    const firstPrize = prizes.find(p=>p.rank===1) || prizes[0];
+    const banner = document.getElementById("leaderboardPrizeBanner");
+    if(firstPrize){
+      banner.innerHTML = `
+        ${firstPrize.logo ? `<img class="prize-logo" src="${firstPrize.logo}" alt="">` : ''}
+        <div class="eyebrow">TOP MINER OF THE MONTH WINS</div>
+        <div class="prize-name">${firstPrize.name}</div>
+        <div class="prize-sub">Winner announced at the start of next month</div>
+      `;
+    } else {
+      banner.innerHTML = `<div class="empty-note">No prize configured yet.</div>`;
+    }
+
+    const players = (cfg.players || []).filter(p => p.monthlyPeriodKey === monthKey && (p.monthlyPoints||0) > 0);
+    // include self, in case our own record hasn't synced into cfg.players yet this tick
+    const selfEntry = { id: PLAYER_ID, username: PLAYER_NAME, monthlyPoints: state.monthlyPoints, monthlyPeriodKey: monthKey };
+    const byId = {};
+    players.forEach(p=> byId[p.id] = p);
+    byId[PLAYER_ID] = selfEntry;
+    const ranked = Object.values(byId).sort((a,b)=> (b.monthlyPoints||0) - (a.monthlyPoints||0)).slice(0,20);
+
+    const list = document.getElementById("leaderboardList");
+    list.innerHTML = "";
+    if(!ranked.length){
+      list.innerHTML = `<div class="empty-note">No activity recorded yet this month.</div>`;
+      return;
+    }
+    ranked.forEach((p,i)=>{
+      const rankNum = i+1;
+      const rankClass = rankNum===1 ? "gold" : rankNum===2 ? "silver" : rankNum===3 ? "bronze" : "";
+      const div = document.createElement("div");
+      div.className = "panel lb-row";
+      div.innerHTML = `
+        <div class="lb-rank ${rankClass}">#${rankNum}</div>
+        <div class="lb-name">${p.username}${p.id===PLAYER_ID ? ' (you)' : ''}</div>
+        <div class="lb-amt">${fmt(p.monthlyPoints||0,1)} PTS</div>
+      `;
+      list.appendChild(div);
     });
   }
 
@@ -1097,13 +1756,13 @@
     const list = document.getElementById("taskList");
     list.innerHTML = "";
     let done = 0;
-    DEFAULT_TASKS.forEach(t=>{
+    TASKS.forEach(t=>{
       const isDone = !!state.tasksDone[t.id];
       if(isDone) done++;
       const div = document.createElement("div");
       div.className = "panel card" + (isDone ? " task-done" : "");
       div.innerHTML = `
-        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="${isDone ? '#4ade80' : '#3fd0ff'}" stroke-width="1.8"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="card-icon task-icon-wrap">${taskIconMarkup(t, isDone)}</div>
         <div class="card-body">
           <div class="card-title">${t.title}</div>
           <div class="card-sub">${isDone ? 'Reward claimed' : t.sub + ' · +' + t.reward + ' ' + TOKEN_SYMBOL}</div>
@@ -1115,16 +1774,17 @@
         </div>`;
       list.appendChild(div);
     });
-    document.getElementById("tasksProgress").textContent = done + " / " + DEFAULT_TASKS.length + " DONE";
+    document.getElementById("tasksProgress").textContent = done + " / " + TASKS.length + " DONE";
 
     list.querySelectorAll("[data-task]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const id = btn.dataset.task;
-        const t = DEFAULT_TASKS.find(x=>x.id===id);
+        const t = TASKS.find(x=>x.id===id);
         state.tasksDone[id] = true;
         state.minedBalance += t.reward;
         if(state.claimedTotal === undefined) state.claimedTotal = 0;
         state.claimedTotal += t.reward;
+        addPoints(1);
         saveState(); render();
         toast("+" + t.reward + " " + TOKEN_SYMBOL + " added to your balance");
       });
@@ -1185,8 +1845,66 @@
   document.getElementById("boostBtn").addEventListener("click", ()=>{
     if(state.boostUntil > Date.now()) return;
     state.boostUntil = Date.now() + REWARDS_CONFIG.boostDurationMin*60*1000;
+    addPoints(0.5);
     saveState(); render();
     toast("Boost active — " + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " minutes");
+  });
+
+  // ---------- watch ads for a big boost ----------
+  // NOTE: no real ad network is wired up here — there's no ad SDK available in
+  // this build environment. This plays a short simulated "ad" (a countdown) so
+  // the full flow and reward logic work end to end. Swapping in a real
+  // rewarded-ad network (e.g. Adsgram, Monetag — common for Telegram Mini Apps)
+  // just means replacing the body of playSimulatedAd() with that SDK's
+  // "show rewarded ad" call and firing onAdComplete() from its success callback.
+  const AD_WINDOW_MS = 24*3600*1000;
+
+  function checkAdsWindowReset(){
+    const now = Date.now();
+    if(!state.adsWindowStart || (now - state.adsWindowStart) > AD_WINDOW_MS){
+      state.adsWindowStart = now;
+      state.adsWatchedToday = 0;
+    }
+  }
+
+  function playSimulatedAd(onAdComplete){
+    const overlay = document.getElementById("adOverlay");
+    const fill = document.getElementById("adProgressFill");
+    const countdownEl = document.getElementById("adCountdown");
+    const totalSec = REWARDS_CONFIG.adSimSeconds;
+    let remaining = totalSec;
+    overlay.classList.add("show");
+    countdownEl.textContent = remaining;
+    fill.style.width = "0%";
+    const timer = setInterval(()=>{
+      remaining -= 1;
+      const pct = Math.max(0, ((totalSec - remaining) / totalSec) * 100);
+      fill.style.width = pct + "%";
+      countdownEl.textContent = Math.max(0, remaining);
+      if(remaining <= 0){
+        clearInterval(timer);
+        overlay.classList.remove("show");
+        onAdComplete();
+      }
+    }, 1000);
+  }
+
+  document.getElementById("watchAdBtn").addEventListener("click", ()=>{
+    if(captchaActive) return;
+    checkAdsWindowReset();
+    playSimulatedAd(()=>{
+      state.adsWatchedToday += 1;
+      addPoints(1);
+      if(state.adsWatchedToday >= REWARDS_CONFIG.adsRequiredForBoost){
+        state.adsWatchedToday = 0;
+        state.adsWindowStart = Date.now();
+        state.adBoostUntil = Date.now() + REWARDS_CONFIG.adBoostDurationHours*3600*1000;
+        toast(REWARDS_CONFIG.adBoostMultiplier + "x mining speed activated for " + REWARDS_CONFIG.adBoostDurationHours + " hours!");
+      } else {
+        toast("Ad credited — " + state.adsWatchedToday + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today");
+      }
+      saveState(); render();
+    });
   });
 
   document.getElementById("copyBtn").addEventListener("click", ()=>{
@@ -1261,6 +1979,9 @@
     p.referrals = state.referrals;
     p.lastSeen = now;
     p.deviceFp = DEVICE_FP;
+    checkMonthlyReset();
+    p.monthlyPoints = Math.round(state.monthlyPoints * 100) / 100;
+    p.monthlyPeriodKey = state.monthlyPeriodKey;
 
     // first account seen on a device "claims" it; a different account showing up
     // later on the same device fingerprint gets flagged (and optionally blocked)
@@ -1317,14 +2038,37 @@
   }
 
   // nav
+  function switchToScreen(name){
+    document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+    const navBtn = document.querySelector('.navbtn[data-screen="' + name + '"]');
+    if(navBtn) navBtn.classList.add("active");
+    document.getElementById("screen-" + name).classList.add("active");
+  }
+
   document.querySelectorAll(".navbtn").forEach(btn=>{
+    btn.addEventListener("click", ()=> switchToScreen(btn.dataset.screen));
+  });
+
+  document.getElementById("goFriendsBtn").addEventListener("click", ()=> switchToScreen("friends"));
+
+  // marketplace tabs
+  document.querySelectorAll(".market-tab").forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
-      document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+      document.querySelectorAll(".market-tab").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".market-pane").forEach(p=>p.classList.remove("active"));
       btn.classList.add("active");
-      document.getElementById("screen-" + btn.dataset.screen).classList.add("active");
+      document.getElementById("mpane-" + btn.dataset.mtab).classList.add("active");
     });
   });
+  document.getElementById("listMinerBtn").addEventListener("click", ()=>{
+    const uid = document.getElementById("sellMinerSelect").value;
+    const price = parseFloat(document.getElementById("sellPriceInput").value);
+    if(!uid){ toast("No miner selected"); return; }
+    listMinerForSale(uid, price);
+    document.getElementById("sellPriceInput").value = "";
+  });
+  document.getElementById("roadmapBtn").addEventListener("click", ()=> toast("Roadmap coming soon!"));
 
   // level-3 task auto check
   const origRender = render;
@@ -1338,14 +2082,14 @@
     const access = checkAccessStatus();
     if(access.blocked){ showBlockOverlay(access.reason); return; }
     hideBlockOverlay();
-    accrue(); saveState(); render(); syncPlayerRecord();
+    accrue(); saveState(); processSettlements(); render(); syncPlayerRecord();
   }, 1000);
 
   const initialAccess = checkAccessStatus();
   if(initialAccess.blocked){
     showBlockOverlay(initialAccess.reason);
   } else {
-    accrue(); render(); syncPlayerRecord();
+    accrue(); processSettlements(); render(); syncPlayerRecord();
   }
 })();
 </script>
