@@ -1,0 +1,29 @@
+# Supabase project configuration for Pro-X Network.
+#
+# This file is read by the Supabase CLI (`supabase` commands run from
+# inside backend/supabase/). It does not contain any secret values —
+# actual keys and tokens live in `supabase secrets` (production) or
+# `.env` (local dev only, gitignored — see .env.example).
+
+project_id = "pro-x-network"
+
+[functions.health]
+# No user auth required to hit the health check — it reports
+# deployment/config status only, never player data.
+verify_jwt = false
+
+[functions.auth-telegram]
+# This IS the login endpoint — by definition, the caller does not
+# have a Pro-X session JWT yet when they call it, so Supabase's
+# platform-level JWT check must be off here. It still requires the
+# project's anon key (sent by every call through ProXBackend) to pass
+# through the API gateway, same as any other function; real identity
+# verification happens inside the function against
+# TELEGRAM_BOT_TOKEN, not via this flag.
+verify_jwt = false
+
+# Future functions (added in later migration steps) will each get
+# their own [functions.<name>] block here. Anything that reads/writes
+# player-owned data should have verify_jwt = true, so Supabase
+# rejects requests without a valid session JWT (the one issued by
+# auth-telegram) before the function code even runs.
