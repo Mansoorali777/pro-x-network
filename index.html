@@ -122,6 +122,33 @@
     font-family:'Chakra Petch',sans-serif;
   }
 
+  /* ---------- top scrolling announcement ticker ---------- */
+  .ticker{
+    overflow:hidden;
+    white-space:nowrap;
+    background:var(--panel-2);
+    border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+    padding:6px 0;
+  }
+  .ticker-track{
+    display:inline-flex;
+    width:max-content;
+    animation:ticker-scroll 16s linear infinite;
+  }
+  .ticker-track span{
+    display:inline-block;
+    padding-right:48px;
+    font-family:'Chakra Petch',sans-serif;
+    font-size:11.5px;
+    letter-spacing:0.03em;
+    color:var(--amber);
+  }
+  @keyframes ticker-scroll{
+    from{ transform:translateX(0); }
+    to{ transform:translateX(-50%); }
+  }
+
   /* ---------- screens ---------- */
   .screen{ display:none; flex:1; flex-direction:column; padding-bottom:86px; }
   .screen.active{ display:flex; }
@@ -135,13 +162,13 @@
   }
   .mine-backdrop img{
     width:100%; height:100%; object-fit:cover; object-position:center 20%;
-    opacity:0.16;
-    filter:blur(1px) saturate(1.1);
+    opacity:0.6;
+    filter:blur(2.5px) saturate(1.1);
   }
   .mine-backdrop::after{
     content:"";
     position:absolute; inset:0;
-    background:linear-gradient(180deg, rgba(9,12,17,0.4) 0%, var(--void) 88%);
+    background:linear-gradient(180deg, rgba(9,12,17,0.15) 0%, rgba(9,12,17,0.35) 55%, var(--void) 92%);
   }
   .mine-content{ position:relative; z-index:1; display:flex; flex-direction:column; }
 
@@ -400,6 +427,8 @@
   .btn:disabled{ background:var(--steel-soft); color:#93a0ac; cursor:default; }
   .btn.secondary{ background:transparent; border:1px solid var(--cyan-dim); color:var(--cyan); clip-path:none; }
   .btn.full{ width:100%; }
+  .btn.good{ background:var(--good); color:#062a13; }
+  .btn.danger{ background:var(--danger); color:#2a0606; }
 
   .section-head{
     display:flex; align-items:center; justify-content:space-between;
@@ -434,6 +463,80 @@
   .card-title{ font-size:13.5px; font-weight:600; }
   .card-sub{ font-size:11.5px; color:var(--steel); margin-top:2px; }
   .card-cta{ flex-shrink:0; }
+
+  /* STORE — large grid layout */
+  .store-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:0 14px 8px;
+  }
+  .store-card{
+    padding:12px 10px 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:2px;
+  }
+  .store-card-icon{
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:120px;
+    margin-bottom:8px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    position:relative;
+  }
+  .store-card-icon svg{ width:62%; height:62%; }
+  .store-card-icon img{ width:80%; height:80%; object-fit:contain; }
+  .store-card-icon .level-badge{ font-size:9px; padding:2px 4px; }
+  .store-card-name{ font-size:12.5px; font-weight:600; line-height:1.25; min-height:30px; display:flex; align-items:center; justify-content:center; }
+  .store-card-owned{ color:var(--good); font-size:10.5px; }
+  .store-card-cost{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; color:var(--cyan); margin-top:4px; }
+  .store-card-boost{ font-size:10.5px; color:var(--steel); margin-top:1px; }
+  .store-card .btn{ width:100%; margin-top:8px; font-size:11.5px; padding:9px 6px; }
+
+  /* MY INVENTORY */
+  .inventory-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:0 14px 14px;
+  }
+  .inv-card{
+    padding:12px 10px 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:2px;
+  }
+  .inv-card-icon{
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:100px;
+    margin-bottom:6px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    position:relative;
+  }
+  .inv-card-icon svg{ width:58%; height:58%; }
+  .inv-card-icon img{ width:76%; height:76%; object-fit:contain; }
+  .inv-card-name{ font-size:12px; font-weight:600; line-height:1.25; }
+  .inv-card-boost{ font-size:10.5px; color:var(--steel); margin-top:1px; }
+  .inv-card .btn{ width:100%; margin-top:8px; font-size:11px; padding:8px 6px; }
+  .inv-card .btn.applied{ background:transparent; border:1px solid var(--good); color:var(--good); pointer-events:none; }
+  .inv-card-actions{ display:flex; gap:6px; width:100%; margin-top:8px; }
+  .inv-card-actions .btn{ width:auto; flex:1; margin-top:0; }
+  .inv-empty{ margin:0 14px 14px; padding:16px; text-align:center; color:var(--steel); font-size:12.5px; }
+  .inv-slots-banner{ margin:0 14px 12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .inv-slots-banner .slots-count{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:16px; color:var(--cyan); }
+  .inv-slots-banner .slots-hint{ font-size:10.5px; color:var(--steel); margin-top:2px; }
 
   /* UPGRADE screen */
   .miner-hero{
@@ -518,17 +621,17 @@
   }
 
   /* ---------- marketplace ---------- */
-  .market-tabs{ display:flex; gap:6px; margin:0 14px 12px; }
-  .market-tab{
+  .market-tabs, .store-tabs{ display:flex; gap:6px; margin:0 14px 12px; }
+  .market-tab, .store-tab{
     flex:1; padding:9px 6px;
     background:var(--panel-2); border:1px solid var(--line);
     color:var(--steel);
     font-family:'Chakra Petch',sans-serif; font-size:11px; letter-spacing:0.04em;
     cursor:pointer;
   }
-  .market-tab.active{ color:var(--cyan); border-color:var(--cyan-dim); background:rgba(63,208,255,0.08); }
-  .market-pane{ display:none; }
-  .market-pane.active{ display:block; }
+  .market-tab.active, .store-tab.active{ color:var(--cyan); border-color:var(--cyan-dim); background:rgba(63,208,255,0.08); }
+  .market-pane, .store-pane{ display:none; }
+  .market-pane.active, .store-pane.active{ display:block; }
   .sell-form{ margin:0 14px 6px; }
   .msel, .mnum{
     width:100%;
@@ -552,6 +655,52 @@
   .make-offer-row input{ flex:1; }
   .make-offer-row button{ padding:9px 10px; font-size:10.5px; }
   .empty-note{ margin:8px 14px 16px; font-size:12px; color:var(--steel); text-align:center; }
+
+  /* BROWSE / MY LISTINGS — large grid, matching the Store */
+  .market-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:0 14px 14px;
+  }
+  .market-card{
+    padding:12px 10px 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:2px;
+    border-color:rgba(245,232,201,0.28);
+    box-shadow:0 0 1px rgba(245,232,201,0.5) inset, 0 0 18px rgba(245,232,201,0.16), 0 0 34px rgba(245,232,201,0.07);
+    transition:box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+  .market-card:active{
+    border-color:rgba(245,232,201,0.5);
+    box-shadow:0 0 1px rgba(245,232,201,0.7) inset, 0 0 26px rgba(245,232,201,0.28), 0 0 46px rgba(245,232,201,0.12);
+  }
+  .market-card-icon{
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:100px;
+    margin-bottom:6px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+  }
+  .market-card-icon svg{ width:58%; height:58%; }
+  .market-card-icon img{ width:76%; height:76%; object-fit:contain; }
+  .market-card-name{ font-size:12px; font-weight:600; line-height:1.25; }
+  .market-card-sub{ font-size:10.5px; color:var(--steel); margin-top:1px; }
+  .market-card-price{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; color:var(--cyan); margin-top:4px; }
+  .market-card .btn{ width:100%; margin-top:8px; font-size:11px; padding:8px 6px; }
+  .market-card .make-offer-row{ flex-direction:column; width:100%; margin-top:6px; gap:6px; }
+  .market-card .make-offer-row input{ width:100%; }
+  .market-card .make-offer-row button{ width:100%; }
+  .market-card .listing-offers{ width:100%; text-align:left; }
+  .market-card .listing-offer-row{ flex-wrap:wrap; }
+  .market-card .offer-actions{ width:100%; }
+  .market-card .offer-actions button{ flex:1; }
   .lb-row{ display:flex; align-items:center; gap:12px; margin:0 14px 8px; padding:10px 14px; }
   .lb-rank{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--steel); width:24px; flex-shrink:0; }
   .lb-rank.gold{ color:#ffd54a; }
@@ -620,6 +769,13 @@
       <div class="balance-num" id="topBalance">0.0000</div>
       <div class="balance-label" id="balanceLabelText">m.PXN MINED</div>
       <div class="balance-usd" id="topBalanceUsd">≈ $0.0000</div>
+    </div>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker-track">
+      <span>⚡ You will receive a 0.05% boost every time you level up.</span>
+      <span>⚡ You will receive a 0.05% boost every time you level up.</span>
     </div>
   </div>
 
@@ -692,8 +848,11 @@
           </div>
         </div>
         <div class="panel stat2-box">
-          <div class="eyebrow">REFERRALS</div>
-          <div class="stat-val cyan" id="statRefs">0</div>
+          <div class="eyebrow">LEVEL UP</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <div class="stat-val cyan" id="mineLevelCost" style="font-size:14px;">100 PXN</div>
+            <button class="btn" id="mineLevelUpBtn" style="padding:6px 10px; font-size:11px;">UP</button>
+          </div>
         </div>
         <div class="panel stat2-box">
           <div class="eyebrow">MINING RATE</div>
@@ -720,18 +879,22 @@
 
   <!-- ============ UPGRADE SCREEN ============ -->
   <div class="screen" id="screen-upgrade">
-    <div class="panel miner-hero">
-      <div class="eyebrow">CURRENT RIG</div>
-      <div class="miner-icon-wrap" id="heroMinerIcon"></div>
-      <div class="level" id="upLevelBig">LEVEL 1</div>
-      <div class="desc" id="upDesc">Base drill unit — 0.10 m.PXN/sec</div>
-      <div class="bar-track"><div class="bar-fill" id="upBar" style="width:20%"></div></div>
+    <div class="section-head">
+      <h2>MINERS</h2>
+    </div>
+    <div class="store-tabs">
+      <button class="store-tab active" data-utab="store">MINER STORE</button>
+      <button class="store-tab" data-utab="inventory">MY INVENTORY</button>
     </div>
 
-    <div class="section-head">
-      <h2>MINER STORE</h2>
+    <div class="store-pane active" id="upane-store">
+      <div class="store-grid" id="upgradeList"></div>
     </div>
-    <div id="upgradeList"></div>
+
+    <div class="store-pane" id="upane-inventory">
+      <div class="panel inv-slots-banner" id="invSlotsBanner"></div>
+      <div class="inventory-grid" id="inventoryList"></div>
+    </div>
   </div>
 
   <!-- ============ MARKETPLACE SCREEN ============ -->
@@ -750,17 +913,17 @@
         <div class="eyebrow">LIST ONE OF YOUR MINERS</div>
         <select class="msel" id="sellMinerSelect"></select>
         <div style="display:flex; gap:8px;">
-          <input class="mnum" type="number" min="1" step="1" id="sellPriceInput" placeholder="Asking price (m.PXN)">
+          <input class="mnum" type="number" min="1" step="1" id="sellPriceInput" placeholder="Asking price (PXN)">
           <button class="btn" id="listMinerBtn">LIST</button>
         </div>
       </div>
       <div class="section-head"><h2>ACTIVE LISTINGS</h2></div>
-      <div id="marketListings"></div>
+      <div class="market-grid" id="marketListings"></div>
     </div>
 
     <div class="market-pane" id="mpane-mine">
       <div class="section-head" style="margin-top:16px;"><h2>YOUR LISTINGS</h2></div>
-      <div id="myListings"></div>
+      <div class="market-grid" id="myListings"></div>
       <div class="section-head"><h2>YOUR SENT OFFERS</h2></div>
       <div id="myOffers"></div>
     </div>
@@ -833,14 +996,32 @@
       <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
     </div>
 
+    <div class="panel invite-panel" style="margin-top:6px;">
+      <div class="eyebrow">PXN BALANCE</div>
+      <div class="big" id="pxnBalanceBig">0.0000</div>
+      <div class="card-sub" style="margin-top:2px;" id="pxnBalanceSub">PXN — used to buy miners in the Store &amp; level up</div>
+    </div>
+
+    <div class="section-head">
+      <h2>SWAP</h2>
+    </div>
+    <div class="panel card sell-form" style="flex-direction:column; align-items:stretch; gap:10px;">
+      <div class="eyebrow" id="swapRateLabel">Swap m.PXN → PXN · rate 1:1</div>
+      <div style="display:flex; gap:8px;">
+        <input class="mnum" type="number" min="0" step="any" id="swapAmountInput" placeholder="Amount of m.PXN">
+        <button class="btn" id="swapBtn">SWAP</button>
+      </div>
+      <div class="card-sub" id="swapAvailableText">Available: 0.0000 m.PXN claimed</div>
+    </div>
+
     <div class="section-head">
       <h2>WITHDRAW</h2>
     </div>
     <div class="panel card" style="margin-bottom:6px;">
       <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></div>
       <div class="card-body">
-        <div class="card-title">Transfer pool to Wallet</div>
-        <div class="card-sub" id="walletSwapText">Swap m.PXN → $PXN once the token is live</div>
+        <div class="card-title">Withdraw PXN</div>
+        <div class="card-sub">Only PXN can be withdrawn to a connected TON wallet</div>
       </div>
       <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
     </div>
@@ -848,7 +1029,7 @@
     <div class="panel card" style="margin:0 14px 16px; opacity:0.85;">
       <div class="card-body" style="padding:2px 2px;">
         <div class="card-sub" style="line-height:1.6;">
-          $PXN hasn't launched yet, so withdrawals aren't open. Everything you mine now stays safely in your m.PXN pool. Once $PXN goes live on TON, you'll be able to swap your m.PXN pool for real $PXN and withdraw it to a connected TON wallet, according to the eligibility rules in place at launch.
+          You can swap your claimed m.PXN pool for PXN anytime — spend PXN in the Store to buy miners or to level up. Full withdrawal to a connected TON wallet unlocks once $PXN officially launches on TON, according to the eligibility rules in place at launch.
         </div>
       </div>
     </div>
@@ -914,6 +1095,28 @@
   </div>
 
 </div>
+
+<!-- Backend foundation (new infrastructure — not yet used by any game logic below).
+     See backend/README.md. Safe to load: makes no network calls on its own. -->
+<script src="config/frontend-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/api-client.js"></script>
+<script src="js/auth-client.js"></script>
+<script>
+  // Silent, non-blocking: verifies this Telegram session with the
+  // backend as soon as it's available. Purely additive — nothing in
+  // the game UI/logic below reads or waits on this yet (that wiring
+  // happens in a later migration step). Failures here (e.g. backend
+  // not configured yet, or running outside Telegram) are expected
+  // and are only logged, never shown to the player.
+  ProXAuth.authenticate().then(function (result) {
+    if (result.ok) {
+      console.log("[ProXAuth] session established", result.data.user);
+    } else {
+      console.info("[ProXAuth] not authenticated:", result.error);
+    }
+  });
+</script>
 
 <script>
 (function(){
@@ -1008,6 +1211,12 @@
     return minerIconSvg(level) + `<div class="level-badge">L${level}</div>`;
   }
 
+  // Mining Level is a standalone stat (bought with PXN, not tied to any store
+  // miner), so its icon must never look up a store item by level id.
+  function levelBadgeIcon(level){
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER.default}</svg><div class="level-badge">L${level}</div>`;
+  }
+
   const DEFAULT_TASKS = [
     {id:"t1", title:"Join Pro-X Network Telegram channel", sub:"Verify membership to claim", reward:80, icon:null},
     {id:"t2", title:"Follow Pro-X Network on X", sub:"Verify follow to claim", reward:60, icon:null},
@@ -1038,6 +1247,8 @@
     adBoostMultiplier: 2,
     adBoostDurationHours: 8,
     adSimSeconds: 5, // length of the simulated ad — see note near watchAdBtn
+    levelUpCostPxn: 100,     // PXN cost to level up (independent of the miner store)
+    levelBoostPercent: 0.05, // % mining-speed boost gained per level, applied cumulatively
   };
   if(adminConfig && adminConfig.rewards){
     Object.assign(REWARDS_CONFIG, adminConfig.rewards);
@@ -1063,7 +1274,8 @@
       adsWatchedToday: 0,
       adsWindowStart: 0,
       adBoostUntil: 0,
-      claimedTotal: 0,       // spendable balance, used for store purchases + marketplace
+      claimedTotal: 0,       // spendable balance, used for marketplace purchases only
+      pxnBalance: 0,         // PXN token balance — used for the Miner Store + leveling up
       inventory: [],         // owned miner units — [{uid, level, name, icon, speed}]
       monthlyPoints: 0,      // leaderboard activity score — resets every calendar month
       monthlyPeriodKey: currentMonthKey(),
@@ -1083,7 +1295,7 @@
   }
   function computeStateSignature(s){
     const raw = [s.minedBalance, s.pendingClaim, s.level, s.referrals,
-                 s.claimCount, s.claimedTotal||0, s.boostUntil,
+                 s.claimCount, s.claimedTotal||0, s.pxnBalance||0, s.boostUntil,
                  s.adsWatchedToday||0, s.adBoostUntil||0].map(v => (typeof v === "number" ? v.toFixed(4) : v)).join("|");
     return simpleHash(raw + "::proxsalt");
   }
@@ -1117,24 +1329,32 @@
 
   // ---------- inventory bootstrap & helpers ----------
   // Miners bought from the Store become individually-owned units (so they can
-  // later be listed on the Marketplace). Existing/new players start owning
-  // whatever their current tier is.
+  // later be listed on the Marketplace). Mining Level is a separate, standalone
+  // stat (raised only by spending PXN via levelUp()) — it is not derived from
+  // which miners a player owns. New players own NO store miners at all: they
+  // mine at a fixed baseline speed (DEFAULT_BASE_SPEED, below) until they buy
+  // a miner from the Store and tap "Apply" on it in their Inventory, which
+  // then adds extra speed on top of that baseline.
   if(!Array.isArray(state.inventory)) state.inventory = [];
-  if(state.inventory.length === 0){
-    const starterTier = UPGRADES.find(u => u.level === state.level) || UPGRADES[0];
-    state.inventory.push({
-      uid: "inv_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-      level: starterTier.level, name: starterTier.name, icon: starterTier.icon || null, speed: starterTier.speed
-    });
-  }
   if(state.claimedTotal === undefined) state.claimedTotal = 0;
+  if(state.pxnBalance === undefined) state.pxnBalance = 0;
   if(state.monthlyPoints === undefined) state.monthlyPoints = 0;
   if(!state.monthlyPeriodKey) state.monthlyPeriodKey = currentMonthKey();
 
-  function recomputeLevel(){
-    state.level = (state.inventory || []).reduce((m,u)=> Math.max(m, u.level||1), 1);
+  // Mining Level boost: +levelBoostPercent% mining speed for every level above 1,
+  // spent 100 PXN at a time via the LEVEL UP button (see levelUp()).
+  function levelBoostMultiplier(){
+    return 1 + (Math.max(1, state.level) - 1) * (REWARDS_CONFIG.levelBoostPercent / 100);
   }
-  recomputeLevel();
+
+  function levelUp(){
+    const cost = REWARDS_CONFIG.levelUpCostPxn;
+    if(state.pxnBalance < cost){ toast("Need " + fmt(cost, 0) + " PXN to level up"); return; }
+    state.pxnBalance -= cost;
+    state.level += 1;
+    saveState(); render();
+    toast("Leveled up to " + state.level + " — +" + REWARDS_CONFIG.levelBoostPercent + "% mining boost");
+  }
 
   function checkMonthlyReset(){
     const key = currentMonthKey();
@@ -1203,9 +1423,15 @@
     if(e.key === "Enter") document.getElementById("captchaSubmit").click();
   });
 
+  // Fixed baseline mining speed every player has for free, regardless of which
+  // (if any) Store miners they own — Store miners only ever add extra speed
+  // on top of this once bought AND applied.
+  const DEFAULT_BASE_SPEED = 0.10;
+
   function currentSpeed(){
-    const base = (state.inventory || []).reduce((s,u)=> s + (u.speed||0), 0);
-    let speed = base + (state.referrals * REWARDS_CONFIG.referralSpeedBonus);
+    const ownedBoost = (state.inventory || []).reduce((s,u)=> s + (u.applied ? (u.speed||0) : 0), 0);
+    const base = DEFAULT_BASE_SPEED + ownedBoost;
+    let speed = (base + (state.referrals * REWARDS_CONFIG.referralSpeedBonus)) * levelBoostMultiplier();
     if(state.boostUntil > Date.now()) speed *= REWARDS_CONFIG.boostMultiplier;
     if(tapBoostUntil > Date.now()) speed *= REWARDS_CONFIG.tapBoostMultiplier;
     if(state.adBoostUntil > Date.now()) speed *= REWARDS_CONFIG.adBoostMultiplier;
@@ -1216,9 +1442,15 @@
   // not a tradeable asset — this is a display estimate for players, not a live price feed).
   // Defaults so Level 1, mining 24h with no taps, earns ~$0.25 worth of m.PXN
   // (reduced 50% from the original $0.50 baseline) — overridable from the admin panel.
-  let PXN_USD_RATE = 0.25 / (UPGRADES[0].speed * 86400); // ≈ 0.0000289 USDT per m.PXN
+  let PXN_USD_RATE = 0.25 / (DEFAULT_BASE_SPEED * 86400); // ≈ 0.0000289 USDT per m.PXN
   if(adminConfig && adminConfig.token && typeof adminConfig.token.usdRate === "number"){
     PXN_USD_RATE = adminConfig.token.usdRate;
+  }
+
+  // How much PXN a swapped m.PXN is worth. Overridable from the admin panel.
+  let PXN_SWAP_RATE = 1;
+  if(adminConfig && adminConfig.token && typeof adminConfig.token.pxnSwapRate === "number"){
+    PXN_SWAP_RATE = adminConfig.token.pxnSwapRate;
   }
 
   function fmt(n, decimals){
@@ -1299,8 +1531,9 @@
       blobSub.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x speed for " + REWARDS_CONFIG.tapBoostDurationSec + "s";
     }
     document.getElementById("statLevel").textContent = "Lv. " + state.level;
-    document.getElementById("statMinerIcon").innerHTML = minerIconWithBadge(state.level);
-    document.getElementById("statRefs").textContent = state.referrals;
+    document.getElementById("statMinerIcon").innerHTML = levelBadgeIcon(state.level);
+    document.getElementById("mineLevelCost").textContent = fmt(REWARDS_CONFIG.levelUpCostPxn, 0) + " PXN";
+    document.getElementById("mineLevelUpBtn").disabled = state.pxnBalance < REWARDS_CONFIG.levelUpCostPxn;
     document.getElementById("claimReady").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
     document.getElementById("claimReadyUsd").textContent = fmtUsd(state.pendingClaim);
     document.getElementById("claimBtn").disabled = state.pendingClaim < 0.0001;
@@ -1349,32 +1582,35 @@
     document.getElementById("walletBig").textContent = fmt(state.minedBalance);
     document.getElementById("walletBigUsd").textContent = fmtUsd(state.minedBalance);
     document.getElementById("walletPoolLabel").textContent = TOKEN_SYMBOL + " mined so far — not yet a tradeable token";
-    document.getElementById("walletSwapText").textContent = "Swap " + TOKEN_SYMBOL + " → $PXN once the token is live";
+    document.getElementById("pxnBalanceBig").textContent = fmt(state.pxnBalance, 2);
+    document.getElementById("swapRateLabel").textContent = "Swap " + TOKEN_SYMBOL + " → PXN · rate " + PXN_SWAP_RATE + ":1";
+    document.getElementById("swapAvailableText").textContent = "Available: " + fmt(state.claimedTotal, 4) + " " + TOKEN_SYMBOL + " claimed";
+  }
+
+  function swapToPxn(amount){
+    if(!(amount > 0)){ toast("Enter a valid amount"); return; }
+    if(state.claimedTotal < amount){ toast("Not enough claimed " + TOKEN_SYMBOL); return; }
+    state.claimedTotal -= amount;
+    state.pxnBalance += amount * PXN_SWAP_RATE;
+    saveState(); render();
+    toast("Swapped " + fmt(amount) + " " + TOKEN_SYMBOL + " → " + fmt(amount * PXN_SWAP_RATE, 2) + " PXN");
   }
 
   function renderUpgrade(){
-    const tier = UPGRADES.find(u => u.level === state.level) || UPGRADES[0];
-    document.getElementById("upLevelBig").textContent = "LEVEL " + state.level;
-    document.getElementById("upDesc").textContent = state.inventory.length + " miner" + (state.inventory.length===1?"":"s") + " owned — " + currentSpeed().toFixed(2) + " " + TOKEN_SYMBOL + "/sec total";
-    document.getElementById("upBar").style.width = Math.min(100, (state.level / UPGRADES.length) * 100) + "%";
-    document.getElementById("heroMinerIcon").innerHTML = minerIconWithBadge(state.level);
-
     const list = document.getElementById("upgradeList");
     list.innerHTML = "";
     UPGRADES.forEach(u => {
       const ownedCount = state.inventory.filter(i => i.level === u.level).length;
-      const canAfford = state.claimedTotal >= u.cost;
+      const canAfford = state.pxnBalance >= u.cost;
       const div = document.createElement("div");
-      div.className = "panel card";
+      div.className = "panel store-card";
       div.innerHTML = `
-        <div class="card-icon miner-icon-wrap small">${minerIconSvg(u.level)}</div>
-        <div class="card-body">
-          <div class="card-title">Lv.${u.level} · ${u.name}${ownedCount ? ' <span style="color:var(--good); font-size:11px;">× ' + ownedCount + '</span>' : ''}</div>
-          <div class="card-sub">${u.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec each · cost ${fmt(u.cost)} ${TOKEN_SYMBOL}</div>
-        </div>
-        <div class="card-cta">
-          <button class="btn" ${canAfford ? '' : 'disabled'} data-buy="${u.level}">BUY</button>
-        </div>`;
+        <div class="store-card-icon miner-icon-wrap">${minerIconWithBadge(u.level)}</div>
+        <div class="store-card-name">${u.name}</div>
+        ${ownedCount ? '<div class="store-card-owned">OWNED × ' + ownedCount + '</div>' : ''}
+        <div class="store-card-cost">${fmt(u.cost, 0)} PXN</div>
+        <div class="store-card-boost">+${fmt(u.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
+        <button class="btn" ${canAfford ? '' : 'disabled'} data-buy="${u.level}">BUY</button>`;
       list.appendChild(div);
     });
 
@@ -1382,15 +1618,105 @@
       btn.addEventListener("click", ()=>{
         const lvl = parseInt(btn.dataset.buy,10);
         const u = UPGRADES.find(x=>x.level===lvl);
-        if(state.claimedTotal < u.cost){ toast("Claim more " + TOKEN_SYMBOL + " first"); return; }
-        state.claimedTotal -= u.cost;
+        if(state.pxnBalance < u.cost){ toast("Need more PXN — swap m.PXN for PXN in Wallet"); return; }
+        state.pxnBalance -= u.cost;
         state.inventory.push({
           uid: "inv_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-          level: u.level, name: u.name, icon: u.icon || null, speed: u.speed
+          level: u.level, name: u.name, icon: u.icon || null, speed: u.speed, applied: false
         });
-        recomputeLevel();
         saveState(); render();
-        toast("Bought " + u.name + " — added to your inventory");
+        toast("Bought " + u.name + " — added to your inventory. Apply it to start earning its boost.");
+      });
+    });
+
+    renderInventory();
+  }
+
+  // ---------- MY INVENTORY ----------
+  // Every miner unit a player owns (bought from the Store, or received via the
+  // Marketplace) sits here until the player taps "Apply" once — only applied
+  // units contribute their speed to currentSpeed(). A unit taken off to be
+  // sold on the Marketplace is spliced out of state.inventory immediately
+  // (see listMinerForSale), so it disappears from here right away, and it
+  // never comes back once the listing actually sells.
+  //
+  // How many of those units can be Applied at once is gated by Mining Level:
+  // Lv.1 = 1 slot, Lv.5 = 2 slots, Lv.15 = 3 slots (each tier holds until the
+  // next one is reached — see maxApplySlots()).
+  const APPLY_SLOT_TIERS = [
+    {level:1,  slots:1},
+    {level:5,  slots:2},
+    {level:15, slots:3}
+  ];
+
+  function maxApplySlots(level){
+    let slots = APPLY_SLOT_TIERS[0].slots;
+    APPLY_SLOT_TIERS.forEach(t => { if(level >= t.level) slots = t.slots; });
+    return slots;
+  }
+
+  function nextApplySlotTier(level){
+    return APPLY_SLOT_TIERS.find(t => t.level > level) || null;
+  }
+
+  function renderInventory(){
+    const wrap = document.getElementById("inventoryList");
+    const banner = document.getElementById("invSlotsBanner");
+    wrap.innerHTML = "";
+
+    const maxSlots = maxApplySlots(state.level);
+    const appliedCount = state.inventory.filter(i => i.applied).length;
+    const nextTier = nextApplySlotTier(state.level);
+    banner.innerHTML = `
+      <div>
+        <div class="eyebrow">APPLIED MINER SLOTS</div>
+        <div class="slots-hint">${nextTier ? "Reach Level " + nextTier.level + " to unlock slot " + nextTier.slots : "Max slots unlocked"}</div>
+      </div>
+      <div class="slots-count">${appliedCount} / ${maxSlots}</div>`;
+
+    if(!state.inventory.length){
+      wrap.innerHTML = '<div class="panel inv-empty">You don\'t own any miners yet — buy one from the Store tab.</div>';
+      return;
+    }
+    state.inventory.forEach(item => {
+      const slotsFull = !item.applied && appliedCount >= maxSlots;
+      const div = document.createElement("div");
+      div.className = "panel inv-card";
+      div.innerHTML = `
+        <div class="inv-card-icon miner-icon-wrap">${minerIconWithBadge(item.level)}</div>
+        <div class="inv-card-name">${item.name}</div>
+        <div class="inv-card-boost">+${fmt(item.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
+        ${item.applied
+          ? `<div class="inv-card-actions"><button class="btn applied" disabled>APPLIED ✓</button><button class="btn secondary" data-remove="${item.uid}">REMOVE</button></div>`
+          : `<button class="btn" data-apply="${item.uid}" ${slotsFull ? 'disabled' : ''}>${slotsFull ? 'SLOTS FULL' : 'APPLY'}</button>`}`;
+      wrap.appendChild(div);
+    });
+
+    wrap.querySelectorAll("[data-apply]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const uid = btn.dataset.apply;
+        const item = state.inventory.find(i=>i.uid===uid);
+        if(!item || item.applied) return;
+        const currentApplied = state.inventory.filter(i => i.applied).length;
+        if(currentApplied >= maxApplySlots(state.level)){
+          const tier = nextApplySlotTier(state.level);
+          toast(tier ? "Apply slots full — reach Level " + tier.level + " to unlock another slot" : "Apply slots full");
+          return;
+        }
+        item.applied = true;
+        saveState(); render();
+        toast("Applied " + item.name + " — its boost is now active");
+      });
+    });
+
+    wrap.querySelectorAll("[data-remove]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const uid = btn.dataset.remove;
+        const item = state.inventory.find(i=>i.uid===uid);
+        if(!item || !item.applied) return;
+        item.applied = false;
+        saveState(); render();
+        toast("Removed " + item.name + " — slot freed up, apply another miner anytime");
       });
     });
   }
@@ -1416,21 +1742,18 @@
     if(!mine.length) return;
     mine.forEach(s=>{
       if(s.kind === "credit"){
-        state.minedBalance += s.amount;
-        state.claimedTotal += s.amount;
+        state.pxnBalance += s.amount;
         addPoints(50);
-        toast("Marketplace: +" + fmt(s.amount) + " " + TOKEN_SYMBOL + (s.note ? " — " + s.note : ""));
+        toast("Marketplace: +" + fmt(s.amount, 0) + " PXN" + (s.note ? " — " + s.note : ""));
       } else if(s.kind === "refund"){
-        state.claimedTotal += s.amount;
-        toast("Marketplace refund: +" + fmt(s.amount) + " " + TOKEN_SYMBOL + (s.note ? " — " + s.note : ""));
+        state.pxnBalance += s.amount;
+        toast("Marketplace refund: +" + fmt(s.amount, 0) + " PXN" + (s.note ? " — " + s.note : ""));
       } else if(s.kind === "itemAdd" && s.item){
-        state.inventory.push(s.item);
-        recomputeLevel();
+        state.inventory.push(Object.assign({}, s.item, {applied:false}));
         addPoints(50);
-        toast("You won a marketplace miner: " + s.item.name);
+        toast("You won a marketplace miner: " + s.item.name + " — apply it in your Inventory");
       } else if(s.kind === "itemReturn" && s.item){
-        state.inventory.push(s.item);
-        recomputeLevel();
+        state.inventory.push(Object.assign({}, s.item, {applied:false}));
         toast("A listing was removed — " + s.item.name + " was returned to you");
       }
     });
@@ -1441,16 +1764,14 @@
 
   function listMinerForSale(uid, price){
     if(!(price > 0)){ toast("Enter a valid asking price"); return; }
-    if(state.inventory.length <= 1){ toast("You need at least one working miner — can't list your last unit"); return; }
     const idx = state.inventory.findIndex(i=>i.uid===uid);
     if(idx === -1){ toast("Miner not found"); return; }
     const item = state.inventory.splice(idx,1)[0];
-    recomputeLevel();
     const cfg = getMarketConfig();
     cfg.marketplace.listings.push({ id:genId("lst"), sellerId:PLAYER_ID, sellerName:PLAYER_NAME, item, price, offers:[], createdAt:Date.now() });
     saveMarketConfig(cfg);
     saveState(); render();
-    toast("Listed " + item.name + " for " + fmt(price) + " " + TOKEN_SYMBOL);
+    toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
     renderMarket();
   }
 
@@ -1460,10 +1781,9 @@
     if(idx === -1){ toast("Listing no longer available"); renderMarket(); return; }
     const listing = cfg.marketplace.listings[idx];
     if(listing.sellerId === PLAYER_ID){ toast("You can't buy your own listing"); return; }
-    if(state.claimedTotal < listing.price){ toast("Not enough claimed " + TOKEN_SYMBOL); return; }
-    state.claimedTotal -= listing.price;
-    state.inventory.push(listing.item);
-    recomputeLevel();
+    if(state.pxnBalance < listing.price){ toast("Not enough PXN"); return; }
+    state.pxnBalance -= listing.price;
+    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
     addPoints(50);
     (listing.offers||[]).forEach(o=>{
       cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing sold to another buyer" });
@@ -1472,7 +1792,7 @@
     cfg.marketplace.settlements.push({ id:genId("stl"), playerId:listing.sellerId, kind:"credit", amount:listing.price, ts:Date.now(), note:"Sold " + listing.item.name });
     saveMarketConfig(cfg);
     saveState(); render();
-    toast("Purchased " + listing.item.name + " for " + fmt(listing.price) + " " + TOKEN_SYMBOL);
+    toast("Purchased " + listing.item.name + " for " + fmt(listing.price, 0) + " PXN");
     renderMarket();
   }
 
@@ -1482,13 +1802,13 @@
     const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
     if(!listing){ toast("Listing no longer available"); renderMarket(); return; }
     if(listing.sellerId === PLAYER_ID){ toast("You can't offer on your own listing"); return; }
-    if(state.claimedTotal < amount){ toast("Not enough claimed " + TOKEN_SYMBOL + " to offer that"); return; }
-    state.claimedTotal -= amount;
+    if(state.pxnBalance < amount){ toast("Not enough PXN to offer that"); return; }
+    state.pxnBalance -= amount;
     listing.offers = listing.offers || [];
     listing.offers.push({ id:genId("off"), buyerId:PLAYER_ID, buyerName:PLAYER_NAME, amount, ts:Date.now() });
     saveMarketConfig(cfg);
     saveState();
-    toast("Offer of " + fmt(amount) + " " + TOKEN_SYMBOL + " sent — held in escrow");
+    toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
     renderMarket();
   }
 
@@ -1499,10 +1819,10 @@
     const oi = (listing.offers||[]).findIndex(o=>o.id===offerId && o.buyerId===PLAYER_ID);
     if(oi === -1) return;
     const off = listing.offers.splice(oi,1)[0];
-    state.claimedTotal += off.amount;
+    state.pxnBalance += off.amount;
     saveMarketConfig(cfg);
     saveState();
-    toast("Offer withdrawn — " + fmt(off.amount) + " " + TOKEN_SYMBOL + " refunded");
+    toast("Offer withdrawn — " + fmt(off.amount, 0) + " PXN refunded");
     renderMarket();
   }
 
@@ -1514,8 +1834,7 @@
     if(listing.sellerId !== PLAYER_ID) return;
     const accepted = (listing.offers||[]).find(o=>o.id===offerId);
     if(!accepted) return;
-    state.minedBalance += accepted.amount;
-    state.claimedTotal += accepted.amount;
+    state.pxnBalance += accepted.amount;
     addPoints(50);
     (listing.offers||[]).forEach(o=>{
       if(o.id !== offerId){
@@ -1526,7 +1845,7 @@
     cfg.marketplace.listings.splice(lidx,1);
     saveMarketConfig(cfg);
     saveState(); render();
-    toast("Offer accepted — " + fmt(accepted.amount) + " " + TOKEN_SYMBOL + " added to your balance");
+    toast("Offer accepted — " + fmt(accepted.amount, 0) + " PXN added to your balance");
     renderMarket();
   }
 
@@ -1553,8 +1872,7 @@
       cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing cancelled by seller" });
     });
     cfg.marketplace.listings.splice(idx,1);
-    state.inventory.push(listing.item);
-    recomputeLevel();
+    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
     saveMarketConfig(cfg);
     saveState(); render();
     toast("Listing cancelled — miner returned to your inventory");
@@ -1575,7 +1893,7 @@
     state.inventory.forEach(item=>{
       const opt = document.createElement("option");
       opt.value = item.uid;
-      opt.textContent = "Lv." + item.level + " · " + item.name + " (" + item.speed.toFixed(2) + " " + TOKEN_SYMBOL + "/sec)";
+      opt.textContent = item.name + " (" + item.speed.toFixed(2) + " " + TOKEN_SYMBOL + "/sec)";
       sel.appendChild(opt);
     });
 
@@ -1589,24 +1907,16 @@
     others.forEach(l=>{
       const myOffer = (l.offers||[]).find(o=>o.buyerId===PLAYER_ID);
       const div = document.createElement("div");
-      div.className = "panel card";
-      div.style.flexDirection = "column";
-      div.style.alignItems = "stretch";
+      div.className = "panel market-card";
       div.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div class="card-icon miner-icon-wrap small">${marketItemThumb(l.item)}</div>
-          <div class="card-body">
-            <div class="card-title">Lv.${l.item.level} · ${l.item.name}</div>
-            <div class="card-sub">${l.item.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${l.sellerName}</div>
-          </div>
-          <div class="card-cta" style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
-            <div class="stat-val cyan" style="font-size:14px;">${fmt(l.price,0)} ${TOKEN_SYMBOL}</div>
-            <button class="btn" data-buy-listing="${l.id}">BUY NOW</button>
-          </div>
-        </div>
+        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
+        <div class="market-card-name">${l.item.name}</div>
+        <div class="market-card-sub">${l.item.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${l.sellerName}</div>
+        <div class="market-card-price">${fmt(l.price,0)} PXN</div>
+        <button class="btn" data-buy-listing="${l.id}">BUY NOW</button>
         ${myOffer
-          ? `<div class="make-offer-row"><span class="empty-note" style="margin:0; flex:1; text-align:left;">Your offer: ${fmt(myOffer.amount,0)} ${TOKEN_SYMBOL} (pending)</span><button class="btn secondary" data-withdraw-offer="${l.id}|${myOffer.id}">WITHDRAW</button></div>`
-          : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (${TOKEN_SYMBOL})" id="offer-${l.id}"><button class="btn secondary" data-make-offer="${l.id}">OFFER</button></div>`}
+          ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.amount,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.id}|${myOffer.id}">WITHDRAW</button></div>`
+          : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.id}"><button class="btn secondary" data-make-offer="${l.id}">OFFER</button></div>`}
       `;
       listingsWrap.appendChild(div);
     });
@@ -1636,14 +1946,12 @@
     }
     mine.forEach(l=>{
       const div = document.createElement("div");
-      div.className = "panel card";
-      div.style.flexDirection = "column";
-      div.style.alignItems = "stretch";
+      div.className = "panel market-card";
       const offersHtml = (l.offers||[]).length
         ? `<div class="listing-offers">` + l.offers.map(o=>`
             <div class="listing-offer-row">
               <span class="who">${o.buyerName}</span>
-              <span class="amt">${fmt(o.amount,0)} ${TOKEN_SYMBOL}</span>
+              <span class="amt">${fmt(o.amount,0)} PXN</span>
               <div class="offer-actions">
                 <button class="btn good" data-accept="${l.id}|${o.id}">ACCEPT</button>
                 <button class="btn danger" data-decline="${l.id}|${o.id}">DECLINE</button>
@@ -1651,14 +1959,10 @@
             </div>`).join("") + `</div>`
         : "";
       div.innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div class="card-icon miner-icon-wrap small">${marketItemThumb(l.item)}</div>
-          <div class="card-body">
-            <div class="card-title">Lv.${l.item.level} · ${l.item.name}</div>
-            <div class="card-sub">Asking ${fmt(l.price,0)} ${TOKEN_SYMBOL} · ${(l.offers||[]).length} offer(s)</div>
-          </div>
-          <div class="card-cta"><button class="btn secondary" data-cancel-listing="${l.id}">CANCEL</button></div>
-        </div>
+        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
+        <div class="market-card-name">${l.item.name}</div>
+        <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${(l.offers||[]).length} offer(s)</div>
+        <button class="btn secondary" data-cancel-listing="${l.id}">CANCEL</button>
         ${offersHtml}
       `;
       myListingsWrap.appendChild(div);
@@ -1689,8 +1993,8 @@
       div.innerHTML = `
         <div class="card-icon miner-icon-wrap small">${marketItemThumb(listing.item)}</div>
         <div class="card-body">
-          <div class="card-title">Lv.${listing.item.level} · ${listing.item.name}</div>
-          <div class="card-sub">Your offer: ${fmt(offer.amount,0)} ${TOKEN_SYMBOL} · seller ${listing.sellerName}</div>
+          <div class="card-title">${listing.item.name}</div>
+          <div class="card-sub">Your offer: ${fmt(offer.amount,0)} PXN · seller ${listing.sellerName}</div>
         </div>
         <div class="card-cta"><button class="btn secondary" data-withdraw="${listing.id}|${offer.id}">WITHDRAW</button></div>
       `;
@@ -1848,6 +2152,17 @@
     addPoints(0.5);
     saveState(); render();
     toast("Boost active — " + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " minutes");
+  });
+
+  document.getElementById("mineLevelUpBtn").addEventListener("click", ()=>{
+    levelUp();
+  });
+
+  document.getElementById("swapBtn").addEventListener("click", ()=>{
+    const input = document.getElementById("swapAmountInput");
+    const amount = parseFloat(input.value);
+    swapToPxn(amount);
+    input.value = "";
   });
 
   // ---------- watch ads for a big boost ----------
@@ -2059,6 +2374,16 @@
       document.querySelectorAll(".market-pane").forEach(p=>p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById("mpane-" + btn.dataset.mtab).classList.add("active");
+    });
+  });
+
+  // store / inventory tabs
+  document.querySelectorAll(".store-tab").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".store-tab").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".store-pane").forEach(p=>p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("upane-" + btn.dataset.utab).classList.add("active");
     });
   });
   document.getElementById("listMinerBtn").addEventListener("click", ()=>{
