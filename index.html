@@ -1112,6 +1112,31 @@
   ProXAuth.authenticate().then(function (result) {
     if (result.ok) {
       console.log("[ProXAuth] session established", result.data.user);
+      // Load the authenticated backend profile (POST /me) using the
+      // session ProXAuth just established. ProXBackend.getCurrentUser()
+      // can be read anywhere afterwards to reuse it in the existing UI.
+      // A failure here (expired/missing session, network issue, etc.)
+      // is only logged — it never throws or blocks the Mini App.
+      ProXBackend.fetchMe().then(function (meResult) {
+        if (!meResult.ok) {
+          console.info("[ProXBackend] backend profile not loaded:", meResult.error);
+        }
+
+        // One-time, read/verify-only connectivity check against the
+        // new accrue-mining Edge Function. Called exactly once, right
+        // here at page init after authentication — never on an
+        // interval/poll. Purely confirms frontend <-> backend
+        // communication: it does NOT overwrite the existing
+        // localStorage mining state (STORAGE_KEY below), does NOT
+        // change claim/claimedTotal/pxnBalance/referrals/tasks/
+        // miners/boosts/marketplace/wallet logic, and does NOT change
+        // any visible UI. Failures are only logged.
+        ProXBackend.fetchAccrueMining().then(function (accrueResult) {
+          if (!accrueResult.ok) {
+            console.info("[ProXBackend] accrue-mining check not completed:", accrueResult.error);
+          }
+        });
+      });
     } else {
       console.info("[ProXAuth] not authenticated:", result.error);
     }
