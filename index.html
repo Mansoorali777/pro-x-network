@@ -1136,6 +1136,16 @@
             console.info("[ProXBackend] accrue-mining check not completed:", accrueResult.error);
           }
         });
+
+        // One-time backend inventory sync (set-miner-applied migration
+        // step). Defined inside the game IIFE further down this page and
+        // exposed as window.__proxSyncInventoryFromBackend — by the time
+        // this callback runs (after the network round trip above), that
+        // IIFE has already finished loading. Safe no-op if it hasn't
+        // (e.g. unexpected load order): the check below just skips it.
+        if (typeof window.__proxSyncInventoryFromBackend === "function") {
+          window.__proxSyncInventoryFromBackend();
+        }
       });
     } else {
       console.info("[ProXAuth] not authenticated:", result.error);
@@ -1365,6 +1375,80 @@
   if(state.pxnBalance === undefined) state.pxnBalance = 0;
   if(state.monthlyPoints === undefined) state.monthlyPoints = 0;
   if(!state.monthlyPeriodKey) state.monthlyPeriodKey = currentMonthKey();
+
+  // ---------- backend inventory sync (set-miner-applied migration step) ----------
+  // Merges the canonical backend inventory (public.mining_inventory, via the
+  // get-mining-inventory Edge Function) into the existing local
+  // state.inventory structure, using ProXAuth/ProXBackend exactly as they're
+  // used elsewhere in this file — no new auth/network logic is invented here.
+  //
+  // IMPORTANT COMPATIBILITY RULE: this only ever touches/creates entries that
+  // carry a real backend UUID (`id`). Any pre-migration, locally-created
+  // inventory record (no backend UUID) is left completely alone — never
+  // deleted, never sent to the backend, never assumed to have a database row.
+  //
+  // Fetched once (guarded by backendInventorySynced below), not on every
+  // render, and triggered from the ProXAuth init block above once a session
+  // exists. A failed/unavailable fetch NEVER erases existing local inventory.
+  const BACKEND_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  function isBackendLinkedItem(item){
+    return !!item && typeof item.id === "string" && BACKEND_UUID_RE.test(item.id);
+  }
+
+  function mapBackendInventoryItem(row){
+    return {
+      uid: row.id,
+      id: row.id,
+      level: row.miner_tier,
+      name: row.miner_name,
+      icon: row.miner_icon,
+      speed: Number(row.miner_speed),
+      applied: !!row.is_applied
+    };
+  }
+
+  let backendInventorySynced = false;
+
+  async function syncInventoryFromBackend(){
+    if(backendInventorySynced) return;
+    if(!window.ProXAuth || !window.ProXBackend) return;
+
+    const token = await ProXAuth.getAccessToken();
+    if(!token) return; // no session yet — leave existing local inventory as-is
+
+    const result = await ProXBackend._callFunction("get-mining-inventory", {
+      method: "POST",
+      accessToken: token
+    });
+
+    if(!result.ok || !result.data || result.data.success !== true || !Array.isArray(result.data.inventory)){
+      console.info("[ProXBackend] inventory sync not completed:", result.error);
+      return; // never erase existing local inventory on failure
+    }
+
+    backendInventorySynced = true;
+
+    result.data.inventory.forEach(row => {
+      const mapped = mapBackendInventoryItem(row);
+      const existing = state.inventory.find(i => i.id === mapped.id);
+      if(existing){
+        Object.assign(existing, mapped);
+      } else {
+        state.inventory.push(mapped);
+      }
+    });
+
+    saveState();
+    render();
+  }
+
+  // Exposed so the ProXAuth/ProXBackend init block earlier in this page can
+  // trigger the sync once a session is confirmed established. That block
+  // runs before this IIFE has executed, but only actually calls this (inside
+  // an async .then()) well after the whole page — including this IIFE — has
+  // finished loading, so `state`/`saveState`/`render` above are always ready.
+  window.__proxSyncInventoryFromBackend = syncInventoryFromBackend;
 
   // Mining Level boost: +levelBoostPercent% mining speed for every level above 1,
   // spent 100 PXN at a time via the LEVEL UP button (see levelUp()).
@@ -1684,6 +1768,75 @@
     return APPLY_SLOT_TIERS.find(t => t.level > level) || null;
   }
 
+  // ---------- backend-authoritative apply/remove (set-miner-applied) ----------
+  // Only used for inventory items with a real backend UUID (see
+  // isBackendLinkedItem above). Pre-migration local-only records keep the
+  // original immediate local toggle further down in renderInventory().
+  //
+  // `pendingApplyRemove` blocks a double-click / duplicate request on the
+  // same item while one is already in flight for it.
+  const pendingApplyRemove = new Set();
+
+  // Maps backend error messages (already player-safe, see
+  // set-miner-applied/index.ts) to the exact copy shown here, and falls back
+  // to a generic message for anything unexpected — so a technical/database
+  // detail can never reach the player even if the backend's wording changes.
+  function friendlyInventoryError(message){
+    const known = {
+      "Miner is already applied": "That miner is already applied.",
+      "Miner is already removed": "That miner is already removed.",
+      "No applied miner slots available": "Apply slots full.",
+      "Miner not found": "Miner not found — try refreshing.",
+      "Mining state not initialized for this player": "Your mining profile isn't ready yet — try again shortly.",
+      "Unauthorized": "Session expired — please reopen the app.",
+      "Invalid request": "Something went wrong — try again."
+    };
+    return known[message] || "Could not update miner — try again.";
+  }
+
+  async function setInventoryApplied(item, isApplied, btn){
+    const uid = item.uid;
+    if(pendingApplyRemove.has(uid)) return;
+    pendingApplyRemove.add(uid);
+    if(btn) btn.disabled = true;
+
+    try{
+      if(!window.ProXAuth || !window.ProXBackend){
+        toast("Backend unavailable — try again shortly");
+        return;
+      }
+
+      const token = await ProXAuth.getAccessToken();
+      if(!token){
+        toast("Session expired — please reopen the app");
+        return;
+      }
+
+      const result = await ProXBackend._callFunction("set-miner-applied", {
+        method: "POST",
+        accessToken: token,
+        body: { inventoryId: item.id, isApplied: isApplied }
+      });
+
+      if(result.ok && result.data && result.data.success && result.data.inventory){
+        Object.assign(item, mapBackendInventoryItem(result.data.inventory));
+        saveState();
+        toast(isApplied
+          ? "Applied " + item.name + " — its boost is now active"
+          : "Removed " + item.name + " — slot freed up, apply another miner anytime");
+      } else {
+        // Server rejected the change — local state (item.applied) is left untouched.
+        const message = (result.data && result.data.message) || null;
+        toast(friendlyInventoryError(message));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      pendingApplyRemove.delete(uid);
+      render(); // redraw buttons/state either way (also re-enables on failure)
+    }
+  }
+
   function renderInventory(){
     const wrap = document.getElementById("inventoryList");
     const banner = document.getElementById("invSlotsBanner");
@@ -1722,15 +1875,27 @@
         const uid = btn.dataset.apply;
         const item = state.inventory.find(i=>i.uid===uid);
         if(!item || item.applied) return;
+        if(pendingApplyRemove.has(uid)) return; // request already in flight for this item
         const currentApplied = state.inventory.filter(i => i.applied).length;
         if(currentApplied >= maxApplySlots(state.level)){
           const tier = nextApplySlotTier(state.level);
           toast(tier ? "Apply slots full — reach Level " + tier.level + " to unlock another slot" : "Apply slots full");
           return;
         }
-        item.applied = true;
-        saveState(); render();
-        toast("Applied " + item.name + " — its boost is now active");
+
+        if(!isBackendLinkedItem(item)){
+          // Pre-migration, local-only inventory record (no backend UUID) —
+          // unchanged legacy behavior; there is nothing to verify against
+          // the backend with. See the compatibility rule further above.
+          item.applied = true;
+          saveState(); render();
+          toast("Applied " + item.name + " — its boost is now active");
+          return;
+        }
+
+        // Server-authoritative path: local state is only updated once the
+        // backend confirms success (see setInventoryApplied above).
+        setInventoryApplied(item, true, btn);
       });
     });
 
@@ -1739,9 +1904,16 @@
         const uid = btn.dataset.remove;
         const item = state.inventory.find(i=>i.uid===uid);
         if(!item || !item.applied) return;
-        item.applied = false;
-        saveState(); render();
-        toast("Removed " + item.name + " — slot freed up, apply another miner anytime");
+        if(pendingApplyRemove.has(uid)) return; // request already in flight for this item
+
+        if(!isBackendLinkedItem(item)){
+          item.applied = false;
+          saveState(); render();
+          toast("Removed " + item.name + " — slot freed up, apply another miner anytime");
+          return;
+        }
+
+        setInventoryApplied(item, false, btn);
       });
     });
   }
