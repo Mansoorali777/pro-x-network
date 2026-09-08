@@ -3,36 +3,42 @@
 // POST /functions/v1/accrue-mining
 //
 // Server-side mining accrual, now covering the same rate inputs as
-// the frontend's currentSpeed() EXCEPT owned-miner/inventory speed
-// (no server-side inventory-ownership table exists yet — see the
-// "still pending" note below) and the tap boost (intentionally
+// the frontend's currentSpeed() EXCEPT the tap boost (intentionally
 // client/session-only, never moved server-side). It does NOT
 // implement claim, level-up, or miner purchase — those remain later,
-// explicitly-scoped steps. It reads:
+// explicitly-scoped steps. It does NOT implement or modify miner
+// apply/remove — that stays exclusively in set-miner-applied/index.ts
+// and its public.set_miner_applied() RPC (see 0018_secure_miner_apply_remove.sql);
+// this function only ever READS is_applied, never writes it. It reads:
 //   - public.mining_config (base_speed, referral_speed_bonus,
 //     boost_multiplier, ad_boost_multiplier, max_offline_accrual_sec,
 //     level_boost_percent) — the same values already documented in
 //     0003_mining_config.sql as copied verbatim from the live
 //     client's REWARDS_CONFIG / DEFAULT_BASE_SPEED.
+//   - the caller's own public.mining_inventory rows where
+//     is_applied = true (miner_speed only — see "applied miner speed"
+//     below). Strictly read-only: no insert/update/delete of any kind
+//     on this table, on this or any other row.
 //   - the caller's own public.mining_state row (level, referral_count,
 //     boost_until, ad_boost_until, mined_balance_total, pending_claim,
 //     last_accrued_at, accrual_lock_version).
 //
-// Formula (mirrors index.html's currentSpeed(), minus inventory/tap):
-//   base = base_speed + referral_count * referral_speed_bonus
+// Formula (mirrors index.html's currentSpeed(), minus tap boost):
+//   appliedMinerSpeed = SUM(miner_speed) over this player's own
+//                       mining_inventory rows where is_applied = true
+//   base = base_speed + appliedMinerSpeed + referral_count * referral_speed_bonus
 //   rate = base * levelBoostMultiplier(level, level_boost_percent)
 //   if boost_until    > now: rate *= boost_multiplier
 //   if ad_boost_until > now: rate *= ad_boost_multiplier
 //
-// STILL PENDING (not implemented here, on purpose): applied-miner/
-// inventory speed. No server-side table tracks which miner tiers a
-// player owns or has "applied" — mining_config.miner_tiers is only
-// the catalog of available tiers (cost/speed per level), not a
-// per-player ownership record, and mining_state has no inventory
-// column. Adding inventory speed requires a new migration (an
-// ownership table) plus its own scoped step; until then this
-// function's rate is a strict subset of the frontend's, missing only
-// that one term.
+// Applied miner speed: computed fresh from public.mining_inventory on
+// every call (SUM of miner_speed for this user's is_applied = true
+// rows), NEVER from the request body, frontend/localStorage, or any
+// cached value — mirroring how referral_count/boost_until/
+// ad_boost_until are read only from this player's own mining_state
+// row. Whether a given inventory row counts is controlled exclusively
+// by set-miner-applied's is_applied column; this file never flips
+// that flag itself.
 //
 // referral_count, boost_until, and ad_boost_until are read ONLY from
 // this player's own mining_state row (never from the request body —
@@ -99,6 +105,10 @@ interface MiningConfigRow {
   ad_boost_multiplier: number;
 }
 
+interface MiningInventoryRow {
+  miner_speed: number | string;
+}
+
 interface MiningStateRow {
   user_id: string;
   mined_balance_total: number;
@@ -119,39 +129,40 @@ interface MiningStateRow {
 }
 
 /**
- * Mirrors the frontend's existing level-boost formula exactly —
- * index.html: `1 + (Math.max(1, state.level) - 1) *
- * (REWARDS_CONFIG.levelBoostPercent / 100)` — reading the multiplier
- * from mining_config.level_boost_percent instead of the client-side
- * REWARDS_CONFIG object (0003_mining_config.sql documents these as
- * the same value: levelBoostPercent = 0.05).
+ * levelBoostPercent (mining_config.level_boost_percent) is stored as
+ * a DECIMAL multiplier, not a percentage — e.g. 0.05 means "+5% per
+ * level above 1", so it must be used directly, NOT divided by 100.
+ * (0003_mining_config.sql: "stored as a fraction, matching current
+ * usage.") Formula: 1 + (level - 1) * levelBoostPercent — e.g.
+ * level 1 = 1.0, level 2 = 1.05, level 3 = 1.10 for 0.05.
  */
 function levelBoostMultiplier(level: number, levelBoostPercent: number): number {
   const effectiveLevel = Math.max(1, level);
-  return 1 + (effectiveLevel - 1) * (levelBoostPercent / 100);
+  return 1 + (effectiveLevel - 1) * levelBoostPercent;
 }
 
 /**
  * Full server-side mining rate, mirroring index.html's currentSpeed()
- * with two deliberate exclusions (see file header): no owned-miner/
- * inventory speed term (no ownership table exists server-side yet),
- * and no tap-boost multiplier (stays client/session-only by design).
+ * with one deliberate exclusion (see file header): no tap-boost
+ * multiplier (stays client/session-only by design).
  *
- * Every input here is read from the player's OWN mining_state row
- * (referralCount, boostUntil, adBoostUntil) or from the server's
- * active mining_config row — never from the request body, and
+ * Every input here is read from the player's OWN mining_inventory
+ * rows (appliedMinerSpeed) or mining_state row (referralCount,
+ * boostUntil, adBoostUntil), or from the server's active
+ * mining_config row — never from the request body, and
  * boostUntil/adBoostUntil are compared against the server's own
  * `now`, never a client-supplied timestamp.
  */
 function computeMiningRate(
   config: MiningConfigRow,
+  appliedMinerSpeed: number,
   level: number,
   referralCount: number,
   boostUntil: string | null,
   adBoostUntil: string | null,
   now: Date,
 ): number {
-  const base = config.base_speed + referralCount * config.referral_speed_bonus;
+  const base = config.base_speed + appliedMinerSpeed + referralCount * config.referral_speed_bonus;
   let rate = base * levelBoostMultiplier(level, config.level_boost_percent);
 
   if (boostUntil && new Date(boostUntil).getTime() > now.getTime()) {
@@ -234,6 +245,35 @@ Deno.serve(async (req: Request) => {
     );
     return jsonResponse({ success: false, message: "Could not load mining configuration" }, 500);
   }
+
+  // --- Load this player's applied miner speed. ---
+  // Read-only SUM over public.mining_inventory for this caller's own
+  // is_applied = true rows (mining_inventory_user_id_is_applied_idx,
+  // see 0014_mining_inventory.sql, covers this exact filter). Uses
+  // the same service-role client as mining_config/mining_state above
+  // — this table's RLS only grants SELECT to `authenticated` for
+  // their own rows, which the explicit .eq("user_id", ...) filter
+  // below already mirrors as defense in depth. No row in this table
+  // is ever inserted, updated, or deleted from this file — is_applied
+  // is set exclusively by set-miner-applied/index.ts.
+  const { data: appliedInventoryData, error: inventoryError } = await admin
+    .from("mining_inventory")
+    .select("miner_speed")
+    .eq("user_id", userId)
+    .eq("is_applied", true);
+
+  if (inventoryError) {
+    console.error(
+      "[accrue-mining] failed to load applied mining_inventory:",
+      inventoryError.message,
+    );
+    return jsonResponse({ success: false, message: "Could not load mining inventory" }, 500);
+  }
+
+  const appliedMinerSpeed = ((appliedInventoryData ?? []) as MiningInventoryRow[]).reduce(
+    (sum, row) => sum + Number(row.miner_speed),
+    0,
+  );
 
   // --- Load (or create) this player's mining_state row. ---
   const { data: existingStateData, error: selectError } = await admin
@@ -336,6 +376,7 @@ Deno.serve(async (req: Request) => {
 
     const miningRate = computeMiningRate(
       config,
+      appliedMinerSpeed,
       workingState.level,
       workingState.referral_count,
       workingState.boost_until,
