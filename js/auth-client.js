@@ -111,6 +111,22 @@
   }
 
   /**
+   * The current Supabase Auth access token (JWT), or null if there is
+   * no live session. This is a client-side read of supabase-js's own
+   * stored session (auto-refreshed by supabase-js itself, per
+   * `getSupabaseClient()` above) — it never mints, stores, or
+   * refreshes a token itself. Intended for callers (e.g. ProXBackend)
+   * that need to attach `Authorization: Bearer <token>` to an
+   * authenticated backend request.
+   */
+  async function getAccessToken() {
+    const client = getSupabaseClient();
+    if (!client) return null;
+    const { data } = await client.auth.getSession();
+    return data && data.session ? data.session.access_token : null;
+  }
+
+  /**
    * Real sign-out: invalidates the refresh token server-side (unlike
    * the previous client-only "forget the token" logout) and clears
    * supabase-js's stored session. Existing game state (STORAGE_KEY)
@@ -205,6 +221,7 @@
     authenticate: authenticate,
     getSupabaseClient: getSupabaseClient,
     getUser: getUser,
+    getAccessToken: getAccessToken,
     isAuthenticated: isAuthenticated,
     logout: logout,
   };

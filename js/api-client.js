@@ -52,6 +52,13 @@
     const method = options.method || "GET";
     const body = options.body;
     const timeoutMs = options.timeoutMs || 10000;
+    // Optional: a caller's own Supabase Auth access token (e.g. from
+    // ProXAuth.getAccessToken()). When provided, it's used as the
+    // Authorization bearer instead of the anon key, so the Edge
+    // Function can identify the calling user (see functions/me).
+    // "apikey" always stays the public anon key — Supabase requires
+    // it to identify the project regardless of who the caller is.
+    const accessToken = options.accessToken;
 
     if (!isConfigured()) {
       return {
@@ -73,7 +80,7 @@
         method: method,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer " + cfg.SUPABASE_ANON_KEY,
+          "Authorization": "Bearer " + (accessToken || cfg.SUPABASE_ANON_KEY),
           "apikey": cfg.SUPABASE_ANON_KEY,
         },
         body: body ? JSON.stringify(body) : undefined,
@@ -107,6 +114,110 @@
     }
   }
 
+  // Non-secret cache of the last-loaded backend profile (the
+  // `public.users` row returned by POST /me), so the existing UI can
+  // read it synchronously after the initial fetch without re-hitting
+  // the network. Mirrors the pattern already used for the display
+  // user in js/auth-client.js — never holds tokens.
+  let cachedBackendUser = null;
+
+  // Non-secret cache of the last accrue-mining verification call's
+  // response (the raw JSON from POST /accrue-mining), so a caller can
+  // inspect the outcome afterwards without re-hitting the network.
+  // This is a ONE-TIME frontend<->backend connectivity check for this
+  // migration step — nothing reads this to drive UI or overwrite the
+  // existing localStorage mining state. Never holds tokens.
+  let lastAccrueMiningResult = null;
+
+  /**
+   * Calls the authenticated `me` Edge Function using the current
+   * Supabase session (obtained from ProXAuth — never re-implemented
+   * here) and caches the resulting profile.
+   *
+   * Always resolves (never throws) with { ok, data, error }, same
+   * shape as every other ProXBackend call. Safe to call when there is
+   * no session yet or it has expired — that's reported as a normal
+   * `ok: false` result, not an exception, so a fresh/expired/missing
+   * session can never break the rest of the Mini App.
+   */
+  async function fetchMe() {
+    console.log("[ProXBackend] fetching user");
+
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      console.warn("[ProXBackend] failed");
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      console.warn("[ProXBackend] failed");
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("me", { method: "POST", accessToken: accessToken });
+
+    if (result.ok && result.data && result.data.success && result.data.user) {
+      cachedBackendUser = result.data.user;
+      console.log("[ProXBackend] user loaded");
+      return { ok: true, data: { user: cachedBackendUser }, error: null };
+    }
+
+    console.warn("[ProXBackend] failed");
+    const message =
+      (result.data && (result.data.message || result.data.error)) ||
+      result.error ||
+      "Could not load profile.";
+    return { ok: false, data: null, error: message };
+  }
+
+  /**
+   * Calls the authenticated `accrue-mining` Edge Function using the
+   * current Supabase session (via ProXAuth.getAccessToken(), same
+   * pattern as fetchMe() above — never re-implemented here).
+   *
+   * This is a READ/VERIFY-ONLY integration step: it is intended to be
+   * called once, right after successful authentication, purely to
+   * confirm frontend -> backend connectivity. It does NOT touch
+   * localStorage, does NOT modify any existing mining/claim state,
+   * and does NOT change any UI. Callers must not poll this on an
+   * interval — see the one-shot call site in index.html.
+   *
+   * Always resolves (never throws) with { ok, data, error }, same
+   * shape as every other ProXBackend call. The access token itself is
+   * never logged or exposed — only high-level status messages are.
+   */
+  async function fetchAccrueMining() {
+    console.log("[ProXBackend] verifying accrue-mining connectivity");
+
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      console.warn("[ProXBackend] accrue-mining check failed");
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      console.warn("[ProXBackend] accrue-mining check failed");
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("accrue-mining", { method: "POST", body: {}, accessToken: accessToken });
+
+    if (result.ok && result.data && result.data.success && result.data.mining_state) {
+      lastAccrueMiningResult = result.data;
+      console.log("[ProXBackend] accrue-mining connectivity verified");
+      return { ok: true, data: result.data, error: null };
+    }
+
+    console.warn("[ProXBackend] accrue-mining check failed");
+    const message =
+      (result.data && (result.data.message || result.data.error)) ||
+      result.error ||
+      "Could not verify accrue-mining connectivity.";
+    return { ok: false, data: null, error: message };
+  }
+
   const ProXBackend = {
     /** Returns true once real Supabase project values are configured. */
     isConfigured: isConfigured,
@@ -118,6 +229,32 @@
      */
     checkHealth: function () {
       return callFunction("health", { method: "GET" });
+    },
+
+    /**
+     * Fetches the authenticated player's backend profile from
+     * POST /me using the current Supabase session, and caches it.
+     * See getCurrentUser() to read the cached result afterwards.
+     */
+    fetchMe: fetchMe,
+
+    /** Last-loaded backend profile (the /me `user` row), or null. */
+    getCurrentUser: function () {
+      return cachedBackendUser;
+    },
+
+    /**
+     * Calls POST /accrue-mining using the current Supabase session,
+     * purely to verify frontend -> backend connectivity. Read/verify
+     * only — never writes to localStorage, never touches existing
+     * mining/claim state or UI. Intended to be called once after
+     * successful authentication (see index.html), not on an interval.
+     */
+    fetchAccrueMining: fetchAccrueMining,
+
+    /** Last accrue-mining verification response (raw JSON), or null. */
+    getLastAccrueMiningResult: function () {
+      return lastAccrueMiningResult;
     },
 
     // Internal — exposed so later migration steps (and this module's
