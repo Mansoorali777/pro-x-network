@@ -215,6 +215,23 @@
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
   .note{ font-size:12px; color:var(--steel); line-height:1.6; padding:14px 16px; }
+
+  /* ---------- miner management (miner_catalog) ---------- */
+  .tag.inactive{ background:rgba(124,136,150,0.14); color:var(--steel); }
+  .mc-modal-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(4,6,10,0.72);
+    align-items:center; justify-content:center;
+    z-index:80;
+    padding:20px;
+  }
+  .mc-modal-overlay.show{ display:flex; }
+  .mc-modal{
+    width:100%; max-width:420px;
+    max-height:90vh; overflow-y:auto;
+    padding:22px;
+  }
 </style>
 </head>
 <body>
@@ -253,6 +270,10 @@
       <button class="side-btn" data-page="miners">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>
         Miners
+      </button>
+      <button class="side-btn" data-page="minerCatalog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="M3 13l9 5 9-5M3 18l9 5 9-5"/></svg>
+        Miner Management
       </button>
       <button class="side-btn" data-page="token">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 0 1 0 4H9m0 0h4.5a2 2 0 0 1 0 4H9"/></svg>
@@ -351,6 +372,40 @@
       <div class="panel" id="minerRows"></div>
       <div class="btn-row"><button class="btn amber" id="addMinerBtn">+ ADD MINER</button><button class="btn" id="saveMinersBtn">SAVE MINER CONFIG</button><button class="btn ghost" id="resetMinersBtn">RESET TO DEFAULTS</button></div>
       <div class="panel note">Levels are renumbered sequentially (1, 2, 3…) in the order shown here. Removing a tier in the middle shifts the levels above it — any player already past that level keeps their level number, so double-check pricing after reordering.</div>
+    </div>
+
+    <!-- MINER MANAGEMENT (database-backed miner catalog, public.miner_catalog) -->
+    <div class="page" id="page-minerCatalog">
+      <div class="page-head">
+        <h2>Miner Management</h2>
+        <div class="sub">Live miner catalog stored in the database — every add/edit/activate/deactivate/delete here goes through the admin-miner-catalog Edge Function, which verifies your admin session server-side before touching anything. Separate from the local-demo "Miners" page.</div>
+      </div>
+
+      <div class="panel form-grid" id="mcAddForm">
+        <div class="field"><label>MINER TIER</label><input type="number" id="mcAddTier" min="1" max="1000" step="1" placeholder="e.g. 8" autocomplete="off"></div>
+        <div class="field"><label>MINER NAME</label><input type="text" id="mcAddName" maxlength="200" placeholder="e.g. Antimatter Rig" autocomplete="off"></div>
+        <div class="field"><label>MINER ICON</label><input type="text" id="mcAddIcon" maxlength="500" placeholder="Emoji, URL, or data URI" autocomplete="off"></div>
+        <div class="field"><label>PRICE (PXN)</label><input type="number" id="mcAddPrice" min="0" max="100000000" step="0.00000001" placeholder="e.g. 50000"></div>
+        <div class="field"><label>MINING SPEED (PXN/SEC)</label><input type="number" id="mcAddSpeed" min="0" max="100000" step="0.00000001" placeholder="e.g. 10"></div>
+        <div class="field" style="display:flex; align-items:center; gap:8px; padding-top:22px;">
+          <input type="checkbox" id="mcAddActive" checked style="width:16px; height:16px; flex-shrink:0;">
+          <label style="margin:0;" for="mcAddActive">ACTIVE</label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn amber" id="mcAddBtn">+ ADD MINER</button>
+        <button class="btn ghost" id="mcRefreshBtn">REFRESH LIST</button>
+      </div>
+      <div class="note" id="mcAddMsg" style="display:none; padding:10px 16px;"></div>
+
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>TIER</th><th>ICON</th><th>NAME</th><th>PRICE (PXN)</th><th>SPEED (PXN/SEC)</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+          <tbody id="mcTableBody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="mcEmptyNote" style="display:none;">No miner catalog entries yet — add one above.</div>
+      <div class="note" id="mcListMsg" style="display:none; padding:10px 16px;"></div>
     </div>
 
     <!-- TOKEN -->
@@ -478,6 +533,28 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- MINER MANAGEMENT — edit modal -->
+<div id="mcEditOverlay" class="mc-modal-overlay">
+  <div class="panel mc-modal">
+    <h3 style="font-size:15px; margin-bottom:16px;">Edit Miner</h3>
+    <input type="hidden" id="mcEditId">
+    <div class="field" style="margin-bottom:12px;"><label>MINER TIER</label><input type="number" id="mcEditTier" min="1" max="1000" step="1"></div>
+    <div class="field" style="margin-bottom:12px;"><label>MINER NAME</label><input type="text" id="mcEditName" maxlength="200"></div>
+    <div class="field" style="margin-bottom:12px;"><label>MINER ICON</label><input type="text" id="mcEditIcon" maxlength="500"></div>
+    <div class="field" style="margin-bottom:12px;"><label>PRICE (PXN)</label><input type="number" id="mcEditPrice" min="0" max="100000000" step="0.00000001"></div>
+    <div class="field" style="margin-bottom:12px;"><label>MINING SPEED (PXN/SEC)</label><input type="number" id="mcEditSpeed" min="0" max="100000" step="0.00000001"></div>
+    <div class="field" style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+      <input type="checkbox" id="mcEditActive" style="width:16px; height:16px; flex-shrink:0;">
+      <label style="margin:0;" for="mcEditActive">ACTIVE</label>
+    </div>
+    <div class="note" id="mcEditMsg" style="display:none; padding:0 0 12px;"></div>
+    <div class="btn-row" style="margin:0;">
+      <button class="btn" id="mcEditSaveBtn">SAVE CHANGES</button>
+      <button class="btn ghost" id="mcEditCancelBtn">CANCEL</button>
+    </div>
   </div>
 </div>
 
@@ -766,6 +843,303 @@
       btn.disabled = false;
     }
   });
+
+  // ---------- Miner Management (database-backed miner catalog) ----------
+  // Talks to the real backend (admin-miner-catalog Edge Function), NOT
+  // the local-demo cfg/localStorage "Miners" page above. Reuses the
+  // same signed-in supabase-js client/session via
+  // getAdminSupabaseClient() — client.functions.invoke() attaches the
+  // current session's Authorization bearer token automatically, so no
+  // token is ever read or attached by hand here, and the service-role
+  // key is never present in this file. Every write
+  // (create/update/activate/deactivate/delete) goes through this one
+  // Edge Function; this code never queries public.miner_catalog
+  // directly via supabase-js .from(), so it can never bypass the
+  // server-side admin check baked into that function.
+  const MC_MAX_TIER = 1000;
+  const MC_MAX_NAME_LEN = 200;
+  const MC_MAX_ICON_LEN = 500;
+  const MC_MAX_PRICE = 100000000;
+  const MC_MAX_SPEED = 100000;
+
+  let minerCatalogList = [];
+  let minerCatalogPending = false;
+
+  function setMcAddMsg(text, isError){
+    const el = document.getElementById("mcAddMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+  function setMcListMsg(text, isError){
+    const el = document.getElementById("mcListMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+  function setMcEditMsg(text, isError){
+    const el = document.getElementById("mcEditMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+
+  // Maps a supabase-js Edge Function error (network-level, or a
+  // non-2xx response from admin-miner-catalog) to a short, safe,
+  // user-facing message keyed off HTTP status. Only ever surfaces the
+  // clean, pre-sanitized `message` admin-miner-catalog itself returns
+  // (see backend/supabase/functions/admin-miner-catalog/index.ts) —
+  // never raw database/server error text — and falls back to a fixed
+  // generic message for anything unrecognized (e.g. 500).
+  async function mcErrorMessage(error){
+    let status = null;
+    let serverMessage = null;
+    if(error && error.context){
+      try{
+        if(typeof error.context.status === "number") status = error.context.status;
+        if(typeof error.context.json === "function"){
+          const parsed = await error.context.json();
+          if(parsed && typeof parsed.message === "string") serverMessage = parsed.message;
+        }
+      }catch(e){ /* keep defaults below */ }
+    }
+    switch(status){
+      case 400: return serverMessage || "That request wasn't valid — check the fields and try again.";
+      case 401: return "Session expired — please log in again.";
+      case 403: return "Admin access denied.";
+      case 404: return "That miner catalog entry no longer exists — refreshing the list.";
+      case 409: return serverMessage || "A miner with that tier already exists.";
+      default: return "Server error — please try again.";
+    }
+  }
+
+  async function callAdminMinerCatalog(body){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      return { data: null, message: "Backend not configured — edit config/frontend-config.js." };
+    }
+    const { data, error } = await client.functions.invoke("admin-miner-catalog", { body });
+    if(error){
+      return { data: null, message: await mcErrorMessage(error) };
+    }
+    if(!data || data.success !== true){
+      return { data: null, message: (data && data.message) || "Request failed" };
+    }
+    return { data, message: null };
+  }
+
+  function mcIconMarkup(icon){
+    const safe = String(icon == null ? "" : icon);
+    if(/^(data:|https?:)/i.test(safe)){
+      return `<div class="miner-thumb" style="width:32px; height:32px;"><img src="${safe.replace(/"/g,"&quot;")}" alt=""></div>`;
+    }
+    return `<div class="miner-thumb" style="width:32px; height:32px; font-size:16px;">${safe.replace(/</g,"&lt;")}</div>`;
+  }
+
+  function renderMinerCatalogTable(){
+    const body = document.getElementById("mcTableBody");
+    body.innerHTML = "";
+    document.getElementById("mcEmptyNote").style.display = minerCatalogList.length ? "none" : "block";
+    minerCatalogList.forEach(m=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>#${m.minerTier}</td>
+        <td>${mcIconMarkup(m.minerIcon)}</td>
+        <td>${(m.minerName || "").replace(/</g,"&lt;")}</td>
+        <td>${(m.pricePxn || 0).toLocaleString("en-US",{maximumFractionDigits:2})}</td>
+        <td>${(m.miningSpeed || 0).toLocaleString("en-US",{maximumFractionDigits:4})}</td>
+        <td><span class="tag ${m.isActive ? "active" : "inactive"}">${m.isActive ? "ACTIVE" : "INACTIVE"}</span></td>
+        <td>
+          <div class="row-actions">
+            <button class="btn ghost" data-mc-edit="${m.id}">EDIT</button>
+            <button class="btn ${m.isActive ? "amber" : "good"}" data-mc-toggle="${m.id}">${m.isActive ? "DEACTIVATE" : "ACTIVATE"}</button>
+            <button class="btn danger" data-mc-delete="${m.id}">DELETE</button>
+          </div>
+        </td>`;
+      body.appendChild(tr);
+    });
+
+    body.querySelectorAll("[data-mc-edit]").forEach(btn=>{
+      btn.addEventListener("click", ()=> openMcEditModal(btn.dataset.mcEdit));
+    });
+    body.querySelectorAll("[data-mc-toggle]").forEach(btn=>{
+      btn.addEventListener("click", ()=> mcToggleActive(btn.dataset.mcToggle));
+    });
+    body.querySelectorAll("[data-mc-delete]").forEach(btn=>{
+      btn.addEventListener("click", ()=> mcDeleteMiner(btn.dataset.mcDelete));
+    });
+  }
+
+  async function fetchMinerCatalogList(){
+    if(minerCatalogPending) return;
+    minerCatalogPending = true;
+    setMcListMsg("", false);
+    const { data, message } = await callAdminMinerCatalog({ action: "list" });
+    minerCatalogPending = false;
+    if(!data){
+      setMcListMsg(message, true);
+      return;
+    }
+    minerCatalogList = (data.miners || []).slice().sort((a,b)=> a.minerTier - b.minerTier);
+    renderMinerCatalogTable();
+  }
+
+  // Shared client-side validation for both the Add form and the Edit
+  // modal — mirrors admin-miner-catalog's own limits so obviously bad
+  // input never leaves the browser, but the server re-validates
+  // everything independently regardless (defense in depth).
+  function mcReadFormFields(prefix){
+    const tierRaw = document.getElementById(prefix + "Tier").value;
+    const nameRaw = document.getElementById(prefix + "Name").value;
+    const iconRaw = document.getElementById(prefix + "Icon").value;
+    const priceRaw = document.getElementById(prefix + "Price").value;
+    const speedRaw = document.getElementById(prefix + "Speed").value;
+    const active = document.getElementById(prefix + "Active").checked;
+
+    const tier = parseInt(tierRaw, 10);
+    const price = parseFloat(priceRaw);
+    const speed = parseFloat(speedRaw);
+    const name = nameRaw.trim();
+    const icon = iconRaw.trim();
+
+    if(!Number.isInteger(tier) || tier < 1 || tier > MC_MAX_TIER){
+      return { error: `Miner tier must be a whole number from 1 to ${MC_MAX_TIER}.` };
+    }
+    if(!name || name.length > MC_MAX_NAME_LEN){
+      return { error: `Miner name must be 1-${MC_MAX_NAME_LEN} characters.` };
+    }
+    if(!icon || icon.length > MC_MAX_ICON_LEN){
+      return { error: `Miner icon must be 1-${MC_MAX_ICON_LEN} characters.` };
+    }
+    if(!Number.isFinite(price) || price < 0 || price > MC_MAX_PRICE){
+      return { error: `Price must be from 0 to ${MC_MAX_PRICE}.` };
+    }
+    if(!Number.isFinite(speed) || speed < 0 || speed > MC_MAX_SPEED){
+      return { error: `Mining speed must be from 0 to ${MC_MAX_SPEED}.` };
+    }
+
+    return { value: { minerTier: tier, minerName: name, minerIcon: icon, pricePxn: price, miningSpeed: speed, isActive: active } };
+  }
+
+  // ---- add ----
+  let mcAddPending = false;
+  document.getElementById("mcAddBtn").addEventListener("click", async ()=>{
+    if(mcAddPending) return;
+    setMcAddMsg("", false);
+    const parsed = mcReadFormFields("mcAdd");
+    if(parsed.error){ setMcAddMsg(parsed.error, true); return; }
+
+    mcAddPending = true;
+    const btn = document.getElementById("mcAddBtn");
+    btn.disabled = true;
+    try{
+      const { data, message } = await callAdminMinerCatalog(Object.assign({ action: "create" }, parsed.value));
+      if(!data){ setMcAddMsg(message, true); return; }
+      setMcAddMsg("Miner added.", false);
+      logAction("MINER CATALOG CREATED", "Tier " + parsed.value.minerTier + " — " + parsed.value.minerName);
+      toast("Miner added to catalog");
+      document.getElementById("mcAddTier").value = "";
+      document.getElementById("mcAddName").value = "";
+      document.getElementById("mcAddIcon").value = "";
+      document.getElementById("mcAddPrice").value = "";
+      document.getElementById("mcAddSpeed").value = "";
+      document.getElementById("mcAddActive").checked = true;
+      fetchMinerCatalogList();
+    } finally {
+      mcAddPending = false;
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("mcRefreshBtn").addEventListener("click", ()=> fetchMinerCatalogList());
+
+  // ---- edit ----
+  function openMcEditModal(id){
+    const miner = minerCatalogList.find(m=> m.id === id);
+    if(!miner) return;
+    document.getElementById("mcEditId").value = miner.id;
+    document.getElementById("mcEditTier").value = miner.minerTier;
+    document.getElementById("mcEditName").value = miner.minerName;
+    document.getElementById("mcEditIcon").value = miner.minerIcon;
+    document.getElementById("mcEditPrice").value = miner.pricePxn;
+    document.getElementById("mcEditSpeed").value = miner.miningSpeed;
+    document.getElementById("mcEditActive").checked = !!miner.isActive;
+    setMcEditMsg("", false);
+    document.getElementById("mcEditOverlay").classList.add("show");
+  }
+  function closeMcEditModal(){
+    document.getElementById("mcEditOverlay").classList.remove("show");
+  }
+  document.getElementById("mcEditCancelBtn").addEventListener("click", closeMcEditModal);
+  document.getElementById("mcEditOverlay").addEventListener("click", (e)=>{
+    if(e.target.id === "mcEditOverlay") closeMcEditModal();
+  });
+
+  let mcEditPending = false;
+  document.getElementById("mcEditSaveBtn").addEventListener("click", async ()=>{
+    if(mcEditPending) return;
+    setMcEditMsg("", false);
+    const id = document.getElementById("mcEditId").value;
+    if(!id){ setMcEditMsg("Missing miner id.", true); return; }
+    const parsed = mcReadFormFields("mcEdit");
+    if(parsed.error){ setMcEditMsg(parsed.error, true); return; }
+
+    mcEditPending = true;
+    const btn = document.getElementById("mcEditSaveBtn");
+    btn.disabled = true;
+    try{
+      const { data, message } = await callAdminMinerCatalog(Object.assign({ action: "update", id: id }, parsed.value));
+      if(!data){ setMcEditMsg(message, true); return; }
+      logAction("MINER CATALOG UPDATED", "Tier " + parsed.value.minerTier + " — " + parsed.value.minerName);
+      toast("Miner updated");
+      closeMcEditModal();
+      fetchMinerCatalogList();
+    } finally {
+      mcEditPending = false;
+      btn.disabled = false;
+    }
+  });
+
+  // ---- activate / deactivate ----
+  async function mcToggleActive(id){
+    const miner = minerCatalogList.find(m=> m.id === id);
+    if(!miner) return;
+    const action = miner.isActive ? "deactivate" : "activate";
+    setMcListMsg("", false);
+    const { data, message } = await callAdminMinerCatalog({ action: action, id: id });
+    if(!data){
+      setMcListMsg(message, true);
+      if(message && message.indexOf("no longer exists") !== -1) fetchMinerCatalogList();
+      return;
+    }
+    logAction("MINER CATALOG " + action.toUpperCase(), "Tier " + miner.minerTier + " — " + miner.minerName);
+    toast(action === "activate" ? "Miner activated" : "Miner deactivated");
+    fetchMinerCatalogList();
+  }
+
+  // ---- delete ----
+  async function mcDeleteMiner(id){
+    const miner = minerCatalogList.find(m=> m.id === id);
+    if(!miner) return;
+    const confirmed = window.confirm("Are you sure you want to permanently delete this miner catalog entry?");
+    if(!confirmed) return;
+    setMcListMsg("", false);
+    const { data, message } = await callAdminMinerCatalog({ action: "delete", id: id });
+    if(!data){
+      setMcListMsg(message, true);
+      if(message && message.indexOf("no longer exists") !== -1) fetchMinerCatalogList();
+      return;
+    }
+    logAction("MINER CATALOG DELETED", "Tier " + miner.minerTier + " — " + miner.minerName);
+    toast("Miner deleted");
+    fetchMinerCatalogList();
+  }
+
+  // Load the catalog automatically the moment this section is opened.
+  // A separate listener on just this one nav button — the shared
+  // side-nav show/hide loop below is left completely untouched.
+  const mcNavBtn = document.querySelector('.side-btn[data-page="minerCatalog"]');
+  if(mcNavBtn) mcNavBtn.addEventListener("click", fetchMinerCatalogList);
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
