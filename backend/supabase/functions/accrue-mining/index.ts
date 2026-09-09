@@ -9,7 +9,12 @@
 // explicitly-scoped steps. It does NOT implement or modify miner
 // apply/remove — that stays exclusively in set-miner-applied/index.ts
 // and its public.set_miner_applied() RPC (see 0018_secure_miner_apply_remove.sql);
-// this function only ever READS is_applied, never writes it. It reads:
+// this function only ever READS is_applied, never writes it. It does
+// NOT implement admin mining-speed control — that stays exclusively
+// in admin-set-mining-speed/index.ts and its
+// public.admin_set_mining_speed() / admin_clear_mining_speed_override()
+// RPCs (see 0020_admin_mining_speed_control.sql); this function only
+// ever READS admin_speed_override, never writes it. It reads:
 //   - public.mining_config (base_speed, referral_speed_bonus,
 //     boost_multiplier, ad_boost_multiplier, max_offline_accrual_sec,
 //     level_boost_percent) — the same values already documented in
@@ -21,15 +26,32 @@
 //     on this table, on this or any other row.
 //   - the caller's own public.mining_state row (level, referral_count,
 //     boost_until, ad_boost_until, mined_balance_total, pending_claim,
-//     last_accrued_at, accrual_lock_version).
+//     last_accrued_at, accrual_lock_version, admin_speed_override).
 //
 // Formula (mirrors index.html's currentSpeed(), minus tap boost):
-//   appliedMinerSpeed = SUM(miner_speed) over this player's own
-//                       mining_inventory rows where is_applied = true
-//   base = base_speed + appliedMinerSpeed + referral_count * referral_speed_bonus
-//   rate = base * levelBoostMultiplier(level, level_boost_percent)
-//   if boost_until    > now: rate *= boost_multiplier
-//   if ad_boost_until > now: rate *= ad_boost_multiplier
+//   IF admin_speed_override IS NOT NULL (see
+//   0020_admin_mining_speed_control.sql):
+//     rate = admin_speed_override  — used AS the final rate, verbatim.
+//     Bypasses base_speed, appliedMinerSpeed, referral bonus, the
+//     level multiplier, and BOTH the normal and ad boost multipliers.
+//     Predictable by design: whatever the admin set is exactly what
+//     accrues, nothing else compounds on top of it. (Tap boost was
+//     already excluded from server-side accrual before this existed,
+//     and remains excluded from the override too.)
+//   ELSE (the default — admin_speed_override IS NULL, unchanged from
+//   before this column existed):
+//     appliedMinerSpeed = SUM(miner_speed) over this player's own
+//                         mining_inventory rows where is_applied = true
+//     base = base_speed + appliedMinerSpeed + referral_count * referral_speed_bonus
+//     rate = base * levelBoostMultiplier(level, level_boost_percent)
+//     if boost_until    > now: rate *= boost_multiplier
+//     if ad_boost_until > now: rate *= ad_boost_multiplier
+//
+// admin_speed_override is read fresh from this player's own
+// mining_state row on every call, exactly like level/referral_count/
+// boost_until/ad_boost_until below — never from the request body,
+// and this file never writes it (see admin-set-mining-speed/index.ts
+// for the only place it's written).
 //
 // Applied miner speed: computed fresh from public.mining_inventory on
 // every call (SUM of miner_speed for this user's is_applied = true
@@ -38,7 +60,8 @@
 // ad_boost_until are read only from this player's own mining_state
 // row. Whether a given inventory row counts is controlled exclusively
 // by set-miner-applied's is_applied column; this file never flips
-// that flag itself.
+// that flag itself. (Skipped entirely when admin_speed_override is
+// set — see formula above.)
 //
 // referral_count, boost_until, and ad_boost_until are read ONLY from
 // this player's own mining_state row (never from the request body —
@@ -124,6 +147,7 @@ interface MiningStateRow {
   last_accrued_at: string;
   referral_count: number;
   accrual_lock_version: number;
+  admin_speed_override: number | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -146,10 +170,15 @@ function levelBoostMultiplier(level: number, levelBoostPercent: number): number 
  * with one deliberate exclusion (see file header): no tap-boost
  * multiplier (stays client/session-only by design).
  *
+ * If adminSpeedOverride is non-null (see
+ * 0020_admin_mining_speed_control.sql), it is returned directly as
+ * the final rate — every other parameter below is ignored for that
+ * call, including the level multiplier and both boost multipliers.
+ *
  * Every input here is read from the player's OWN mining_inventory
  * rows (appliedMinerSpeed) or mining_state row (referralCount,
- * boostUntil, adBoostUntil), or from the server's active
- * mining_config row — never from the request body, and
+ * boostUntil, adBoostUntil, adminSpeedOverride), or from the server's
+ * active mining_config row — never from the request body, and
  * boostUntil/adBoostUntil are compared against the server's own
  * `now`, never a client-supplied timestamp.
  */
@@ -161,7 +190,12 @@ function computeMiningRate(
   boostUntil: string | null,
   adBoostUntil: string | null,
   now: Date,
+  adminSpeedOverride: number | null,
 ): number {
+  if (adminSpeedOverride !== null) {
+    return adminSpeedOverride;
+  }
+
   const base = config.base_speed + appliedMinerSpeed + referralCount * config.referral_speed_bonus;
   let rate = base * levelBoostMultiplier(level, config.level_boost_percent);
 
@@ -374,6 +408,11 @@ Deno.serve(async (req: Request) => {
     const elapsedSeconds = Math.max(0, (now.getTime() - lastAccruedAt.getTime()) / 1000);
     const appliedSeconds = Math.min(elapsedSeconds, config.max_offline_accrual_sec);
 
+    const adminSpeedOverride =
+      workingState.admin_speed_override === null || workingState.admin_speed_override === undefined
+        ? null
+        : Number(workingState.admin_speed_override);
+
     const miningRate = computeMiningRate(
       config,
       appliedMinerSpeed,
@@ -382,6 +421,7 @@ Deno.serve(async (req: Request) => {
       workingState.boost_until,
       workingState.ad_boost_until,
       now,
+      adminSpeedOverride,
     );
     const accruedAmount = miningRate * appliedSeconds;
 
