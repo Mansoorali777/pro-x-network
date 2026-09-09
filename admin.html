@@ -321,6 +321,28 @@
         </table>
       </div>
       <div class="note" id="playersEmptyNote" style="display:none;">No players yet — open the Mining App (index.html) in this same browser to generate a demo player record.</div>
+
+      <!-- ADMIN MINING SPEED CONTROL — real backend, separate from the
+           local-demo player list/table above. Calls the
+           admin-set-mining-speed Edge Function, which itself verifies
+           this admin's session server-side before touching anything
+           (see 0020_admin_mining_speed_control.sql). "Current
+           override" only reflects the result of the last Set/Clear
+           action performed here for that user id — there is no
+           separate lookup/read endpoint for this feature yet. -->
+      <div class="page-head" style="margin-top:28px;"><h2 style="font-size:16px;">Admin Mining Speed Control</h2><div class="sub">Force a specific player's mining rate (PXN/sec), enforced server-side. Uses the real backend — not the local demo data above.</div></div>
+      <div class="panel form-grid" style="grid-template-columns:1fr;">
+        <div class="field"><label>TARGET USER UUID</label><input type="text" id="speedTargetUserId" placeholder="e.g. 0d7de8be-2e76-4a71-9613-ced8cfe35452" autocomplete="off"></div>
+      </div>
+      <div class="panel form-grid">
+        <div class="field"><label>CURRENT OVERRIDE (LAST ACTION)</label><input type="text" id="speedCurrentOverride" placeholder="No action yet" readonly></div>
+        <div class="field"><label>NEW SPEED (PXN/SEC)</label><input type="number" id="speedNewValue" placeholder="e.g. 1.25" min="0" max="1000000" step="0.00000001"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="speedSetBtn">SET SPEED</button>
+        <button class="btn ghost" id="speedClearBtn">CLEAR OVERRIDE</button>
+      </div>
+      <div class="note" id="speedMsg" style="display:none; padding:10px 16px;"></div>
     </div>
 
     <!-- MINERS -->
@@ -637,6 +659,113 @@
   document.getElementById("loginBtn").addEventListener("click", tryLogin);
   document.getElementById("loginInput").addEventListener("keydown", e=>{ if(e.key === "Enter") tryLogin(); });
   document.getElementById("loginEmail").addEventListener("keydown", e=>{ if(e.key === "Enter") tryLogin(); });
+
+  // ---------- admin mining speed control ----------
+  // Talks to the real backend (admin-set-mining-speed Edge Function),
+  // NOT the local-demo cfg/localStorage data the rest of this page
+  // reads/writes. Reuses the same signed-in supabase-js client/session
+  // from the login gate above via getAdminSupabaseClient() — never a
+  // separate client, never a manually-attached token, never the
+  // service_role key (which this file never has access to at all).
+  // client.functions.invoke() attaches the current session's
+  // Authorization bearer token automatically.
+  const MAX_ADMIN_SPEED = 1000000;
+  let adminSpeedPending = false;
+
+  function setAdminSpeedMsg(text, isError){
+    const el = document.getElementById("speedMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+
+  async function callAdminSetMiningSpeed(body){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      setAdminSpeedMsg("Backend not configured — edit config/frontend-config.js.", true);
+      return null;
+    }
+
+    const { data, error } = await client.functions.invoke("admin-set-mining-speed", { body });
+
+    if(error){
+      // supabase-js surfaces a non-2xx Edge Function response as a
+      // FunctionsHttpError whose `context` is the raw Response; that
+      // response body is our own { success:false, message } JSON —
+      // prefer it, falling back to error.message if it can't be read.
+      let message = error.message || "Request failed";
+      try{
+        if(error.context && typeof error.context.json === "function"){
+          const parsed = await error.context.json();
+          if(parsed && parsed.message) message = parsed.message;
+        }
+      }catch(e){ /* keep default message */ }
+      setAdminSpeedMsg(message, true);
+      return null;
+    }
+
+    if(!data || data.success !== true){
+      setAdminSpeedMsg((data && data.message) || "Request failed", true);
+      return null;
+    }
+
+    return data;
+  }
+
+  document.getElementById("speedSetBtn").addEventListener("click", async ()=>{
+    if(adminSpeedPending) return;
+    setAdminSpeedMsg("", false);
+
+    const userId = document.getElementById("speedTargetUserId").value.trim();
+    const speedRaw = document.getElementById("speedNewValue").value;
+    const speed = parseFloat(speedRaw);
+
+    if(!userId){ setAdminSpeedMsg("Enter a target user UUID.", true); return; }
+    if(speedRaw === "" || !Number.isFinite(speed) || speed < 0 || speed > MAX_ADMIN_SPEED){
+      setAdminSpeedMsg("Enter a valid speed from 0 to " + MAX_ADMIN_SPEED + ".", true);
+      return;
+    }
+
+    adminSpeedPending = true;
+    const btn = document.getElementById("speedSetBtn");
+    btn.disabled = true;
+    try{
+      const data = await callAdminSetMiningSpeed({ userId: userId, speed: speed });
+      if(data){
+        document.getElementById("speedCurrentOverride").value = data.adminSpeedOverride;
+        setAdminSpeedMsg("Mining speed override set to " + data.adminSpeedOverride + " PXN/sec.", false);
+        logAction("ADMIN MINING SPEED SET", userId + " → " + data.adminSpeedOverride + " PXN/sec");
+        toast("Mining speed override set");
+      }
+    } finally {
+      adminSpeedPending = false;
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("speedClearBtn").addEventListener("click", async ()=>{
+    if(adminSpeedPending) return;
+    setAdminSpeedMsg("", false);
+
+    const userId = document.getElementById("speedTargetUserId").value.trim();
+    if(!userId){ setAdminSpeedMsg("Enter a target user UUID.", true); return; }
+
+    adminSpeedPending = true;
+    const btn = document.getElementById("speedClearBtn");
+    btn.disabled = true;
+    try{
+      const data = await callAdminSetMiningSpeed({ userId: userId, clear: true });
+      if(data){
+        document.getElementById("speedCurrentOverride").value = "";
+        setAdminSpeedMsg("Mining speed override cleared — back to the normal calculated rate.", false);
+        logAction("ADMIN MINING SPEED CLEARED", userId);
+        toast("Mining speed override cleared");
+      }
+    } finally {
+      adminSpeedPending = false;
+      btn.disabled = false;
+    }
+  });
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
