@@ -492,7 +492,10 @@
   }
   .store-card-icon svg{ width:62%; height:62%; }
   .store-card-icon img{ width:80%; height:80%; object-fit:contain; }
+  .store-card-icon .catalog-icon-emoji{ font-size:34px; line-height:1; }
   .store-card-icon .level-badge{ font-size:9px; padding:2px 4px; }
+  .store-catalog-status{ display:none; font-size:10.5px; color:var(--danger); text-align:center; margin:0 14px 8px; }
+  .store-catalog-status.show{ display:block; }
   .store-card-name{ font-size:12.5px; font-weight:600; line-height:1.25; min-height:30px; display:flex; align-items:center; justify-content:center; }
   .store-card-owned{ color:var(--good); font-size:10.5px; }
   .store-card-cost{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; color:var(--cyan); margin-top:4px; }
@@ -888,6 +891,7 @@
     </div>
 
     <div class="store-pane active" id="upane-store">
+      <div class="store-catalog-status" id="storeCatalogStatus"></div>
       <div class="store-grid" id="upgradeList"></div>
     </div>
 
@@ -1152,6 +1156,18 @@
         // (e.g. unexpected load order): the check below just skips it.
         if (typeof window.__proxSyncInventoryFromBackend === "function") {
           window.__proxSyncInventoryFromBackend();
+        }
+
+        // One-time initial load of the Store's miner catalog (public.miner_catalog).
+        // Defined inside the game IIFE further down this page and exposed as
+        // window.__proxRefreshMinerCatalog — by the time this callback runs,
+        // that IIFE has already finished loading. The Store itself also
+        // triggers a fresh refresh each time it's opened (see
+        // switchToScreen("upgrade") below), so an admin catalog edit is
+        // reflected next time the player visits the Store, without ever
+        // polling on a timer.
+        if (typeof window.__proxRefreshMinerCatalog === "function") {
+          window.__proxRefreshMinerCatalog();
         }
       });
     } else {
@@ -1456,6 +1472,147 @@
   // an async .then()) well after the whole page — including this IIFE — has
   // finished loading, so `state`/`saveState`/`render` above are always ready.
   window.__proxSyncInventoryFromBackend = syncInventoryFromBackend;
+
+  // ---------- Store miner catalog (public.miner_catalog) ----------
+  // Loads the ACTIVE miner catalog rows (miner_tier, miner_name, miner_icon,
+  // price_pxn, mining_speed, is_active) using the existing authenticated
+  // supabase-js client from js/auth-client.js (ProXAuth.getSupabaseClient()) —
+  // the same client instance already used to hold the player's session, so
+  // RLS's "authenticated users may read active rows" policy applies exactly
+  // as it does for any other authenticated read in this app. No new auth
+  // logic, no new client, and no anon-only fallback: with no session yet,
+  // this fetch simply reports an error and the Store keeps showing whatever
+  // it already had (UPGRADES, i.e. adminConfig/DEFAULT_UPGRADES) — see
+  // getStoreUpgrades() below.
+  //
+  // This is purely a DISPLAY-side change: it never touches UPGRADES itself,
+  // never touches state.inventory, and never modifies REWARDS_CONFIG or any
+  // other gameplay system — it only feeds a separate in-memory cache that
+  // renderUpgrade() reads from. Existing owned inventory items keep resolving
+  // their own icon via minerIconWithBadge()/UPGRADES exactly as before, so
+  // past purchases are never retroactively changed by a catalog edit.
+  //
+  // Fetched once on load (triggered from the ProXAuth init block above once
+  // a session is confirmed, same pattern as syncInventoryFromBackend) and
+  // again each time the Miners screen is opened (see switchToScreen below) —
+  // never on the 1s render()/setInterval loop, so this never polls.
+  const minerCatalogCache = { loaded:false, loading:false, error:null, tiers:null };
+
+  function mapMinerCatalogRow(row){
+    return {
+      level: row.miner_tier,
+      name: row.miner_name,
+      cost: Number(row.price_pxn),
+      speed: Number(row.mining_speed),
+      icon: row.miner_icon
+    };
+  }
+
+  /** Active-catalog tiers if we've ever loaded them successfully, else the existing hardcoded/admin-config list — so the Store is always renderable. */
+  function getStoreUpgrades(){
+    return (minerCatalogCache.tiers && minerCatalogCache.tiers.length) ? minerCatalogCache.tiers : UPGRADES;
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, function(ch){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch];
+    });
+  }
+
+  /** Renders a Store card's icon from a catalog/UPGRADES entry's free-form `icon` value (URL, data URI, inline <svg>, or emoji/text), falling back to the existing built-in per-level glyph when no icon value is present — same fallback MINER_ICON_INNER set already used by minerIconSvg(). */
+  function storeCardIconMarkup(u){
+    const icon = u.icon;
+    const badge = '<div class="level-badge">L' + u.level + '</div>';
+    if(typeof icon === "string" && icon.trim()){
+      const trimmed = icon.trim();
+      if(/^data:/i.test(trimmed) || /^https?:\/\//i.test(trimmed)){
+        return '<img src="' + escapeHtml(trimmed) + '" alt="' + escapeHtml(u.name || "Miner") + '">' + badge;
+      }
+      if(/^<svg[\s>]/i.test(trimmed)){
+        return trimmed + badge;
+      }
+      return '<span class="catalog-icon-emoji">' + escapeHtml(trimmed) + '</span>' + badge;
+    }
+    const inner = MINER_ICON_INNER[u.level] || MINER_ICON_INNER.default;
+    return '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">' + inner + '</svg>' + badge;
+  }
+
+  function updateStoreCatalogStatus(){
+    const el = document.getElementById("storeCatalogStatus");
+    if(!el) return;
+    if(minerCatalogCache.error){
+      el.textContent = minerCatalogCache.loaded
+        ? "Showing last-known miner prices — couldn't refresh from server."
+        : "Showing default miner prices — couldn't load latest from server.";
+      el.classList.add("show");
+    } else {
+      el.classList.remove("show");
+    }
+  }
+
+  /**
+   * Fetches active public.miner_catalog rows, sorted by miner_tier ascending,
+   * via the existing authenticated supabase-js client. Always resolves (never
+   * throws) with { ok, rows, error }, same defensive shape used elsewhere in
+   * this file.
+   */
+  async function fetchMinerCatalogRows(){
+    const auth = window.ProXAuth;
+    const client = auth && typeof auth.getSupabaseClient === "function" ? auth.getSupabaseClient() : null;
+    if(!client){
+      return { ok:false, rows:null, error:"Backend not connected yet." };
+    }
+    try{
+      const { data, error } = await client
+        .from("miner_catalog")
+        .select("miner_tier,miner_name,miner_icon,price_pxn,mining_speed,is_active")
+        .eq("is_active", true)
+        .order("miner_tier", { ascending:true });
+
+      if(error){
+        return { ok:false, rows:null, error: error.message || "Could not load miner catalog." };
+      }
+      return { ok:true, rows: Array.isArray(data) ? data : [], error:null };
+    }catch(err){
+      return { ok:false, rows:null, error: (err && err.message) || "Network error loading miner catalog." };
+    }
+  }
+
+  /**
+   * Refreshes the in-memory miner catalog cache and re-renders the Store.
+   * Guarded against overlapping calls (minerCatalogCache.loading) — safe to
+   * call from multiple triggers (initial load + every Store screen open)
+   * without ever stacking concurrent requests or polling continuously.
+   * On failure, the last successfully-loaded catalog (if any) is kept as-is
+   * and only a small non-blocking status line is shown — the Store itself
+   * never breaks or goes blank.
+   */
+  async function refreshMinerCatalog(){
+    if(minerCatalogCache.loading) return;
+    minerCatalogCache.loading = true;
+
+    const result = await fetchMinerCatalogRows();
+    minerCatalogCache.loading = false;
+
+    if(result.ok){
+      minerCatalogCache.tiers = result.rows
+        .map(mapMinerCatalogRow)
+        .sort((a,b) => a.level - b.level);
+      minerCatalogCache.loaded = true;
+      minerCatalogCache.error = null;
+      console.log("[MinerCatalog] loaded", minerCatalogCache.tiers.length, "active tier(s)");
+    } else {
+      minerCatalogCache.error = result.error || "Could not load miner catalog.";
+      console.info("[MinerCatalog] fetch failed:", minerCatalogCache.error);
+    }
+
+    renderUpgrade();
+  }
+
+  // Exposed so the ProXAuth init block earlier in this page can trigger the
+  // initial load once a session is confirmed established — same load-order
+  // reasoning as window.__proxSyncInventoryFromBackend above.
+  window.__proxRefreshMinerCatalog = refreshMinerCatalog;
 
   // Mining Level boost: +levelBoostPercent% mining speed for every level above 1,
   // spent 100 PXN at a time via the LEVEL UP button (see levelUp()).
@@ -1771,16 +1928,19 @@
   }
 
   function renderUpgrade(){
+    updateStoreCatalogStatus();
+
     const list = document.getElementById("upgradeList");
     list.innerHTML = "";
-    UPGRADES.forEach(u => {
+    const storeUpgrades = getStoreUpgrades();
+    storeUpgrades.forEach(u => {
       const ownedCount = state.inventory.filter(i => i.level === u.level).length;
       const canAfford = state.pxnBalance >= u.cost;
       const div = document.createElement("div");
       div.className = "panel store-card";
       div.innerHTML = `
-        <div class="store-card-icon miner-icon-wrap">${minerIconWithBadge(u.level)}</div>
-        <div class="store-card-name">${u.name}</div>
+        <div class="store-card-icon miner-icon-wrap">${storeCardIconMarkup(u)}</div>
+        <div class="store-card-name">${escapeHtml(u.name)}</div>
         ${ownedCount ? '<div class="store-card-owned">OWNED × ' + ownedCount + '</div>' : ''}
         <div class="store-card-cost">${fmt(u.cost, 0)} PXN</div>
         <div class="store-card-boost">+${fmt(u.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
@@ -1791,7 +1951,15 @@
     list.querySelectorAll("[data-buy]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const lvl = parseInt(btn.dataset.buy,10);
-        const u = UPGRADES.find(x=>x.level===lvl);
+        // Always resolve against the currently-cached catalog (or its
+        // fallback) at click time, so a purchase uses that tier's live
+        // name/price/speed/icon rather than a stale snapshot taken when
+        // the Store was first rendered. Purchases remain a local balance
+        // deduction only, exactly as before — purchase-miner (backend)
+        // remains the authoritative source of truth for any future
+        // server-verified purchase flow and is not called from here.
+        const u = getStoreUpgrades().find(x=>x.level===lvl);
+        if(!u){ toast("That miner is no longer available — try refreshing."); return; }
         if(state.pxnBalance < u.cost){ toast("Need more PXN — swap m.PXN for PXN in Wallet"); return; }
         state.pxnBalance -= u.cost;
         state.inventory.push({
@@ -2621,6 +2789,13 @@
     const navBtn = document.querySelector('.navbtn[data-screen="' + name + '"]');
     if(navBtn) navBtn.classList.add("active");
     document.getElementById("screen-" + name).classList.add("active");
+
+    // Re-sync the Store's miner catalog every time the Miners screen opens
+    // (per-open refresh, not a timer), so an admin catalog edit shows up the
+    // next time the player visits the Store without needing a full reload.
+    if(name === "upgrade"){
+      refreshMinerCatalog();
+    }
   }
 
   document.querySelectorAll(".navbtn").forEach(btn=>{
