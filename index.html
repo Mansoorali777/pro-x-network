@@ -1122,20 +1122,27 @@
           console.info("[ProXBackend] backend profile not loaded:", meResult.error);
         }
 
-        // One-time, read/verify-only connectivity check against the
-        // new accrue-mining Edge Function. Called exactly once, right
-        // here at page init after authentication — never on an
-        // interval/poll. Purely confirms frontend <-> backend
-        // communication: it does NOT overwrite the existing
+        // Mining-rate sync (frontend display/sync fix): pulls the
+        // authoritative `mining_rate` from POST /accrue-mining (which
+        // already reflects any admin_speed_override — see
+        // accrue-mining/index.ts) and feeds it into the existing
+        // "MINING RATE" display via window.__proxSyncMiningRateFromBackend,
+        // exposed from inside the game IIFE further down this page
+        // (same load-order pattern as __proxSyncInventoryFromBackend
+        // below — that IIFE has already finished loading by the time
+        // this callback runs). It does NOT overwrite the existing
         // localStorage mining state (STORAGE_KEY below), does NOT
         // change claim/claimedTotal/pxnBalance/referrals/tasks/
-        // miners/boosts/marketplace/wallet logic, and does NOT change
-        // any visible UI. Failures are only logged.
-        ProXBackend.fetchAccrueMining().then(function (accrueResult) {
-          if (!accrueResult.ok) {
-            console.info("[ProXBackend] accrue-mining check not completed:", accrueResult.error);
-          }
-        });
+        // miners/boosts/marketplace/wallet logic — it only updates
+        // what the rate display reads. This same call also starts a
+        // periodic re-sync (see that function), so an admin override
+        // applied or cleared mid-session reaches this device without
+        // a full reload. Failures are only logged.
+        if (typeof window.__proxSyncMiningRateFromBackend === "function") {
+          window.__proxSyncMiningRateFromBackend();
+        } else {
+          console.info("[ProXBackend] mining-rate sync hook not ready yet");
+        }
 
         // One-time backend inventory sync (set-miner-applied migration
         // step). Defined inside the game IIFE further down this page and
@@ -1547,6 +1554,64 @@
     return speed;
   }
 
+  // ---------- backend mining-rate sync (frontend display/sync fix) ----------
+  // The backend (accrue-mining Edge Function) is the source of truth for the
+  // mining rate a player should see — including any admin_speed_override set
+  // via the admin panel (see 0020_admin_mining_speed_control.sql). This cache
+  // holds the last `mining_rate` value that function returned. It starts as
+  // null (no successful sync yet) so currentSpeed()'s local formula above can
+  // still be used as a fallback for the very first paint or if the backend is
+  // briefly unreachable — but the moment a real response arrives, that number
+  // wins and currentSpeed()'s local formula is no longer shown to the player.
+  // Nothing here changes currentSpeed() itself or the local accrual loop
+  // below (accrue()) — this only affects what the "MINING RATE" UI displays.
+  let serverMiningRate = null;
+
+  // What the UI should actually show for "MINING RATE". Prefers the
+  // authoritative backend value (see serverMiningRate above); falls back to
+  // the local calculation only when no backend value has been received yet.
+  function effectiveDisplayRate(){
+    return (typeof serverMiningRate === "number" && isFinite(serverMiningRate))
+      ? serverMiningRate
+      : currentSpeed();
+  }
+
+  let miningRateSyncInFlight = false;
+
+  // Pulls the authoritative rate from POST /accrue-mining and stores it in
+  // serverMiningRate, then re-renders so the display updates immediately —
+  // this is the only place serverMiningRate is ever written. Read-only
+  // against the backend: never writes admin_speed_override, mining_config,
+  // or anything else (that stays exclusively in admin-set-mining-speed).
+  async function syncMiningRateFromBackend(){
+    if(miningRateSyncInFlight) return;
+    if(!window.ProXBackend) return;
+    miningRateSyncInFlight = true;
+    try {
+      const result = await ProXBackend.fetchAccrueMining();
+      if(result.ok && result.data && typeof result.data.mining_rate === "number"){
+        serverMiningRate = result.data.mining_rate;
+        render();
+      } else {
+        console.info("[ProXBackend] mining rate sync not completed:", result.error);
+      }
+    } finally {
+      miningRateSyncInFlight = false;
+    }
+  }
+
+  // Exposed so the ProXAuth/ProXBackend init block earlier in this page can
+  // trigger the first sync once a session is confirmed established — same
+  // load-order reasoning as window.__proxSyncInventoryFromBackend below.
+  window.__proxSyncMiningRateFromBackend = syncMiningRateFromBackend;
+
+  // Re-checks the backend mining rate periodically (independent of the
+  // one-time inventory sync above) so an admin override applied — or
+  // cleared — mid-session reaches this device without a full reload. 20s
+  // balances promptness against not calling accrue-mining on every 1s tick
+  // of the existing main loop further down this file.
+  setInterval(syncMiningRateFromBackend, 20000);
+
   // Conversion rate for the estimated USDT display only (m.PXN is an in-app point,
   // not a tradeable asset — this is a display estimate for players, not a live price feed).
   // Defaults so Level 1, mining 24h with no taps, earns ~$0.25 worth of m.PXN
@@ -1610,7 +1675,7 @@
     document.getElementById("earnedBig").innerHTML = fmt(state.minedBalance) + ' <span>' + TOKEN_SYMBOL + '</span>';
     document.getElementById("mineGreetName").textContent = PLAYER_NAME;
     document.getElementById("mineAvatar").textContent = PLAYER_NAME.replace("@","").charAt(0).toUpperCase() || "P";
-    const speed = currentSpeed();
+    const speed = effectiveDisplayRate();
     document.getElementById("rateDisplay").innerHTML = fmt(speed) + ' <span>' + TOKEN_SYMBOL + ' / SEC</span>';
     document.getElementById("rigUsd").textContent = fmtUsd(speed * 86400) + " / day";
 
