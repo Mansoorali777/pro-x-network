@@ -1614,6 +1614,135 @@
   // reasoning as window.__proxSyncInventoryFromBackend above.
   window.__proxRefreshMinerCatalog = refreshMinerCatalog;
 
+  // ---------- server-authoritative Store purchase (purchase-miner) ----------
+  // Replaces the BUY button's previous LOCAL-ONLY balance deduction /
+  // inventory push with a real call to the existing purchase-miner Edge
+  // Function, which is the single source of truth for verifying balance,
+  // deducting PXN, and inserting the mining_inventory row (see that
+  // function's own header comment). Nothing here re-implements any of that
+  // server-side logic — this is purely "call it, then reflect what it
+  // returns". Auth is untouched: the access token comes only from the
+  // existing window.ProXAuth.getAccessToken().
+  //
+  // Keyed by miner_tier (level) so a purchase in flight for one tier never
+  // blocks buying a different tier, and survives the periodic render()
+  // re-render (see renderUpgrade() below, which reads this to keep that
+  // tier's BUY button disabled/labelled until the request settles).
+  const minerPurchaseInProgress = {};
+
+  /**
+   * Small, self-contained call to POST /functions/v1/purchase-miner. Used
+   * instead of ProXBackend._callFunction() only because that generic helper
+   * (js/api-client.js) normalizes away the HTTP status code, and the
+   * required error handling here (400/401/403/404/409/500) needs it. Reuses
+   * the SAME existing window.PROX_CONFIG (FUNCTIONS_URL / SUPABASE_ANON_KEY)
+   * already shipped with the project — no new URL, no new config, no change
+   * to js/api-client.js itself. Always resolves (never throws).
+   */
+  async function callPurchaseMinerBackend(minerTier, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/purchase-miner", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ minerTier: minerTier })
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /** Safe, non-sensitive message for a failed purchase-miner call, preferring the backend's own (already-sanitized) message when present. */
+  function purchaseMinerErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    switch(result.status){
+      case 400: return "That miner can't be purchased right now.";
+      case 401: return "Please reconnect your Telegram account.";
+      case 403: return "You're not allowed to do that.";
+      case 404: return "Miner not found — try refreshing.";
+      case 409: return "Not enough PXN, or that purchase can't be completed right now.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Could not complete purchase — try again.";
+    }
+  }
+
+  /**
+   * Handles a BUY click end-to-end: gets the access token, calls
+   * purchase-miner, and — ONLY on a verified success response — applies the
+   * server's own returned inventory row/balance to local state. On any
+   * failure, local balance/inventory are left completely untouched. Locks
+   * the given tier (via minerPurchaseInProgress) for the duration of the
+   * request to prevent double-click purchases, and always re-renders the
+   * Store afterwards so that lock is visibly released.
+   */
+  async function handleBuyMinerClick(level){
+    if(minerPurchaseInProgress[level]) return;
+
+    const u = getStoreUpgrades().find(x => x.level === level);
+    if(!u){ toast("That miner is no longer available — try refreshing."); return; }
+
+    const accessToken = (window.ProXAuth && typeof window.ProXAuth.getAccessToken === "function")
+      ? await window.ProXAuth.getAccessToken()
+      : null;
+
+    if(!accessToken){
+      toast("Please reconnect your Telegram account.");
+      return;
+    }
+
+    minerPurchaseInProgress[level] = true;
+    renderUpgrade();
+
+    const result = await callPurchaseMinerBackend(level, accessToken);
+
+    minerPurchaseInProgress[level] = false;
+
+    if(result.ok && result.data && result.data.success && result.data.inventory){
+      // Use the server's own returned row — never the price/name/speed the
+      // player merely saw on screen — as the new, server-authoritative
+      // inventory item. Existing local inventory entries are left exactly
+      // as they are; only this new purchase is added.
+      state.inventory.push(mapBackendInventoryItem(result.data.inventory));
+
+      if(typeof result.data.pxn_balance === "number"){
+        state.pxnBalance = result.data.pxn_balance;
+      }
+
+      saveState();
+
+      // Reuses the existing inventory-sync mechanism (guarded/no-op after
+      // its first run — see syncInventoryFromBackend above) so any other
+      // backend-side inventory state is reconciled the same way it already
+      // is elsewhere in this app; the direct push above is what actually
+      // makes this specific purchase show up immediately.
+      if(typeof window.__proxSyncInventoryFromBackend === "function"){
+        window.__proxSyncInventoryFromBackend();
+      }
+
+      render();
+      toast("Miner purchased successfully!");
+      return;
+    }
+
+    // Failure: local balance/inventory are untouched (nothing above ran).
+    toast(purchaseMinerErrorMessage(result));
+    render();
+  }
+
   // Mining Level boost: +levelBoostPercent% mining speed for every level above 1,
   // spent 100 PXN at a time via the LEVEL UP button (see levelUp()).
   function levelBoostMultiplier(){
@@ -1935,6 +2064,7 @@
     const storeUpgrades = getStoreUpgrades();
     storeUpgrades.forEach(u => {
       const ownedCount = state.inventory.filter(i => i.level === u.level).length;
+      const isPurchasing = !!minerPurchaseInProgress[u.level];
       const canAfford = state.pxnBalance >= u.cost;
       const div = document.createElement("div");
       div.className = "panel store-card";
@@ -1944,30 +2074,22 @@
         ${ownedCount ? '<div class="store-card-owned">OWNED × ' + ownedCount + '</div>' : ''}
         <div class="store-card-cost">${fmt(u.cost, 0)} PXN</div>
         <div class="store-card-boost">+${fmt(u.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
-        <button class="btn" ${canAfford ? '' : 'disabled'} data-buy="${u.level}">BUY</button>`;
+        <button class="btn" ${(canAfford && !isPurchasing) ? '' : 'disabled'} data-buy="${u.level}">${isPurchasing ? 'PURCHASING…' : 'BUY'}</button>`;
       list.appendChild(div);
     });
 
     list.querySelectorAll("[data-buy]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const lvl = parseInt(btn.dataset.buy,10);
-        // Always resolve against the currently-cached catalog (or its
-        // fallback) at click time, so a purchase uses that tier's live
-        // name/price/speed/icon rather than a stale snapshot taken when
-        // the Store was first rendered. Purchases remain a local balance
-        // deduction only, exactly as before — purchase-miner (backend)
-        // remains the authoritative source of truth for any future
-        // server-verified purchase flow and is not called from here.
-        const u = getStoreUpgrades().find(x=>x.level===lvl);
-        if(!u){ toast("That miner is no longer available — try refreshing."); return; }
-        if(state.pxnBalance < u.cost){ toast("Need more PXN — swap m.PXN for PXN in Wallet"); return; }
-        state.pxnBalance -= u.cost;
-        state.inventory.push({
-          uid: "inv_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-          level: u.level, name: u.name, icon: u.icon || null, speed: u.speed, applied: false
-        });
-        saveState(); render();
-        toast("Bought " + u.name + " — added to your inventory. Apply it to start earning its boost.");
+        // Server-authoritative purchase: the backend purchase-miner Edge
+        // Function is the sole source of truth for verifying balance,
+        // deducting PXN, and creating the mining_inventory row — local
+        // state is only ever updated from what it actually returns (see
+        // handleBuyMinerClick above). Always resolves against the
+        // currently-cached catalog (or its fallback) at click time, so the
+        // request uses that tier's live price/name/speed rather than a
+        // stale snapshot taken when the Store was first rendered.
+        handleBuyMinerClick(lvl);
       });
     });
 
