@@ -121,12 +121,15 @@
   // user in js/auth-client.js — never holds tokens.
   let cachedBackendUser = null;
 
-  // Non-secret cache of the last accrue-mining verification call's
-  // response (the raw JSON from POST /accrue-mining), so a caller can
-  // inspect the outcome afterwards without re-hitting the network.
-  // This is a ONE-TIME frontend<->backend connectivity check for this
-  // migration step — nothing reads this to drive UI or overwrite the
-  // existing localStorage mining state. Never holds tokens.
+  // Non-secret cache of the last accrue-mining call's response (the
+  // raw JSON from POST /accrue-mining), so a caller can inspect the
+  // outcome afterwards without re-hitting the network. As of the
+  // mining-rate display/sync fix, index.html's game logic DOES read
+  // this response's `mining_rate` field (via fetchAccrueMining()'s
+  // return value) to drive the "MINING RATE" UI — see
+  // syncMiningRateFromBackend() in index.html. It still never
+  // overwrites the existing localStorage mining state itself, and
+  // never holds tokens.
   let lastAccrueMiningResult = null;
 
   /**
@@ -176,12 +179,16 @@
    * current Supabase session (via ProXAuth.getAccessToken(), same
    * pattern as fetchMe() above — never re-implemented here).
    *
-   * This is a READ/VERIFY-ONLY integration step: it is intended to be
-   * called once, right after successful authentication, purely to
-   * confirm frontend -> backend connectivity. It does NOT touch
-   * localStorage, does NOT modify any existing mining/claim state,
-   * and does NOT change any UI. Callers must not poll this on an
-   * interval — see the one-shot call site in index.html.
+   * This performs a real (server-side) accrual on every call — that
+   * behavior lives entirely in accrue-mining/index.ts and is
+   * unchanged here. On the frontend, this is used both once at init
+   * and on a periodic interval (see syncMiningRateFromBackend() in
+   * index.html) purely to read back the authoritative `mining_rate`
+   * for display — including any admin_speed_override — so the
+   * "MINING RATE" UI never shows a stale locally-computed value. It
+   * does NOT touch localStorage and does NOT modify any existing
+   * mining/claim state itself; index.html decides what, if anything,
+   * to do with the response.
    *
    * Always resolves (never throws) with { ok, data, error }, same
    * shape as every other ProXBackend call. The access token itself is
