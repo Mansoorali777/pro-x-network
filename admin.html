@@ -232,6 +232,22 @@
     max-height:90vh; overflow-y:auto;
     padding:22px;
   }
+
+  /* ---------- miner icon upload (Supabase Storage) ---------- */
+  .mc-icon-upload{ display:flex; align-items:center; gap:10px; margin-top:8px; }
+  .mc-icon-upload input[type=file]{ flex:1; min-width:0; }
+  .mc-icon-preview{
+    width:36px; height:36px; flex-shrink:0;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .mc-icon-preview img{ width:100%; height:100%; object-fit:contain; }
+  .mc-icon-upload-msg{ font-size:11px; margin-top:6px; min-height:14px; }
+  .mc-icon-upload-msg.err{ color:var(--danger); }
+  .mc-icon-upload-msg.ok{ color:var(--good); }
+  .mc-icon-upload-msg.pending{ color:var(--steel); }
 </style>
 </head>
 <body>
@@ -384,7 +400,15 @@
       <div class="panel form-grid" id="mcAddForm">
         <div class="field"><label>MINER TIER</label><input type="number" id="mcAddTier" min="1" max="1000" step="1" placeholder="e.g. 8" autocomplete="off"></div>
         <div class="field"><label>MINER NAME</label><input type="text" id="mcAddName" maxlength="200" placeholder="e.g. Antimatter Rig" autocomplete="off"></div>
-        <div class="field"><label>MINER ICON</label><input type="text" id="mcAddIcon" maxlength="500" placeholder="Emoji, URL, or data URI" autocomplete="off"></div>
+        <div class="field">
+          <label>MINER ICON</label>
+          <input type="text" id="mcAddIcon" maxlength="500" placeholder="Emoji, URL, or data URI" autocomplete="off">
+          <div class="mc-icon-upload">
+            <div class="mc-icon-preview" id="mcAddIconPreview"></div>
+            <input type="file" id="mcAddIconFile" accept="image/png,image/jpeg,image/webp">
+          </div>
+          <div class="mc-icon-upload-msg" id="mcAddIconUploadMsg"></div>
+        </div>
         <div class="field"><label>PRICE (PXN)</label><input type="number" id="mcAddPrice" min="0" max="100000000" step="0.00000001" placeholder="e.g. 50000"></div>
         <div class="field"><label>MINING SPEED (PXN/SEC)</label><input type="number" id="mcAddSpeed" min="0" max="100000" step="0.00000001" placeholder="e.g. 10"></div>
         <div class="field" style="display:flex; align-items:center; gap:8px; padding-top:22px;">
@@ -543,7 +567,15 @@
     <input type="hidden" id="mcEditId">
     <div class="field" style="margin-bottom:12px;"><label>MINER TIER</label><input type="number" id="mcEditTier" min="1" max="1000" step="1"></div>
     <div class="field" style="margin-bottom:12px;"><label>MINER NAME</label><input type="text" id="mcEditName" maxlength="200"></div>
-    <div class="field" style="margin-bottom:12px;"><label>MINER ICON</label><input type="text" id="mcEditIcon" maxlength="500"></div>
+    <div class="field" style="margin-bottom:12px;">
+      <label>MINER ICON</label>
+      <input type="text" id="mcEditIcon" maxlength="500">
+      <div class="mc-icon-upload">
+        <div class="mc-icon-preview" id="mcEditIconPreview"></div>
+        <input type="file" id="mcEditIconFile" accept="image/png,image/jpeg,image/webp">
+      </div>
+      <div class="mc-icon-upload-msg" id="mcEditIconUploadMsg"></div>
+    </div>
     <div class="field" style="margin-bottom:12px;"><label>PRICE (PXN)</label><input type="number" id="mcEditPrice" min="0" max="100000000" step="0.00000001"></div>
     <div class="field" style="margin-bottom:12px;"><label>MINING SPEED (PXN/SEC)</label><input type="number" id="mcEditSpeed" min="0" max="100000" step="0.00000001"></div>
     <div class="field" style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
@@ -1021,6 +1053,142 @@
     return { value: { minerTier: tier, minerName: name, minerIcon: icon, pricePxn: price, miningSpeed: speed, isActive: active } };
   }
 
+  // ---- icon upload (Supabase Storage, bucket: miner-icons) ----
+  // Uploads go straight from the browser to Storage using the SAME
+  // signed-in supabase-js client/session as everything else on this
+  // page (getAdminSupabaseClient()) — never a service-role key, and
+  // never a raw fetch with a hand-attached token. A successful upload
+  // only ever populates the MINER ICON text field with the resulting
+  // public URL; it does NOT touch public.miner_catalog itself. Saving
+  // that URL into the catalog still happens exclusively through the
+  // existing admin-miner-catalog Edge Function, via the normal
+  // ADD MINER / SAVE CHANGES buttons below — this block never calls
+  // supabase-js .from("miner_catalog") or any INSERT/UPDATE RPC.
+  const MC_ICON_ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp"];
+  const MC_ICON_MAX_BYTES = 2 * 1024 * 1024; // 2 MB, matches the miner-icons bucket's file_size_limit
+  const MC_ICON_EXT_BY_TYPE = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+
+  function mcSetIconUploadMsg(prefix, text, kind){
+    const el = document.getElementById(prefix + "IconUploadMsg");
+    if(!el) return;
+    el.textContent = text || "";
+    el.className = "mc-icon-upload-msg" + (kind ? " " + kind : "");
+  }
+
+  // Renders whatever's currently in the MINER ICON text field (emoji,
+  // URL, or data URI — same accepted shapes as admin-miner-catalog
+  // itself) into the small preview box, matching mcIconMarkup's own
+  // "does this look like a URL/data URI" check used for the table.
+  function mcRefreshIconPreviewFromField(prefix){
+    const preview = document.getElementById(prefix + "IconPreview");
+    const iconEl = document.getElementById(prefix + "Icon");
+    if(!preview || !iconEl) return;
+    const val = iconEl.value.trim();
+    if(!val){ preview.innerHTML = ""; return; }
+    if(/^(data:|https?:)/i.test(val)){
+      preview.innerHTML = `<img src="${val.replace(/"/g,"&quot;")}" alt="">`;
+    } else {
+      preview.innerHTML = `<span style="font-size:16px;">${val.replace(/</g,"&lt;")}</span>`;
+    }
+  }
+
+  function mcValidateIconFile(file){
+    if(MC_ICON_ALLOWED_TYPES.indexOf(file.type) === -1){
+      return "Only PNG, JPEG, or WebP images are allowed.";
+    }
+    if(file.size > MC_ICON_MAX_BYTES){
+      return "Image is too large — the maximum size is 2 MB.";
+    }
+    return null;
+  }
+
+  function mcRandomId(){
+    if(window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  // Uploads one file to the miner-icons bucket under a fresh, unique
+  // path (timestamp + random id) so a new upload can never collide
+  // with — or silently overwrite — another miner's existing icon
+  // file. Returns { url } on success or { error } on failure; never
+  // throws. If Storage RLS rejects the upload (e.g. no authenticated
+  // INSERT policy exists yet on storage.objects for this bucket), this
+  // reports that plainly and stops — it never falls back to a
+  // service-role key or any other bypass.
+  async function mcUploadIconFile(file){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      return { error: "Backend not configured — edit config/frontend-config.js." };
+    }
+    const { data: sessionData } = await client.auth.getSession();
+    if(!sessionData || !sessionData.session){
+      return { error: "Your admin session has expired — please log in again before uploading." };
+    }
+
+    const ext = MC_ICON_EXT_BY_TYPE[file.type] || "bin";
+    const path = "catalog/" + Date.now() + "-" + mcRandomId() + "." + ext;
+
+    const { error: uploadError } = await client.storage
+      .from("miner-icons")
+      .upload(path, file, { contentType: file.type, upsert: false, cacheControl: "3600" });
+
+    if(uploadError){
+      const msg = String(uploadError.message || "");
+      const status = uploadError.statusCode || (uploadError.status ? String(uploadError.status) : "");
+      const looksLikeMissingPolicy = /row-level security|rls|policy|permission|unauthorized|403|401/i.test(msg + " " + status);
+      if(looksLikeMissingPolicy){
+        return { error: "Upload was rejected by Storage security rules — the miner-icons bucket doesn't yet have a Storage policy allowing authenticated admin uploads. Ask a developer to add one (no icon was uploaded, and the existing icon was not changed)." };
+      }
+      return { error: "Icon upload failed — please try again. (No changes were made.)" };
+    }
+
+    const { data: publicUrlData } = client.storage.from("miner-icons").getPublicUrl(path);
+    if(!publicUrlData || !publicUrlData.publicUrl){
+      return { error: "Upload succeeded but the public URL could not be generated. Please try again." };
+    }
+    return { url: publicUrlData.publicUrl };
+  }
+
+  // Wires one file input (Add form or Edit modal) to: validate ->
+  // upload -> on success, fill the icon text field + preview with the
+  // new public URL. Nothing is saved to miner_catalog here — that
+  // only happens when the admin clicks ADD MINER / SAVE CHANGES,
+  // which send the (now-updated) icon field through
+  // admin-miner-catalog exactly as before.
+  function mcWireIconUpload(prefix){
+    const fileInput = document.getElementById(prefix + "IconFile");
+    if(!fileInput) return;
+    fileInput.addEventListener("change", async ()=>{
+      const file = fileInput.files && fileInput.files[0];
+      if(!file) return;
+
+      const validationError = mcValidateIconFile(file);
+      if(validationError){
+        mcSetIconUploadMsg(prefix, validationError, "err");
+        fileInput.value = "";
+        return;
+      }
+
+      mcSetIconUploadMsg(prefix, "Uploading…", "pending");
+      fileInput.disabled = true;
+      try{
+        const result = await mcUploadIconFile(file);
+        if(result.error){
+          mcSetIconUploadMsg(prefix, result.error, "err");
+          return;
+        }
+        document.getElementById(prefix + "Icon").value = result.url;
+        mcRefreshIconPreviewFromField(prefix);
+        mcSetIconUploadMsg(prefix, "Icon uploaded — click " + (prefix === "mcAdd" ? "ADD MINER" : "SAVE CHANGES") + " to save it.", "ok");
+      } finally {
+        fileInput.disabled = false;
+        fileInput.value = "";
+      }
+    });
+  }
+  mcWireIconUpload("mcAdd");
+  mcWireIconUpload("mcEdit");
+
   // ---- add ----
   let mcAddPending = false;
   document.getElementById("mcAddBtn").addEventListener("click", async ()=>{
@@ -1044,6 +1212,8 @@
       document.getElementById("mcAddPrice").value = "";
       document.getElementById("mcAddSpeed").value = "";
       document.getElementById("mcAddActive").checked = true;
+      document.getElementById("mcAddIconPreview").innerHTML = "";
+      mcSetIconUploadMsg("mcAdd", "", "");
       fetchMinerCatalogList();
     } finally {
       mcAddPending = false;
@@ -1065,6 +1235,8 @@
     document.getElementById("mcEditSpeed").value = miner.miningSpeed;
     document.getElementById("mcEditActive").checked = !!miner.isActive;
     setMcEditMsg("", false);
+    mcSetIconUploadMsg("mcEdit", "", "");
+    mcRefreshIconPreviewFromField("mcEdit");
     document.getElementById("mcEditOverlay").classList.add("show");
   }
   function closeMcEditModal(){
