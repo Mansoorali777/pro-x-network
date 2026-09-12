@@ -1185,7 +1185,7 @@
       </div>
       <div class="miner-detail-balance">
         <div class="eyebrow">YOUR BALANCE</div>
-        <div class="miner-detail-balance-val" id="minerDetailBalance">0.00 PXN</div>
+        <div class="miner-detail-balance-val" id="minerDetailBalance">0.00 m.PXN</div>
       </div>
       <div class="eyebrow miner-detail-costs-title" id="minerDetailCostsTitle">UPGRADE COSTS</div>
       <div class="miner-detail-costs-list" id="minerDetailCostsList">
@@ -2483,7 +2483,7 @@
   /**
    * Safe, non-sensitive message for a failed upgrade-miner call, preferring
    * the backend's own (already-sanitized) message when present — e.g. "This
-   * miner is already at max level" or "Insufficient PXN balance" are both
+   * miner is already at max level" or "Insufficient m.PXN balance" are both
    * safe, specific, and never raw database/SQL text (see
    * upgrade-miner/index.ts). Falls back to a generic, status-keyed message
    * otherwise, same pattern as purchaseMinerErrorMessage() above.
@@ -2497,7 +2497,7 @@
       case 401: return "Session expired — please reopen the app.";
       case 403: return "You're not allowed to upgrade this miner.";
       case 404: return "Miner not found — try refreshing.";
-      case 409: return "Not enough PXN or this upgrade cannot be completed right now.";
+      case 409: return "Not enough m.PXN or this upgrade cannot be completed right now.";
       case 500: return "Server error — please try again.";
       default: return result.error || "Network error — try again.";
     }
@@ -2546,19 +2546,23 @@
         // simply stays applied here too — nothing re-applies or removes it.
         Object.assign(item, mapBackendInventoryItem(result.data.inventory));
 
+        // upgrade-miner now deducts m.PXN (mining_state.claimed_total), not
+        // PXN, and returns the new balance under "claimed_total" — sync that
+        // into state.claimedTotal. state.pxnBalance (the separate,
+        // still-live PXN feature) is intentionally left untouched here.
         // PostgreSQL numeric columns can arrive as either a JS number or a
         // numeric string — accept both (Goal D), never only `typeof === "number"`,
         // and never compute the new balance locally (never oldBalance - cost).
-        const upgradeBalance = Number(result.data.pxn_balance);
-        if(Number.isFinite(upgradeBalance)){
-          state.pxnBalance = upgradeBalance;
+        const upgradeClaimedTotal = Number(result.data.claimed_total);
+        if(Number.isFinite(upgradeClaimedTotal)){
+          state.claimedTotal = upgradeClaimedTotal;
         }
 
         saveState();
 
-        const upgradeCost = Number(result.data.pxn_cost);
+        const upgradeCost = Number(result.data.mpxn_cost);
         toast(Number.isFinite(upgradeCost)
-          ? "Miner upgraded to Lv. " + item.minerLevel + " for " + fmt(upgradeCost, 0) + " PXN"
+          ? "Miner upgraded to Lv. " + item.minerLevel + " for " + fmt(upgradeCost, 0) + " " + TOKEN_SYMBOL
           : "Miner upgraded to Lv. " + item.minerLevel);
       } else {
         // Failure: local level/speed/balance are untouched (nothing above ran).
@@ -2694,12 +2698,15 @@
   // ---------- miner detail / live upgrade-cost box (Goal A/G) ----------
   // Opened by tapping a backend-linked Inventory card (see renderInventory
   // below). Shows the miner's current level/speed, the player's
-  // database-authoritative PXN balance (state.pxnBalance — kept in sync by
-  // syncMiningRateFromBackend() elsewhere in this file), and LIVE upgrade
-  // costs read fresh from get-miner-upgrade-costs. Never calculates or
-  // hardcodes a cost, and never sends anything but inventoryId to
-  // upgrade-miner (the UPGRADE button below just calls the existing,
-  // unmodified handleUpgradeMinerClick()).
+  // database-authoritative m.PXN balance (state.claimedTotal — kept in sync
+  // by claim/purchase/upgrade flows elsewhere in this file, same ledger the
+  // Store already uses), and LIVE upgrade costs read fresh from
+  // get-miner-upgrade-costs. Never calculates or hardcodes a cost, and
+  // never sends anything but inventoryId to upgrade-miner (the UPGRADE
+  // button below just calls the existing, unmodified
+  // handleUpgradeMinerClick()). Miner upgrades spend m.PXN
+  // (mining_state.claimed_total), NOT PXN (mining_state.pxn_balance) — see
+  // 0029_upgrade_miner_use_mpxn.sql.
   let minerDetailItem = null; // the inventory item currently shown in the box, or null when closed
 
   /** From the given live cost rows, the next few transitions at/after currentLevel — "sensible upcoming levels", not all 49 at once. */
@@ -2726,9 +2733,14 @@
     document.getElementById("minerDetailSpeed").textContent =
       "Speed: " + fmt(Number.isFinite(speed) ? speed : 0, 4) + " " + TOKEN_SYMBOL + "/sec";
 
-    const balance = Number(state.pxnBalance);
+    // Miner upgrades spend m.PXN (mining_state.claimed_total) — the SAME
+    // spendable ledger the Store's canAfford check already uses (see
+    // renderUpgrade() above) — NOT PXN (state.pxnBalance), which upgrades
+    // never read, deduct, or depend on (see 0029_upgrade_miner_use_mpxn.sql).
+    const balance = Number(state.claimedTotal);
+    const safeBalance = Number.isFinite(balance) ? balance : 0;
     document.getElementById("minerDetailBalance").textContent =
-      fmt(Number.isFinite(balance) ? balance : 0, 2) + " PXN";
+      fmt(safeBalance, 2) + " " + TOKEN_SYMBOL;
 
     const listEl = document.getElementById("minerDetailCostsList");
     const titleEl = document.getElementById("minerDetailCostsTitle");
@@ -2760,12 +2772,20 @@
     listEl.innerHTML = rows.map((row, idx) => `
         <div class="miner-detail-cost-row${idx === 0 ? " next-level" : ""}">
           <div class="miner-detail-cost-transition">Lv.${row.fromLevel} &rarr; Lv.${row.toLevel}</div>
-          <div class="miner-detail-cost-val">${fmt(row.costPxn, 2)} PXN</div>
+          <div class="miner-detail-cost-val">${fmt(row.costPxn, 2)} ${TOKEN_SYMBOL}</div>
         </div>`).join("");
 
+    // Affordability check (m.PXN / state.claimedTotal only — never
+    // state.pxnBalance) for the very next transition. This is advisory on
+    // the client: the server (upgrade_miner(), PXN20) remains the sole
+    // authority and re-checks the live balance itself regardless of what
+    // this button's disabled state shows.
+    const nextCost = rows.length ? Number(rows[0].costPxn) : NaN;
+    const canAffordNext = Number.isFinite(nextCost) ? safeBalance >= nextCost : true;
+
     const pending = pendingMinerUpgrades.has(item.uid);
-    upgradeBtn.disabled = pending;
-    upgradeBtn.textContent = pending ? "UPGRADING…" : "UPGRADE";
+    upgradeBtn.disabled = pending || !canAffordNext;
+    upgradeBtn.textContent = pending ? "UPGRADING…" : (canAffordNext ? "UPGRADE" : "INSUFFICIENT m.PXN");
   }
 
   /**
@@ -2793,19 +2813,25 @@
     }
   }
 
-  /** Opens the box for `item` immediately with whatever's cached, then refreshes the authoritative PXN balance (strict database-authoritative — never the potentially-stale local value alone) and live upgrade costs (Goal B) before a final repaint. */
+  /**
+   * Opens the box for `item` immediately with whatever's cached, then
+   * refreshes live upgrade costs (Goal B) before a final repaint. The box
+   * now displays m.PXN (state.claimedTotal), which is already kept
+   * database-authoritative by the existing claim/purchase/upgrade success
+   * paths elsewhere in this file — so, unlike before this migration, this
+   * function no longer also calls refreshAuthoritativePxnBalance() (that
+   * function refreshes the separate, untouched PXN balance and is left
+   * fully intact for whatever else in this file may still need it — see
+   * its own definition above).
+   */
   async function openMinerDetailBox(item){
     minerDetailItem = item;
     renderMinerDetailBox();
     document.getElementById("minerDetailOverlay").classList.add("show");
 
-    // Both run against existing endpoints only — accrue-mining for the
-    // authoritative balance, get-miner-upgrade-costs for live costs — and
-    // neither is a new backend function or balance system.
-    await Promise.all([
-      refreshAuthoritativePxnBalance(),
-      getMinerUpgradeCosts(false) // no-op network-wise if the cache is still fresh
-    ]);
+    // get-miner-upgrade-costs for live costs — no new backend function or
+    // balance system.
+    await getMinerUpgradeCosts(false); // no-op network-wise if the cache is still fresh
 
     if(minerDetailItem === item){ // the player may have closed the box while this was in flight
       renderMinerDetailBox();
