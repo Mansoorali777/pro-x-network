@@ -2756,13 +2756,45 @@
     upgradeBtn.textContent = pending ? "UPGRADING…" : "UPGRADE";
   }
 
-  /** Opens the box for `item` immediately with whatever's cached, then refreshes live costs (Goal B) if the cache is missing/stale and repaints again. */
+  /**
+   * Refreshes state.pxnBalance from the EXISTING accrue-mining Edge
+   * Function response (ProXBackend.fetchAccrueMining() — the same call
+   * syncMiningRateFromBackend() already uses elsewhere in this file; no
+   * new endpoint, migration, or balance system is introduced here).
+   * result.data.mining_state.pxn_balance is public.mining_state.pxn_balance,
+   * the database-authoritative balance — normalized with Number()/
+   * Number.isFinite() rather than trusted as-is, since PostgreSQL numeric
+   * columns can arrive as a string. Never computes a balance locally and
+   * never subtracts an upgrade cost. On any failure or non-finite value,
+   * state.pxnBalance is left exactly as it was (whatever the last
+   * successful sync — from this call or syncMiningRateFromBackend — set
+   * it to), never zeroed or guessed.
+   */
+  async function refreshAuthoritativePxnBalance(){
+    if(!window.ProXBackend || typeof ProXBackend.fetchAccrueMining !== "function") return;
+    const result = await ProXBackend.fetchAccrueMining();
+    if(!result.ok || !result.data || !result.data.mining_state) return;
+    const backendBalance = Number(result.data.mining_state.pxn_balance);
+    if(Number.isFinite(backendBalance) && backendBalance !== state.pxnBalance){
+      state.pxnBalance = backendBalance;
+      saveState();
+    }
+  }
+
+  /** Opens the box for `item` immediately with whatever's cached, then refreshes the authoritative PXN balance (strict database-authoritative — never the potentially-stale local value alone) and live upgrade costs (Goal B) before a final repaint. */
   async function openMinerDetailBox(item){
     minerDetailItem = item;
     renderMinerDetailBox();
     document.getElementById("minerDetailOverlay").classList.add("show");
 
-    await getMinerUpgradeCosts(false); // no-op network-wise if the cache is still fresh
+    // Both run against existing endpoints only — accrue-mining for the
+    // authoritative balance, get-miner-upgrade-costs for live costs — and
+    // neither is a new backend function or balance system.
+    await Promise.all([
+      refreshAuthoritativePxnBalance(),
+      getMinerUpgradeCosts(false) // no-op network-wise if the cache is still fresh
+    ]);
+
     if(minerDetailItem === item){ // the player may have closed the box while this was in flight
       renderMinerDetailBox();
     }
