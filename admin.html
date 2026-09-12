@@ -295,6 +295,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
         Miner Upgrade Costs
       </button>
+      <button class="side-btn" data-page="dbUsers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+        Users
+      </button>
       <button class="side-btn" data-page="token">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 0 1 0 4H9m0 0h4.5a2 2 0 0 1 0 4H9"/></svg>
         Token
@@ -455,6 +459,27 @@
         </table>
       </div>
       <div class="note" id="ucEmptyNote" style="display:none;">No upgrade cost levels configured yet — run the 0026 migration to seed defaults.</div>
+    </div>
+
+    <!-- USERS (real backend, public.users joined with public.mining_state.pxn_balance) -->
+    <div class="page" id="page-dbUsers">
+      <div class="page-head">
+        <h2>Users</h2>
+        <div class="sub">Every registered player's EXACT, database-authoritative PXN balance (public.mining_state.pxn_balance) alongside their Telegram identity — read via the admin-users Edge Function, which verifies your admin session server-side before touching anything, same trust model as Miner Management / Miner Upgrade Costs above. Strictly read-only: nothing here can change a balance. Separate from the local-demo "Players" page.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn ghost" id="dbUsersRefreshBtn">REFRESH</button>
+      </div>
+      <div class="note" id="dbUsersMsg" style="display:none; padding:10px 16px;"></div>
+
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>TELEGRAM USER ID</th><th>USERNAME</th><th>NAME</th><th>PXN BALANCE</th><th>CREATED AT</th></tr></thead>
+          <tbody id="dbUsersTableBody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="dbUsersEmptyNote" style="display:none;">No users found.</div>
     </div>
 
     <!-- TOKEN -->
@@ -1489,6 +1514,126 @@
   // same pattern as Miner Management's own nav-triggered load above.
   const ucNavBtn = document.querySelector('.side-btn[data-page="minerUpgradeCosts"]');
   if(ucNavBtn) ucNavBtn.addEventListener("click", fetchUpgradeCostList);
+
+  // ---------- Users (database-backed, public.users + public.mining_state.pxn_balance) ----------
+  // Talks to the real backend (admin-users Edge Function), NOT the
+  // local-demo "Players" page above. Reuses the same signed-in
+  // supabase-js client/session via getAdminSupabaseClient() —
+  // client.functions.invoke() attaches the current session's
+  // Authorization bearer token automatically, so no token is ever read
+  // or attached by hand here, and the service-role key is never
+  // present in this file. Strictly read-only: this page never writes
+  // to users or mining_state, and never sends a target user id in the
+  // request body — admin-users returns every user in one call, scoped
+  // entirely by the caller's own admin session server-side.
+  let dbUsersList = [];
+  let dbUsersPending = false;
+
+  function setDbUsersMsg(text, isError){
+    const el = document.getElementById("dbUsersMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+
+  // Maps a supabase-js Edge Function error (network-level, or a
+  // non-2xx response from admin-users) to a short, safe, user-facing
+  // message keyed off HTTP status — same pattern as ucErrorMessage
+  // above. Only ever surfaces the clean, pre-sanitized `message`
+  // admin-users itself returns — never raw database/server error text.
+  async function dbUsersErrorMessage(error){
+    let status = null;
+    let serverMessage = null;
+    if(error && error.context){
+      try{
+        if(typeof error.context.status === "number") status = error.context.status;
+        if(typeof error.context.json === "function"){
+          const parsed = await error.context.json();
+          if(parsed && typeof parsed.message === "string") serverMessage = parsed.message;
+        }
+      }catch(e){ /* keep defaults below */ }
+    }
+    switch(status){
+      case 401: return "Session expired — please log in again.";
+      case 403: return "Admin access denied.";
+      default: return serverMessage || "Server error — please try again.";
+    }
+  }
+
+  async function callAdminUsers(body){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      return { data: null, message: "Backend not configured — edit config/frontend-config.js." };
+    }
+    const { data, error } = await client.functions.invoke("admin-users", { body });
+    if(error){
+      return { data: null, message: await dbUsersErrorMessage(error) };
+    }
+    if(!data || data.success !== true){
+      return { data: null, message: (data && data.message) || "Request failed" };
+    }
+    return { data, message: null };
+  }
+
+  // PostgreSQL numeric(20,8) can arrive as a JS number OR a numeric
+  // string — never trust `typeof === "number"` alone. Falls back to 0
+  // (never NaN) exactly like the backend's own safePxnBalance().
+  function dbUsersSafeBalance(n){
+    const v = Number(n);
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  function dbUsersFmtBalance(n){
+    return dbUsersSafeBalance(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+  }
+
+  function dbUsersFmtName(u){
+    const parts = [u.firstName, u.lastName].filter(p => typeof p === "string" && p.trim() !== "");
+    return parts.length ? parts.join(" ") : "—";
+  }
+
+  function dbUsersEsc(s){
+    const div = document.createElement("div");
+    div.textContent = s === null || s === undefined ? "" : String(s);
+    return div.innerHTML;
+  }
+
+  function renderDbUsersTable(){
+    const body = document.getElementById("dbUsersTableBody");
+    body.innerHTML = "";
+    document.getElementById("dbUsersEmptyNote").style.display = dbUsersList.length ? "none" : "block";
+    dbUsersList.forEach(u=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${dbUsersEsc(u.telegramUserId)}</td>
+        <td>${dbUsersEsc(u.username || "—")}</td>
+        <td>${dbUsersEsc(dbUsersFmtName(u))}</td>
+        <td>${dbUsersFmtBalance(u.pxnBalance)} PXN</td>
+        <td>${dbUsersEsc(fmtTime(u.createdAt))}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  async function fetchDbUsersList(){
+    if(dbUsersPending) return;
+    dbUsersPending = true;
+    setDbUsersMsg("", false);
+    const { data, message } = await callAdminUsers({});
+    dbUsersPending = false;
+    if(!data){
+      setDbUsersMsg(message, true);
+      return;
+    }
+    dbUsersList = data.users || [];
+    renderDbUsersTable();
+  }
+
+  document.getElementById("dbUsersRefreshBtn").addEventListener("click", ()=> fetchDbUsersList());
+
+  // Load the list automatically the moment this section is opened —
+  // same pattern as Miner Management / Miner Upgrade Costs above.
+  const dbUsersNavBtn = document.querySelector('.side-btn[data-page="dbUsers"]');
+  if(dbUsersNavBtn) dbUsersNavBtn.addEventListener("click", fetchDbUsersList);
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
