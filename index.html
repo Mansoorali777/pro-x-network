@@ -380,6 +380,83 @@
   .captcha-error.show{ display:block; }
   .modal-box .btn{ margin-top:16px; }
 
+  /* ---------- miner detail / live upgrade-cost box (Goal A/B/G) ---------- */
+  .modal-box.miner-detail-box{
+    max-width:360px;
+    text-align:left;
+  }
+  .miner-detail-head{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .miner-detail-head .miner-icon-wrap{
+    width:52px; height:52px;
+    margin-bottom:0;
+    flex-shrink:0;
+  }
+  .miner-detail-name{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    line-height:1.2;
+  }
+  .miner-detail-level{ font-size:11.5px; color:var(--amber); font-weight:600; margin-top:2px; }
+  .miner-detail-speed{ font-size:11.5px; color:var(--steel); margin-top:2px; }
+  .miner-detail-balance{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:16px;
+    padding:10px 12px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+  }
+  .miner-detail-balance .eyebrow{ margin:0; }
+  .miner-detail-balance-val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:14px;
+    color:var(--cyan);
+  }
+  .miner-detail-costs-title{ margin-top:16px; margin-bottom:6px; }
+  .miner-detail-costs-list{
+    max-height:160px;
+    overflow-y:auto;
+  }
+  .miner-detail-cost-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-size:12px;
+    padding:7px 2px;
+    border-bottom:1px solid var(--line);
+  }
+  .miner-detail-cost-row:last-child{ border-bottom:none; }
+  .miner-detail-cost-row.next-level .miner-detail-cost-transition{ color:var(--cyan); }
+  .miner-detail-cost-transition{ color:var(--text); }
+  .miner-detail-cost-val{ font-weight:600; color:var(--steel); }
+  .miner-detail-cost-row.next-level .miner-detail-cost-val{ color:var(--text); }
+  .miner-detail-costs-empty{ font-size:11.5px; color:var(--steel); padding:8px 2px; }
+  .miner-detail-max-level{
+    margin-top:16px;
+    padding:10px 12px;
+    text-align:center;
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    letter-spacing:0.06em;
+    color:var(--amber);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+  }
+  .miner-detail-actions{
+    display:flex;
+    gap:8px;
+    margin-top:16px;
+  }
+  .miner-detail-actions .btn{ margin-top:0; flex:1; }
+
   .stat-row{
     display:flex;
     gap:10px;
@@ -1069,6 +1146,35 @@
       <div class="modal-sub">Please wait for the ad to finish to earn credit.</div>
       <div class="ad-progress-track"><div class="ad-progress-fill" id="adProgressFill"></div></div>
       <div class="captcha-question" id="adCountdown" style="font-size:30px;">5</div>
+    </div>
+  </div>
+
+  <!-- Miner detail / live upgrade-cost box (Goal A/B/G). Populated entirely
+       by openMinerDetailBox()/renderMinerDetailBox() — see the script below.
+       Costs always come from GET-miner-upgrade-costs (get-miner-upgrade-costs
+       Edge Function); nothing here computes a cost locally. -->
+  <div class="modal-overlay" id="minerDetailOverlay">
+    <div class="panel modal-box miner-detail-box" id="minerDetailBox">
+      <div class="miner-detail-head">
+        <div class="miner-icon-wrap small" id="minerDetailIcon"></div>
+        <div>
+          <div class="miner-detail-name" id="minerDetailName">—</div>
+          <div class="miner-detail-level" id="minerDetailLevel">Lv. 1</div>
+          <div class="miner-detail-speed" id="minerDetailSpeed">0 PXN/sec</div>
+        </div>
+      </div>
+      <div class="miner-detail-balance">
+        <div class="eyebrow">YOUR BALANCE</div>
+        <div class="miner-detail-balance-val" id="minerDetailBalance">0.00 PXN</div>
+      </div>
+      <div class="eyebrow miner-detail-costs-title" id="minerDetailCostsTitle">UPGRADE COSTS</div>
+      <div class="miner-detail-costs-list" id="minerDetailCostsList">
+        <div class="miner-detail-costs-empty">Loading live costs…</div>
+      </div>
+      <div class="miner-detail-actions">
+        <button class="btn secondary" id="minerDetailCloseBtn">CLOSE</button>
+        <button class="btn" id="minerDetailUpgradeBtn">UPGRADE</button>
+      </div>
     </div>
   </div>
 
@@ -1800,8 +1906,11 @@
       // as they are; only this new purchase is added.
       state.inventory.push(mapBackendInventoryItem(result.data.inventory));
 
-      if(typeof result.data.pxn_balance === "number"){
-        state.pxnBalance = result.data.pxn_balance;
+      // PostgreSQL numeric columns can arrive as either a JS number or a
+      // numeric string — accept both (Goal E), never only `typeof === "number"`.
+      const purchaseBalance = Number(result.data.pxn_balance);
+      if(Number.isFinite(purchaseBalance)){
+        state.pxnBalance = purchaseBalance;
       }
 
       saveState();
@@ -2425,15 +2534,19 @@
         // simply stays applied here too — nothing re-applies or removes it.
         Object.assign(item, mapBackendInventoryItem(result.data.inventory));
 
-        if(typeof result.data.pxn_balance === "number"){
-          state.pxnBalance = result.data.pxn_balance;
+        // PostgreSQL numeric columns can arrive as either a JS number or a
+        // numeric string — accept both (Goal D), never only `typeof === "number"`,
+        // and never compute the new balance locally (never oldBalance - cost).
+        const upgradeBalance = Number(result.data.pxn_balance);
+        if(Number.isFinite(upgradeBalance)){
+          state.pxnBalance = upgradeBalance;
         }
 
         saveState();
 
-        const cost = typeof result.data.pxn_cost === "number" ? result.data.pxn_cost : null;
-        toast(cost !== null
-          ? "Miner upgraded to Lv. " + item.minerLevel + " for " + fmt(cost, 0) + " PXN"
+        const upgradeCost = Number(result.data.pxn_cost);
+        toast(Number.isFinite(upgradeCost)
+          ? "Miner upgraded to Lv. " + item.minerLevel + " for " + fmt(upgradeCost, 0) + " PXN"
           : "Miner upgraded to Lv. " + item.minerLevel);
       } else {
         // Failure: local level/speed/balance are untouched (nothing above ran).
@@ -2448,6 +2561,12 @@
     } finally {
       pendingMinerUpgrades.delete(uid);
       render(); // redraw buttons/state either way (also re-enables on failure)
+      // Keep the miner detail box (Goal G) in sync with whatever just
+      // happened — new level/speed/balance on success, re-enabled button
+      // on failure — without closing it, if it's open for this item.
+      if(minerDetailItem && minerDetailItem.uid === uid){
+        renderMinerDetailBox();
+      }
     }
   }
 
@@ -2460,6 +2579,214 @@
     const pending = pendingMinerUpgrades.has(uid);
     return `<button class="btn" data-upgrade="${uid}" ${pending ? "disabled" : ""}>${pending ? "UPGRADING…" : "UPGRADE"}</button>`;
   }
+
+  // ---------- live miner upgrade costs (get-miner-upgrade-costs) ----------
+  // Player-facing, read-only costs for every miner_level -> miner_level+1
+  // transition, admin-configured via public.miner_upgrade_costs. This is
+  // the ONLY source of upgrade-cost numbers used anywhere in this file —
+  // nothing here computes or hardcodes a cost locally (see functions/
+  // get-miner-upgrade-costs/index.ts).
+  //
+  // Cached in-memory only — NEVER localStorage (Goal B) — with a short
+  // staleness window, so opening Inventory or the miner detail box
+  // normally reuses a very-recent fetch instead of hitting the network on
+  // every tap, while an admin cost change still reaches the player within
+  // MINER_UPGRADE_COSTS_STALE_MS of their next box-open or Inventory visit.
+  let minerUpgradeCostsCache = null;         // [{fromLevel,toLevel,costPxn,defaultCostPxn}, ...] or null
+  let minerUpgradeCostsFetchedAt = 0;
+  let minerUpgradeCostsFetchInFlight = null; // shared Promise so concurrent callers never double-fetch
+  const MINER_UPGRADE_COSTS_STALE_MS = 15000;
+
+  /**
+   * Small, self-contained call to POST /functions/v1/get-miner-upgrade-costs.
+   * Same pattern as callPurchaseMinerBackend()/callUpgradeMinerBackend()
+   * above — status-code-aware, reuses the existing window.PROX_CONFIG, no
+   * change to js/api-client.js. Always resolves (never throws). Sends no
+   * body fields at all — this endpoint takes none.
+   */
+  async function callGetMinerUpgradeCostsBackend(accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/get-miner-upgrade-costs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({})
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
+    }
+  }
+
+  /**
+   * Returns the current live upgrade-cost list, each row normalized to
+   * { fromLevel, toLevel, costPxn, defaultCostPxn } — every numeric field
+   * run through Number()/Number.isFinite() rather than trusted as-is,
+   * since PostgreSQL numeric columns can arrive as strings (Goal C).
+   * Serves the in-memory cache when it isn't stale and forceRefresh isn't
+   * set; otherwise fetches fresh from get-miner-upgrade-costs. Concurrent
+   * callers during an in-flight fetch share that one request. Never
+   * persisted to localStorage — this cache lives only as long as the page
+   * does, exactly like minerUpgradeCostsCache's own declaration above.
+   */
+  async function getMinerUpgradeCosts(forceRefresh){
+    const isStale = (Date.now() - minerUpgradeCostsFetchedAt) > MINER_UPGRADE_COSTS_STALE_MS;
+    if(!forceRefresh && minerUpgradeCostsCache && !isStale){
+      return minerUpgradeCostsCache;
+    }
+    if(minerUpgradeCostsFetchInFlight){
+      return minerUpgradeCostsFetchInFlight;
+    }
+
+    minerUpgradeCostsFetchInFlight = (async () => {
+      try{
+        if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function") return minerUpgradeCostsCache;
+        const accessToken = await ProXAuth.getAccessToken();
+        if(!accessToken) return minerUpgradeCostsCache;
+
+        const result = await callGetMinerUpgradeCostsBackend(accessToken);
+        if(result.ok && result.data && result.data.success && Array.isArray(result.data.costs)){
+          minerUpgradeCostsCache = result.data.costs
+            .map(row => ({
+              fromLevel: Number(row.fromLevel),
+              toLevel: Number(row.toLevel),
+              costPxn: Number(row.costPxn),
+              defaultCostPxn: Number(row.defaultCostPxn)
+            }))
+            .filter(row => Number.isFinite(row.fromLevel) && Number.isFinite(row.toLevel) && Number.isFinite(row.costPxn))
+            .sort((a,b) => a.fromLevel - b.fromLevel);
+          minerUpgradeCostsFetchedAt = Date.now();
+        } else {
+          console.info("[ProXBackend] get-miner-upgrade-costs fetch not completed:", result.error);
+        }
+        return minerUpgradeCostsCache;
+      } finally {
+        minerUpgradeCostsFetchInFlight = null;
+      }
+    })();
+
+    return minerUpgradeCostsFetchInFlight;
+  }
+
+  // ---------- miner detail / live upgrade-cost box (Goal A/G) ----------
+  // Opened by tapping a backend-linked Inventory card (see renderInventory
+  // below). Shows the miner's current level/speed, the player's
+  // database-authoritative PXN balance (state.pxnBalance — kept in sync by
+  // syncMiningRateFromBackend() elsewhere in this file), and LIVE upgrade
+  // costs read fresh from get-miner-upgrade-costs. Never calculates or
+  // hardcodes a cost, and never sends anything but inventoryId to
+  // upgrade-miner (the UPGRADE button below just calls the existing,
+  // unmodified handleUpgradeMinerClick()).
+  let minerDetailItem = null; // the inventory item currently shown in the box, or null when closed
+
+  /** From the given live cost rows, the next few transitions at/after currentLevel — "sensible upcoming levels", not all 49 at once. */
+  function upcomingUpgradeRows(costs, currentLevel){
+    if(!Array.isArray(costs)) return [];
+    return costs
+      .filter(row => row.fromLevel >= currentLevel)
+      .slice(0, 5);
+  }
+
+  /** Repaints the box from minerDetailItem + minerUpgradeCostsCache. Safe to call anytime the box may or may not be open. */
+  function renderMinerDetailBox(){
+    const item = minerDetailItem;
+    if(!item) return;
+
+    document.getElementById("minerDetailIcon").innerHTML = minerIconSvg(item.level);
+    document.getElementById("minerDetailName").textContent = item.name;
+
+    const currentLevel = Number(item.minerLevel);
+    const safeCurrentLevel = Number.isFinite(currentLevel) ? currentLevel : 1;
+    document.getElementById("minerDetailLevel").textContent = "Lv. " + safeCurrentLevel;
+
+    const speed = Number(item.speed);
+    document.getElementById("minerDetailSpeed").textContent =
+      "Speed: " + fmt(Number.isFinite(speed) ? speed : 0, 4) + " " + TOKEN_SYMBOL + "/sec";
+
+    const balance = Number(state.pxnBalance);
+    document.getElementById("minerDetailBalance").textContent =
+      fmt(Number.isFinite(balance) ? balance : 0, 2) + " PXN";
+
+    const listEl = document.getElementById("minerDetailCostsList");
+    const titleEl = document.getElementById("minerDetailCostsTitle");
+    const upgradeBtn = document.getElementById("minerDetailUpgradeBtn");
+
+    // A prior failed upgrade already told us (via the backend's own
+    // message — see handleUpgradeMinerClick) that this unit is maxed;
+    // trust that over re-deriving it from the cost list.
+    const knownMaxLevel = maxLevelMiners.has(item.uid);
+    const rows = knownMaxLevel ? [] : upcomingUpgradeRows(minerUpgradeCostsCache, safeCurrentLevel);
+
+    if(knownMaxLevel || (minerUpgradeCostsCache && rows.length === 0)){
+      titleEl.style.display = "none";
+      listEl.innerHTML = '<div class="miner-detail-max-level">MAX LEVEL</div>';
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = "MAX LEVEL";
+      return;
+    }
+
+    if(!minerUpgradeCostsCache){
+      titleEl.style.display = "";
+      listEl.innerHTML = '<div class="miner-detail-costs-empty">Loading live costs…</div>';
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = "UPGRADE";
+      return;
+    }
+
+    titleEl.style.display = "";
+    listEl.innerHTML = rows.map((row, idx) => `
+        <div class="miner-detail-cost-row${idx === 0 ? " next-level" : ""}">
+          <div class="miner-detail-cost-transition">Lv.${row.fromLevel} &rarr; Lv.${row.toLevel}</div>
+          <div class="miner-detail-cost-val">${fmt(row.costPxn, 2)} PXN</div>
+        </div>`).join("");
+
+    const pending = pendingMinerUpgrades.has(item.uid);
+    upgradeBtn.disabled = pending;
+    upgradeBtn.textContent = pending ? "UPGRADING…" : "UPGRADE";
+  }
+
+  /** Opens the box for `item` immediately with whatever's cached, then refreshes live costs (Goal B) if the cache is missing/stale and repaints again. */
+  async function openMinerDetailBox(item){
+    minerDetailItem = item;
+    renderMinerDetailBox();
+    document.getElementById("minerDetailOverlay").classList.add("show");
+
+    await getMinerUpgradeCosts(false); // no-op network-wise if the cache is still fresh
+    if(minerDetailItem === item){ // the player may have closed the box while this was in flight
+      renderMinerDetailBox();
+    }
+  }
+
+  function closeMinerDetailBox(){
+    document.getElementById("minerDetailOverlay").classList.remove("show");
+    minerDetailItem = null;
+  }
+
+  document.getElementById("minerDetailCloseBtn").addEventListener("click", closeMinerDetailBox);
+  document.getElementById("minerDetailOverlay").addEventListener("click", (e) => {
+    if(e.target.id === "minerDetailOverlay") closeMinerDetailBox(); // tap outside the box to dismiss
+  });
+  document.getElementById("minerDetailUpgradeBtn").addEventListener("click", () => {
+    if(!minerDetailItem) return;
+    const item = minerDetailItem;
+    // Same in-flight/max-level guards as the Inventory card's own UPGRADE
+    // button — this calls the EXACT same handleUpgradeMinerClick(), so
+    // there is no duplicate/second upgrade request path.
+    if(pendingMinerUpgrades.has(item.uid)) return;
+    if(maxLevelMiners.has(item.uid)) return;
+    handleUpgradeMinerClick(item, document.getElementById("minerDetailUpgradeBtn"));
+  });
 
   function renderInventory(){
     const wrap = document.getElementById("inventoryList");
@@ -2495,6 +2822,19 @@
           : `<button class="btn" data-apply="${item.uid}" ${slotsFull ? 'disabled' : ''}>${slotsFull ? 'SLOTS FULL' : 'APPLY'}</button>`}
         ${backendLinked ? upgradeButtonMarkup(item) : ``}`;
       wrap.appendChild(div);
+
+      // Goal A: tapping a backend-linked card opens the live upgrade-cost
+      // box. Local-only (pre-migration) cards have no upgrade path, so
+      // they're left exactly as before — no click handler added. Clicks on
+      // any button inside the card (Apply/Remove/Upgrade) are left alone to
+      // run their own existing handlers, not this one.
+      if(backendLinked){
+        div.addEventListener("click", (e) => {
+          if(e.target.closest("button")) return;
+          openMinerDetailBox(item);
+        });
+        div.style.cursor = "pointer";
+      }
     });
 
     wrap.querySelectorAll("[data-apply]").forEach(btn=>{
@@ -3244,6 +3584,13 @@
       document.querySelectorAll(".store-pane").forEach(p=>p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById("upane-" + btn.dataset.utab).classList.add("active");
+      // Goal B: opening Inventory prefetches live upgrade costs in the
+      // background (no-op if the cache is still fresh) so they're already
+      // warm by the time a player taps a miner card — the box itself still
+      // re-fetches on open if the cache turns out missing/stale.
+      if(btn.dataset.utab === "inventory"){
+        getMinerUpgradeCosts(false);
+      }
     });
   });
   document.getElementById("listMinerBtn").addEventListener("click", ()=>{
