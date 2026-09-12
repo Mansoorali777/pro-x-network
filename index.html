@@ -1058,60 +1058,80 @@
 
   <!-- ============ WALLET SCREEN ============ -->
   <div class="screen" id="screen-wallet">
-    <div class="panel invite-panel" style="margin-top:6px;">
-      <div class="eyebrow">MINING POOL BALANCE</div>
-      <div class="big" id="walletBig">0.0000</div>
-      <div class="card-sub" style="margin-top:2px;" id="walletBigUsd">≈ $0.0000</div>
-      <div class="card-sub" style="margin-top:8px;" id="walletPoolLabel">m.PXN mined so far — not yet a tradeable token</div>
-    </div>
-
-    <div class="section-head">
-      <h2>TON WALLET</h2>
-      <span class="eyebrow">NOT CONNECTED</span>
-    </div>
-    <div class="panel card">
-      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="#7c8896" stroke="none"/></svg></div>
-      <div class="card-body">
-        <div class="card-title">Connect TON wallet</div>
-        <div class="card-sub">Required before you can withdraw</div>
-      </div>
-      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
-    </div>
-
+    <!-- 1. WALLET HEADER / BALANCE — authoritative PXN balance only, never
+         computed or adjusted on the frontend. Kept in sync by
+         refreshAuthoritativePxnBalance() / renderWallet() below. -->
     <div class="panel invite-panel" style="margin-top:6px;">
       <div class="eyebrow">PXN BALANCE</div>
       <div class="big" id="pxnBalanceBig">0.0000</div>
       <div class="card-sub" style="margin-top:2px;" id="pxnBalanceSub">PXN — used to buy miners in the Store &amp; level up</div>
     </div>
 
+    <!-- 2. MINING REWARDS CARD — read-only display of existing
+         state.minedBalance / state.claimedTotal / state.pendingClaim.
+         No new values are computed here. -->
     <div class="section-head">
-      <h2>SWAP</h2>
+      <h2>MINING REWARDS</h2>
     </div>
-    <div class="panel card sell-form" style="flex-direction:column; align-items:stretch; gap:10px;">
-      <div class="eyebrow" id="swapRateLabel">Swap m.PXN → PXN · rate 1:1</div>
-      <div style="display:flex; gap:8px;">
-        <input class="mnum" type="number" min="0" step="any" id="swapAmountInput" placeholder="Amount of m.PXN">
-        <button class="btn" id="swapBtn">SWAP</button>
+    <div class="panel card" style="flex-direction:column; align-items:stretch; gap:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-sub" style="margin:0;">Total m.PXN Mined</div>
+        <div class="stat-val cyan" id="miningTotalMined" style="font-size:14px;">0.0000</div>
       </div>
-      <div class="card-sub" id="swapAvailableText">Available: 0.0000 m.PXN claimed</div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-sub" style="margin:0;">Claimed m.PXN</div>
+        <div class="stat-val" style="font-size:14px; color:var(--good);" id="miningClaimed">0.0000</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-sub" style="margin:0;">Pending m.PXN</div>
+        <div class="stat-val amber" id="miningPending" style="font-size:14px;">0.0000</div>
+      </div>
     </div>
 
+    <!-- 3. SWAP CARD — COMING SOON. No local balance math on this card. -->
     <div class="section-head">
-      <h2>WITHDRAW</h2>
+      <h2>SWAP m.PXN → PXN</h2>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M7 7h11M18 7l-3-3M18 7l-3 3"/><path d="M17 17H6M6 17l3-3M6 17l3 3"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Swap is currently unavailable.</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <!-- 4. TON WALLET CARD — COMING SOON, kept disabled. -->
+    <div class="section-head">
+      <h2>CONNECT TON WALLET</h2>
+      <span class="eyebrow">NOT CONNECTED</span>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="#7c8896" stroke="none"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Connect TON Wallet</div>
+        <div class="card-sub">Connect your TON wallet when withdrawals become available.</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <!-- 5. WITHDRAW CARD — COMING SOON, kept disabled. -->
+    <div class="section-head">
+      <h2>WITHDRAW PXN</h2>
     </div>
     <div class="panel card" style="margin-bottom:6px;">
       <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></div>
       <div class="card-body">
         <div class="card-title">Withdraw PXN</div>
-        <div class="card-sub">Only PXN can be withdrawn to a connected TON wallet</div>
+        <div class="card-sub">PXN withdrawals will become available after the official launch and eligibility rules are announced.</div>
       </div>
       <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
     </div>
 
+    <!-- 6. INFO CARD -->
     <div class="panel card" style="margin:0 14px 16px; opacity:0.85;">
       <div class="card-body" style="padding:2px 2px;">
         <div class="card-sub" style="line-height:1.6;">
-          You can swap your claimed m.PXN pool for PXN anytime — spend PXN in the Store to buy miners or to level up. Full withdrawal to a connected TON wallet unlocks once $PXN officially launches on TON, according to the eligibility rules in place at launch.
+          Your mined m.PXN represents mining rewards inside Pro-X Network. PXN is the project token used for miners and upgrades. Trading, swapping and withdrawals will only become available when the related systems are officially enabled.
         </div>
       </div>
     </div>
@@ -2124,12 +2144,6 @@
     PXN_USD_RATE = adminConfig.token.usdRate;
   }
 
-  // How much PXN a swapped m.PXN is worth. Overridable from the admin panel.
-  let PXN_SWAP_RATE = 1;
-  if(adminConfig && adminConfig.token && typeof adminConfig.token.pxnSwapRate === "number"){
-    PXN_SWAP_RATE = adminConfig.token.pxnSwapRate;
-  }
-
   function fmt(n, decimals){
     decimals = decimals === undefined ? 4 : decimals;
     return n.toLocaleString("en-US",{minimumFractionDigits:decimals, maximumFractionDigits:decimals});
@@ -2255,22 +2269,16 @@
     renderWallet();
   }
 
+  // Wallet screen is read-only display: it renders the existing
+  // authoritative state.pxnBalance (kept correct by
+  // refreshAuthoritativePxnBalance()/accrue-mining sync elsewhere in this
+  // file) plus the existing mining-reward totals. Nothing here computes or
+  // mutates a balance.
   function renderWallet(){
-    document.getElementById("walletBig").textContent = fmt(state.minedBalance);
-    document.getElementById("walletBigUsd").textContent = fmtUsd(state.minedBalance);
-    document.getElementById("walletPoolLabel").textContent = TOKEN_SYMBOL + " mined so far — not yet a tradeable token";
     document.getElementById("pxnBalanceBig").textContent = fmt(state.pxnBalance, 2);
-    document.getElementById("swapRateLabel").textContent = "Swap " + TOKEN_SYMBOL + " → PXN · rate " + PXN_SWAP_RATE + ":1";
-    document.getElementById("swapAvailableText").textContent = "Available: " + fmt(state.claimedTotal, 4) + " " + TOKEN_SYMBOL + " claimed";
-  }
-
-  function swapToPxn(amount){
-    if(!(amount > 0)){ toast("Enter a valid amount"); return; }
-    if(state.claimedTotal < amount){ toast("Not enough claimed " + TOKEN_SYMBOL); return; }
-    state.claimedTotal -= amount;
-    state.pxnBalance += amount * PXN_SWAP_RATE;
-    saveState(); render();
-    toast("Swapped " + fmt(amount) + " " + TOKEN_SYMBOL + " → " + fmt(amount * PXN_SWAP_RATE, 2) + " PXN");
+    document.getElementById("miningTotalMined").textContent = fmt(state.minedBalance) + " " + TOKEN_SYMBOL;
+    document.getElementById("miningClaimed").textContent = fmt(state.claimedTotal, 4) + " " + TOKEN_SYMBOL;
+    document.getElementById("miningPending").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
   }
 
   function renderUpgrade(){
@@ -3383,12 +3391,10 @@
     levelUp();
   });
 
-  document.getElementById("swapBtn").addEventListener("click", ()=>{
-    const input = document.getElementById("swapAmountInput");
-    const amount = parseFloat(input.value);
-    swapToPxn(amount);
-    input.value = "";
-  });
+  // NOTE: the m.PXN → PXN swap action/listener was intentionally removed —
+  // the Wallet screen's SWAP card is now a disabled COMING SOON state (see
+  // WALLET SCREEN markup above). No frontend code adjusts PXN or m.PXN
+  // balances from this screen anymore.
 
   // ---------- watch ads for a big boost ----------
   // NOTE: no real ad network is wired up here — there's no ad SDK available in
