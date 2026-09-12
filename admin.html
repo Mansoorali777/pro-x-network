@@ -232,6 +232,7 @@
     max-height:90vh; overflow-y:auto;
     padding:22px;
   }
+  .mc-modal.wide{ max-width:680px; }
 
   /* ---------- miner icon upload (Supabase Storage) ---------- */
   .mc-icon-upload{ display:flex; align-items:center; gap:10px; margin-top:8px; }
@@ -468,6 +469,11 @@
         <div class="sub">Every registered player's EXACT, database-authoritative PXN balance (public.mining_state.pxn_balance) alongside their Telegram identity — read via the admin-users Edge Function, which verifies your admin session server-side before touching anything, same trust model as Miner Management / Miner Upgrade Costs above. Strictly read-only: nothing here can change a balance. Separate from the local-demo "Players" page.</div>
       </div>
 
+      <div class="search-row" style="max-width:640px;">
+        <input type="text" id="dbUsersSearchInput" placeholder="Search by Telegram ID, username, first or last name...">
+        <button class="btn" id="dbUsersSearchBtn">SEARCH</button>
+        <button class="btn ghost" id="dbUsersClearBtn">CLEAR</button>
+      </div>
       <div class="btn-row">
         <button class="btn ghost" id="dbUsersRefreshBtn">REFRESH</button>
       </div>
@@ -475,7 +481,7 @@
 
       <div class="panel table-wrap">
         <table>
-          <thead><tr><th>TELEGRAM USER ID</th><th>USERNAME</th><th>NAME</th><th>PXN BALANCE</th><th>CREATED AT</th></tr></thead>
+          <thead><tr><th>TELEGRAM USER ID</th><th>USERNAME</th><th>NAME</th><th>PXN BALANCE</th><th>CREATED AT</th><th>ACTIONS</th></tr></thead>
           <tbody id="dbUsersTableBody"></tbody>
         </table>
       </div>
@@ -637,6 +643,17 @@
       <button class="btn" id="mcEditSaveBtn">SAVE CHANGES</button>
       <button class="btn ghost" id="mcEditCancelBtn">CANCEL</button>
     </div>
+  </div>
+</div>
+
+<!-- USERS — read-only detail modal (public.users + public.mining_state + public.mining_inventory, via admin-users' "get" action) -->
+<div id="dbUserDetailOverlay" class="mc-modal-overlay">
+  <div class="panel mc-modal wide">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+      <h3 style="font-size:15px; margin:0;">User Detail</h3>
+      <button class="btn ghost" id="dbUserDetailCloseBtn" style="padding:6px 12px; font-size:11px;">CLOSE</button>
+    </div>
+    <div id="dbUserDetailContent"></div>
   </div>
 </div>
 
@@ -1515,19 +1532,22 @@
   const ucNavBtn = document.querySelector('.side-btn[data-page="minerUpgradeCosts"]');
   if(ucNavBtn) ucNavBtn.addEventListener("click", fetchUpgradeCostList);
 
-  // ---------- Users (database-backed, public.users + public.mining_state.pxn_balance) ----------
-  // Talks to the real backend (admin-users Edge Function), NOT the
-  // local-demo "Players" page above. Reuses the same signed-in
-  // supabase-js client/session via getAdminSupabaseClient() —
-  // client.functions.invoke() attaches the current session's
-  // Authorization bearer token automatically, so no token is ever read
-  // or attached by hand here, and the service-role key is never
-  // present in this file. Strictly read-only: this page never writes
-  // to users or mining_state, and never sends a target user id in the
-  // request body — admin-users returns every user in one call, scoped
-  // entirely by the caller's own admin session server-side.
+  // ---------- Users (database-backed, public.users + public.mining_state + public.mining_inventory) ----------
+  // Talks to the real backend (admin-users Edge Function — action:
+  // "list"/"get"), NOT the local-demo "Players" page above. Reuses the
+  // same signed-in supabase-js client/session via
+  // getAdminSupabaseClient() — client.functions.invoke() attaches the
+  // current session's Authorization bearer token automatically, so no
+  // token is ever read or attached by hand here, and the service-role
+  // key is never present in this file. Strictly read-only: this page
+  // never writes to users/mining_state/mining_inventory. Search is
+  // sent to admin-users as a `search` field and filtered IN THE
+  // DATABASE QUERY by that Edge Function — this file never fetches
+  // every user and filters client-side.
   let dbUsersList = [];
   let dbUsersPending = false;
+  let dbUsersDetailPending = false;
+  let dbUsersSearchValue = "";
 
   function setDbUsersMsg(text, isError){
     const el = document.getElementById("dbUsersMsg");
@@ -1554,8 +1574,10 @@
       }catch(e){ /* keep defaults below */ }
     }
     switch(status){
+      case 400: return serverMessage || "That request wasn't valid — try again.";
       case 401: return "Session expired — please log in again.";
       case 403: return "Admin access denied.";
+      case 404: return "User not found.";
       default: return serverMessage || "Server error — please try again.";
     }
   }
@@ -1577,7 +1599,7 @@
 
   // PostgreSQL numeric(20,8) can arrive as a JS number OR a numeric
   // string — never trust `typeof === "number"` alone. Falls back to 0
-  // (never NaN) exactly like the backend's own safePxnBalance().
+  // (never NaN) exactly like the backend's own safeNumber().
   function dbUsersSafeBalance(n){
     const v = Number(n);
     return Number.isFinite(v) ? v : 0;
@@ -1587,11 +1609,20 @@
     return dbUsersSafeBalance(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
   }
 
+  function dbUsersFmtInt(n){
+    return Math.trunc(dbUsersSafeBalance(n)).toLocaleString("en-US");
+  }
+
   function dbUsersFmtName(u){
     const parts = [u.firstName, u.lastName].filter(p => typeof p === "string" && p.trim() !== "");
     return parts.length ? parts.join(" ") : "—";
   }
 
+  // Only ever used for TEXT-NODE content (innerHTML of a <td> etc.),
+  // never for interpolating into an HTML attribute — textContent ->
+  // innerHTML escapes &, <, > but NOT a literal double quote, so it
+  // is not attribute-safe. See dbUsersDetailField() below for how
+  // user-supplied values are safely shown inside the detail modal.
   function dbUsersEsc(s){
     const div = document.createElement("div");
     div.textContent = s === null || s === undefined ? "" : String(s);
@@ -1604,36 +1635,168 @@
     document.getElementById("dbUsersEmptyNote").style.display = dbUsersList.length ? "none" : "block";
     dbUsersList.forEach(u=>{
       const tr = document.createElement("tr");
+      // u.userId is a UUID minted and returned by our own backend
+      // (never raw user-supplied text), so it's safe to place directly
+      // inside this HTML attribute without separate quote-escaping.
       tr.innerHTML = `
         <td>${dbUsersEsc(u.telegramUserId)}</td>
         <td>${dbUsersEsc(u.username || "—")}</td>
         <td>${dbUsersEsc(dbUsersFmtName(u))}</td>
         <td>${dbUsersFmtBalance(u.pxnBalance)} PXN</td>
-        <td>${dbUsersEsc(fmtTime(u.createdAt))}</td>`;
+        <td>${dbUsersEsc(fmtTime(u.createdAt))}</td>
+        <td class="row-actions"><button class="btn ghost" data-db-user-view="${u.userId}">VIEW</button></td>`;
       body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-db-user-view]").forEach(btn=>{
+      btn.addEventListener("click", ()=> openDbUserDetail(btn.dataset.dbUserView));
     });
   }
 
   async function fetchDbUsersList(){
     if(dbUsersPending) return;
     dbUsersPending = true;
-    setDbUsersMsg("", false);
-    const { data, message } = await callAdminUsers({});
+    setDbUsersSearchButtonsDisabled(true);
+    setDbUsersMsg("Loading users…", false);
+    const { data, message } = await callAdminUsers({ action: "list", search: dbUsersSearchValue });
     dbUsersPending = false;
+    setDbUsersSearchButtonsDisabled(false);
     if(!data){
       setDbUsersMsg(message, true);
+      dbUsersList = [];
+      renderDbUsersTable();
       return;
     }
+    setDbUsersMsg("", false);
     dbUsersList = data.users || [];
     renderDbUsersTable();
   }
 
+  function setDbUsersSearchButtonsDisabled(disabled){
+    document.getElementById("dbUsersRefreshBtn").disabled = disabled;
+    document.getElementById("dbUsersSearchBtn").disabled = disabled;
+    document.getElementById("dbUsersClearBtn").disabled = disabled;
+  }
+
   document.getElementById("dbUsersRefreshBtn").addEventListener("click", ()=> fetchDbUsersList());
+
+  document.getElementById("dbUsersSearchBtn").addEventListener("click", ()=>{
+    dbUsersSearchValue = document.getElementById("dbUsersSearchInput").value.trim();
+    fetchDbUsersList();
+  });
+  document.getElementById("dbUsersSearchInput").addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") document.getElementById("dbUsersSearchBtn").click();
+  });
+  document.getElementById("dbUsersClearBtn").addEventListener("click", ()=>{
+    document.getElementById("dbUsersSearchInput").value = "";
+    dbUsersSearchValue = "";
+    fetchDbUsersList();
+  });
 
   // Load the list automatically the moment this section is opened —
   // same pattern as Miner Management / Miner Upgrade Costs above.
   const dbUsersNavBtn = document.querySelector('.side-btn[data-page="dbUsers"]');
   if(dbUsersNavBtn) dbUsersNavBtn.addEventListener("click", fetchDbUsersList);
+
+  // ---------- Users — detail modal (admin-users action: "get") ----------
+  // Builds a label/value row for the identity fields using
+  // createElement + textContent (never string-concatenated into an
+  // HTML attribute), so any character in a Telegram username/name —
+  // including a literal " or < — is always rendered as inert text,
+  // never as markup or a broken-out attribute.
+  function dbUsersDetailField(label, value){
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    const labelEl = document.createElement("label");
+    labelEl.textContent = label;
+    const valEl = document.createElement("div");
+    valEl.style.cssText = "padding:9px 0; font-size:13px; color:var(--text); word-break:break-all;";
+    valEl.textContent = (value === null || value === undefined || value === "") ? "—" : String(value);
+    wrap.appendChild(labelEl);
+    wrap.appendChild(valEl);
+    return wrap;
+  }
+
+  function dbUsersFmtRate(n){
+    if(n === null || n === undefined) return "No override — normal calculated rate";
+    return dbUsersFmtBalance(n) + " PXN/sec (admin override)";
+  }
+
+  function renderDbUserDetail(user, miners){
+    const el = document.getElementById("dbUserDetailContent");
+    el.innerHTML = "";
+
+    const statGrid = document.createElement("div");
+    statGrid.className = "stat-grid";
+    statGrid.style.marginBottom = "18px";
+    statGrid.innerHTML = `
+      <div class="panel stat-card"><div class="eyebrow">PXN BALANCE</div><div class="val cyan">${dbUsersFmtBalance(user.pxnBalance)}</div></div>
+      <div class="panel stat-card"><div class="eyebrow">TOTAL MINED</div><div class="val amber">${dbUsersFmtBalance(user.minedBalanceTotal)}</div></div>
+      <div class="panel stat-card"><div class="eyebrow">PENDING CLAIM</div><div class="val amber">${dbUsersFmtBalance(user.pendingClaim)}</div></div>
+      <div class="panel stat-card"><div class="eyebrow">CLAIMED TOTAL</div><div class="val good">${dbUsersFmtBalance(user.claimedTotal)}</div></div>
+      <div class="panel stat-card"><div class="eyebrow">MINING LEVEL</div><div class="val cyan">${dbUsersFmtInt(user.level)}</div></div>
+      <div class="panel stat-card"><div class="eyebrow">MINING RATE</div><div class="val" style="font-size:13px;">${dbUsersEsc(dbUsersFmtRate(user.miningRate))}</div></div>`;
+    el.appendChild(statGrid);
+
+    const idGrid = document.createElement("div");
+    idGrid.className = "panel form-grid";
+    idGrid.style.marginBottom = "18px";
+    idGrid.appendChild(dbUsersDetailField("TELEGRAM ID", user.telegramUserId));
+    idGrid.appendChild(dbUsersDetailField("USERNAME", user.username));
+    idGrid.appendChild(dbUsersDetailField("FIRST NAME", user.firstName));
+    idGrid.appendChild(dbUsersDetailField("LAST NAME", user.lastName));
+    idGrid.appendChild(dbUsersDetailField("USER UUID", user.userId));
+    idGrid.appendChild(dbUsersDetailField("ACCOUNT CREATED", fmtTime(user.createdAt)));
+    el.appendChild(idGrid);
+
+    const minersHead = document.createElement("div");
+    minersHead.className = "page-head";
+    minersHead.style.cssText = "margin:0 0 10px;";
+    minersHead.innerHTML = `<h2 style="font-size:14px;">Purchased Miners</h2>`;
+    el.appendChild(minersHead);
+
+    const minersWrap = document.createElement("div");
+    minersWrap.className = "panel table-wrap";
+    const minerRowsHtml = miners.length ? miners.map(m => `
+        <tr>
+          <td>${dbUsersEsc(m.minerName)}</td>
+          <td>${dbUsersFmtInt(m.minerTier)}</td>
+          <td>${dbUsersFmtInt(m.minerLevel)}</td>
+          <td>${dbUsersFmtBalance(m.minerSpeed)}</td>
+          <td>${m.applied ? '<span class="tag active">APPLIED</span>' : '<span class="tag inactive">NOT APPLIED</span>'}</td>
+          <td>${dbUsersEsc(fmtTime(m.createdAt))}</td>
+        </tr>`).join("") : `<tr><td colspan="6" class="note">No miners purchased yet.</td></tr>`;
+    minersWrap.innerHTML = `
+      <table>
+        <thead><tr><th>NAME</th><th>TIER</th><th>LEVEL</th><th>SPEED</th><th>STATUS</th><th>CREATED AT</th></tr></thead>
+        <tbody>${minerRowsHtml}</tbody>
+      </table>`;
+    el.appendChild(minersWrap);
+  }
+
+  async function openDbUserDetail(userId){
+    if(dbUsersDetailPending) return;
+    dbUsersDetailPending = true;
+    document.getElementById("dbUserDetailOverlay").classList.add("show");
+    document.getElementById("dbUserDetailContent").innerHTML = `<div class="note">Loading user details…</div>`;
+
+    const { data, message } = await callAdminUsers({ action: "get", userId: userId });
+    dbUsersDetailPending = false;
+
+    if(!data || !data.user){
+      document.getElementById("dbUserDetailContent").innerHTML =
+        `<div class="note" style="color:var(--danger);">${dbUsersEsc(message || "Could not load user.")}</div>`;
+      return;
+    }
+    renderDbUserDetail(data.user, data.miners || []);
+  }
+
+  function closeDbUserDetail(){
+    document.getElementById("dbUserDetailOverlay").classList.remove("show");
+  }
+  document.getElementById("dbUserDetailCloseBtn").addEventListener("click", closeDbUserDetail);
+  document.getElementById("dbUserDetailOverlay").addEventListener("click", (e)=>{
+    if(e.target.id === "dbUserDetailOverlay") closeDbUserDetail();
+  });
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
