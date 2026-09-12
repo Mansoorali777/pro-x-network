@@ -2093,6 +2093,12 @@
 
   let miningRateSyncInFlight = false;
 
+  // One-time hydration guard (see the claim/pendingClaim block inside
+  // syncMiningRateFromBackend() below). Deliberately separate from
+  // miningRateSyncInFlight, which guards re-entrancy on every call, not
+  // just the first one.
+  let claimStateHydratedFromBackend = false;
+
   // Pulls the authoritative rate (and, as of the balance display fix, the
   // authoritative PXN balance) from POST /accrue-mining and stores them in
   // serverMiningRate / state.pxnBalance, then re-renders so the display
@@ -2102,6 +2108,23 @@
   // admin_speed_override, mining_config, pxn_balance, or anything else
   // (that stays exclusively in admin-set-mining-speed / purchase-miner /
   // accrue-mining's own server-side logic).
+  //
+  // m.PXN hydration (one-time only): accrue-mining's own response already
+  // includes the full, current mining_state row — including claimed_total
+  // and pending_claim (see accrue-mining/index.ts, which SELECTs "*").
+  // The VERY FIRST time this function successfully resolves after
+  // load/login, it uses those two fields to correct state.claimedTotal and
+  // state.pendingClaim against the real database values, so a stale/
+  // inflated localStorage claimedTotal (e.g. accumulated by a
+  // previously-fake local CLAIM flow) is never trusted as authoritative
+  // going forward. This reuses the existing accrue-mining call already
+  // made at init/every 20s — no new endpoint or network request is added.
+  // It intentionally runs only ONCE (guarded by claimStateHydratedFromBackend):
+  // after this initial correction, state.pendingClaim continues to be
+  // driven by the existing local accrue() ticker between claims (unchanged
+  // mining-accrual behavior), and state.claimedTotal continues to be
+  // corrected in real time by claim-mining/purchase-miner/upgrade-miner's
+  // own success responses, exactly as before.
   async function syncMiningRateFromBackend(){
     if(miningRateSyncInFlight) return;
     if(!window.ProXBackend) return;
@@ -2117,6 +2140,21 @@
             state.pxnBalance = backendBalance;
             saveState();
           }
+        }
+        if(!claimStateHydratedFromBackend && backendState){
+          const backendClaimedTotal = Number(backendState.claimed_total);
+          const backendPendingClaim = Number(backendState.pending_claim);
+          let hydrated = false;
+          if(Number.isFinite(backendClaimedTotal)){
+            state.claimedTotal = backendClaimedTotal;
+            hydrated = true;
+          }
+          if(Number.isFinite(backendPendingClaim)){
+            state.pendingClaim = backendPendingClaim;
+            hydrated = true;
+          }
+          claimStateHydratedFromBackend = true;
+          if(hydrated) saveState();
         }
         render();
       } else {
@@ -2231,7 +2269,7 @@
     document.getElementById("mineLevelUpBtn").disabled = state.pxnBalance < REWARDS_CONFIG.levelUpCostPxn;
     document.getElementById("claimReady").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
     document.getElementById("claimReadyUsd").textContent = fmtUsd(state.pendingClaim);
-    document.getElementById("claimBtn").disabled = state.pendingClaim < 0.0001;
+    document.getElementById("claimBtn").disabled = state.pendingClaim < 0.0001 || claimInProgress;
     document.getElementById("boostCardSub").textContent = "+" + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " min";
     document.getElementById("referralRewardSub").textContent = "+" + REWARDS_CONFIG.referralInstant + " " + TOKEN_SYMBOL + " instantly, +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec permanently";
 
@@ -3397,16 +3435,88 @@
     if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
   });
 
-  document.getElementById("claimBtn").addEventListener("click", ()=>{
+  // Guards against a double-click firing two overlapping claim requests
+  // while the first is still in flight. Same role as
+  // minerPurchaseInProgress/pendingMinerUpgrades elsewhere in this file.
+  let claimInProgress = false;
+
+  /**
+   * Safe, non-sensitive message for a failed claim-mining call, preferring
+   * the backend's own (already-sanitized) message when present — e.g.
+   * "Nothing available to claim" or "Unauthorized" are both safe,
+   * specific, and never raw database/SQL text (see claim-mining/index.ts).
+   * ProXBackend.fetchClaimMining() (like fetchMe()/fetchAccrueMining())
+   * normalizes to { ok, data, error } without a separate HTTP status code,
+   * so — unlike upgradeMinerErrorMessage()/purchaseMinerErrorMessage()
+   * above, which call their own hand-rolled status-aware fetch helpers —
+   * this falls back directly to result.error (e.g. "No active session.",
+   * a network failure) rather than a status-keyed switch.
+   */
+  function claimMiningErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    return result.error || "Network error — try again.";
+  }
+
+  document.getElementById("claimBtn").addEventListener("click", async ()=>{
+    // Existing local accrual/display behavior — unchanged. This only
+    // updates state.pendingClaim/state.minedBalance for the on-screen
+    // "ready to claim" figure between backend syncs; it is never trusted
+    // as the amount actually claimed below.
     accrue();
     if(state.pendingClaim < 0.01) return;
-    if(state.claimedTotal === undefined) state.claimedTotal = 0;
-    state.claimedTotal += state.pendingClaim;
-    toast("Claimed " + fmt(state.pendingClaim) + " " + TOKEN_SYMBOL + " to your in-game balance");
-    state.pendingClaim = 0;
-    state.claimCount += 1;
-    if(state.claimCount >= 5) state.tasksDone["t5"] = true;
-    saveState(); render();
+    if(claimInProgress) return;
+
+    claimInProgress = true;
+    render(); // reflects the disabled state via claimInProgress immediately
+
+    try{
+      if(!window.ProXBackend || typeof ProXBackend.fetchClaimMining !== "function"){
+        toast("Backend unavailable — try again shortly");
+        return;
+      }
+
+      const result = await ProXBackend.fetchClaimMining();
+
+      if(result.ok && result.data && result.data.success){
+        // Server-authoritative only — never computed locally, never added
+        // to the existing local value. mining_state.claimed_total (m.PXN)
+        // and mining_state.pending_claim are read back exactly as
+        // claim_mining() returns them; state.pxnBalance (the separate,
+        // untouched PXN ledger) is not read or written here.
+        const backendClaimedTotal = Number(result.data.claimed_total);
+        const backendPendingClaim = Number(result.data.pending_claim);
+        const backendClaimedAmount = Number(result.data.claimed_amount);
+
+        if(Number.isFinite(backendClaimedTotal)){
+          state.claimedTotal = backendClaimedTotal;
+        }
+        if(Number.isFinite(backendPendingClaim)){
+          state.pendingClaim = backendPendingClaim;
+        }
+        const backendClaimCount = Number(result.data.claim_count);
+        if(Number.isFinite(backendClaimCount)){
+          state.claimCount = backendClaimCount;
+          if(state.claimCount >= 5) state.tasksDone["t5"] = true;
+        }
+
+        // localStorage is only updated AFTER this authoritative response.
+        saveState();
+
+        toast("Claimed " + fmt(Number.isFinite(backendClaimedAmount) ? backendClaimedAmount : 0) + " " + TOKEN_SYMBOL + " to your in-game balance");
+      } else {
+        // Failure: local claimedTotal/pendingClaim/claimCount are left
+        // completely untouched — the pending amount is preserved so the
+        // player can retry, never silently zeroed.
+        toast(claimMiningErrorMessage(result));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      claimInProgress = false;
+      render();
+    }
   });
 
   document.getElementById("boostBtn").addEventListener("click", ()=>{
