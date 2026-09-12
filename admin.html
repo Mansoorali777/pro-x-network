@@ -291,6 +291,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="M3 13l9 5 9-5M3 18l9 5 9-5"/></svg>
         Miner Management
       </button>
+      <button class="side-btn" data-page="minerUpgradeCosts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/></svg>
+        Miner Upgrade Costs
+      </button>
       <button class="side-btn" data-page="token">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 0 1 0 4H9m0 0h4.5a2 2 0 0 1 0 4H9"/></svg>
         Token
@@ -430,6 +434,27 @@
       </div>
       <div class="note" id="mcEmptyNote" style="display:none;">No miner catalog entries yet — add one above.</div>
       <div class="note" id="mcListMsg" style="display:none; padding:10px 16px;"></div>
+    </div>
+
+    <!-- MINER UPGRADE COST MANAGEMENT (public.miner_upgrade_costs) -->
+    <div class="page" id="page-minerUpgradeCosts">
+      <div class="page-head">
+        <h2>Miner Upgrade Cost Management</h2>
+        <div class="sub">The exact PXN cost charged for each miner Level N → N+1 upgrade, global across every miner tier. Every read/save/reset here goes through the admin-miner-upgrade-cost Edge Function, which verifies your admin session server-side before touching anything — the same trust model as Miner Management above. The live upgrade-miner backend charges exactly the "CURRENT COST" value shown here; it never falls back to a formula.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn ghost" id="ucRefreshBtn">REFRESH LIST</button>
+      </div>
+      <div class="note" id="ucListMsg" style="display:none; padding:10px 16px;"></div>
+
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>LEVEL</th><th>CURRENT COST (PXN)</th><th>DEFAULT COST (PXN)</th><th>NEW COST (PXN)</th><th>ACTIONS</th></tr></thead>
+          <tbody id="ucTableBody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="ucEmptyNote" style="display:none;">No upgrade cost levels configured yet — run the 0026 migration to seed defaults.</div>
     </div>
 
     <!-- TOKEN -->
@@ -1312,6 +1337,158 @@
   // side-nav show/hide loop below is left completely untouched.
   const mcNavBtn = document.querySelector('.side-btn[data-page="minerCatalog"]');
   if(mcNavBtn) mcNavBtn.addEventListener("click", fetchMinerCatalogList);
+
+  // ---------- Miner Upgrade Cost Management (public.miner_upgrade_costs) ----------
+  // Talks to the real backend (admin-miner-upgrade-cost Edge
+  // Function), via the SAME signed-in supabase-js client/session as
+  // Miner Management above (getAdminSupabaseClient()) —
+  // client.functions.invoke() attaches the current session's
+  // Authorization bearer token automatically, so no token is ever
+  // read or attached by hand here, and the service-role key is never
+  // present in this file. Every write (update/reset) goes through
+  // this one Edge Function; this code never queries
+  // public.miner_upgrade_costs directly via supabase-js .from(), so
+  // it can never bypass the server-side admin check baked into that
+  // function. This section is completely separate from the "Miner
+  // Management" (miner_catalog) section above — it never reads or
+  // writes miner_catalog, and cost changes here have no effect on any
+  // catalog entry's price_pxn.
+  const UC_MAX_COST = 100000000;
+
+  let upgradeCostList = [];
+  let upgradeCostPending = false;
+
+  function setUcListMsg(text, isError){
+    const el = document.getElementById("ucListMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+
+  // Maps a supabase-js Edge Function error (network-level, or a
+  // non-2xx response from admin-miner-upgrade-cost) to a short, safe,
+  // user-facing message keyed off HTTP status. Only ever surfaces the
+  // clean, pre-sanitized `message` admin-miner-upgrade-cost itself
+  // returns — never raw database/server error text.
+  async function ucErrorMessage(error){
+    let status = null;
+    let serverMessage = null;
+    if(error && error.context){
+      try{
+        if(typeof error.context.status === "number") status = error.context.status;
+        if(typeof error.context.json === "function"){
+          const parsed = await error.context.json();
+          if(parsed && typeof parsed.message === "string") serverMessage = parsed.message;
+        }
+      }catch(e){ /* keep defaults below */ }
+    }
+    switch(status){
+      case 400: return serverMessage || "That request wasn't valid — check the value and try again.";
+      case 401: return "Session expired — please log in again.";
+      case 403: return "Admin access denied.";
+      case 404: return "No upgrade cost is configured for that level.";
+      default: return "Server error — please try again.";
+    }
+  }
+
+  async function callAdminUpgradeCost(body){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      return { data: null, message: "Backend not configured — edit config/frontend-config.js." };
+    }
+    const { data, error } = await client.functions.invoke("admin-miner-upgrade-cost", { body });
+    if(error){
+      return { data: null, message: await ucErrorMessage(error) };
+    }
+    if(!data || data.success !== true){
+      return { data: null, message: (data && data.message) || "Request failed" };
+    }
+    return { data, message: null };
+  }
+
+  function ucFmt(n){
+    return (Number(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 8 });
+  }
+
+  function renderUpgradeCostTable(){
+    const body = document.getElementById("ucTableBody");
+    body.innerHTML = "";
+    document.getElementById("ucEmptyNote").style.display = upgradeCostList.length ? "none" : "block";
+    upgradeCostList.forEach(c=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>Lv ${c.fromLevel} → ${c.toLevel}</td>
+        <td>${ucFmt(c.costPxn)}</td>
+        <td>${ucFmt(c.defaultCostPxn)}</td>
+        <td><input type="number" class="uc-cost-input" data-uc-input="${c.fromLevel}" min="0" max="${UC_MAX_COST}" step="0.00000001" value="${c.costPxn}" style="width:140px;"></td>
+        <td>
+          <div class="row-actions">
+            <button class="btn" data-uc-save="${c.fromLevel}">SAVE</button>
+            <button class="btn ghost" data-uc-reset="${c.fromLevel}">RESET TO DEFAULT</button>
+          </div>
+        </td>`;
+      body.appendChild(tr);
+    });
+
+    body.querySelectorAll("[data-uc-save]").forEach(btn=>{
+      btn.addEventListener("click", ()=> ucSaveCost(Number(btn.dataset.ucSave)));
+    });
+    body.querySelectorAll("[data-uc-reset]").forEach(btn=>{
+      btn.addEventListener("click", ()=> ucResetCost(Number(btn.dataset.ucReset)));
+    });
+  }
+
+  async function fetchUpgradeCostList(){
+    if(upgradeCostPending) return;
+    upgradeCostPending = true;
+    setUcListMsg("", false);
+    const { data, message } = await callAdminUpgradeCost({ action: "list" });
+    upgradeCostPending = false;
+    if(!data){
+      setUcListMsg(message, true);
+      return;
+    }
+    upgradeCostList = (data.costs || []).slice().sort((a,b)=> a.fromLevel - b.fromLevel);
+    renderUpgradeCostTable();
+  }
+
+  async function ucSaveCost(fromLevel){
+    const input = document.querySelector(`[data-uc-input="${fromLevel}"]`);
+    if(!input) return;
+    const cost = parseFloat(input.value);
+    if(!Number.isFinite(cost) || cost < 0 || cost > UC_MAX_COST){
+      setUcListMsg(`Cost must be a number from 0 to ${UC_MAX_COST}.`, true);
+      return;
+    }
+    setUcListMsg("", false);
+    const { data, message } = await callAdminUpgradeCost({ action: "update", fromLevel: fromLevel, costPxn: cost });
+    if(!data){
+      setUcListMsg(message, true);
+      return;
+    }
+    logAction("MINER UPGRADE COST UPDATED", "Level " + fromLevel + " → " + (fromLevel + 1) + " set to " + cost + " PXN");
+    toast("Upgrade cost saved");
+    fetchUpgradeCostList();
+  }
+
+  async function ucResetCost(fromLevel){
+    setUcListMsg("", false);
+    const { data, message } = await callAdminUpgradeCost({ action: "reset", fromLevel: fromLevel });
+    if(!data){
+      setUcListMsg(message, true);
+      return;
+    }
+    logAction("MINER UPGRADE COST RESET", "Level " + fromLevel + " → " + (fromLevel + 1) + " reset to default");
+    toast("Upgrade cost reset to default");
+    fetchUpgradeCostList();
+  }
+
+  document.getElementById("ucRefreshBtn").addEventListener("click", ()=> fetchUpgradeCostList());
+
+  // Load the list automatically the moment this section is opened —
+  // same pattern as Miner Management's own nav-triggered load above.
+  const ucNavBtn = document.querySelector('.side-btn[data-page="minerUpgradeCosts"]');
+  if(ucNavBtn) ucNavBtn.addEventListener("click", fetchUpgradeCostList);
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
