@@ -2,10 +2,12 @@
 //
 // POST /functions/v1/admin-users
 //
-// Admin-only, READ-ONLY endpoint with two actions:
+// Admin-only endpoint with three actions:
 //
-//   List:   { "action": "list", "search"?: "<text>" }
-//   Detail: { "action": "get", "userId": "<uuid>" }
+//   List:           { "action": "list", "search"?: "<text>" }
+//   Detail:         { "action": "get", "userId": "<uuid>" }
+//   Adjust balance: { "action": "adjust-balance", "userId": "<uuid>",
+//                     "delta": <nonzero finite number>, "reason": "<1-300 chars>" }
 //
 // action defaults to "list" if omitted, so the original
 // `{}`-body call this function originally shipped with keeps working
@@ -24,8 +26,23 @@
 // claimed_total, level) and their owned miner units
 // (public.mining_inventory).
 //
-// This function does NOT write, reset, or adjust any balance, level,
-// or miner data — every query below is a SELECT. It does NOT touch
+// "adjust-balance" is the ONE write path in this function — it is a
+// thin, validating wrapper around the EXISTING, already-deployed
+// public.adjust_pxn_balance(p_user_id, p_delta, p_reason) RPC (see
+// 0015_pxn_balance_security.sql). It does not implement any balance
+// arithmetic itself: the RPC is a single atomic, row-locking,
+// SECURITY DEFINER statement that applies the delta and rejects a
+// negative result, so this file only (a) validates the request shape,
+// (b) confirms the caller is an admin, (c) confirms the target user
+// exists, and (d) calls the RPC and relays its result. No new SQL
+// migration was added for this — adjust_pxn_balance already existed,
+// already GRANTs EXECUTE to service_role only, and is called here
+// exactly as documented.
+//
+// This function does NOT write, reset, or adjust total_mined,
+// claimed_total, pending_claim, mining level/speed, or any miner
+// inventory/ownership/level row — "adjust-balance" touches
+// mining_state.pxn_balance ONLY, via the RPC above. It does NOT touch
 // mining_config, referrals, purchase/upgrade logic, or any other
 // table, does NOT introduce any custom JWT/JWT secret, and does NOT
 // change admin-set-mining-speed, admin-miner-catalog,
@@ -112,16 +129,21 @@
 //   pendingClaim, claimedTotal, level, miningRate, createdAt },
 //   miners: [ { inventoryId, minerTier, minerName, minerIcon,
 //   minerLevel, minerSpeed, applied, createdAt }, ... ] }
+// Response 200 (adjust-balance): { success: true, action: "adjust-balance",
+//   user: { id: "<uuid>", pxn_balance: <new authoritative balance> } }
 // Response 400: { success: false, message: "..." }
-//   (malformed body, invalid action, invalid/oversized search, userId
-//   missing or not a valid UUID for "get")
+//   (malformed body, invalid action; invalid/oversized search;
+//   missing/invalid userId; for "adjust-balance": invalid userId,
+//   invalid delta, delta = 0, or invalid/missing reason)
 // Response 401: { success: false, message: "Unauthorized" }
 // Response 403: { success: false, message: "Forbidden" }
 //   (authenticated, but not an admin)
 // Response 404: { success: false, message: "User not found" }
-//   ("get" only — userId is a syntactically valid UUID with no
-//   matching public.users row)
+//   ("get" / "adjust-balance" — userId is a syntactically valid UUID
+//   with no matching public.users row, or no public.mining_state row)
 // Response 405: method not allowed
+// Response 409: { success: false, message: "..." }
+//   ("adjust-balance" only — applying delta would take pxn_balance negative)
 // Response 500: server misconfiguration or unexpected database error
 //   only — never the underlying error detail or any secret.
 //
@@ -139,6 +161,13 @@ const NOT_FOUND = { success: false, message: "User not found" } as const;
 const SERVICE_UNAVAILABLE = { success: false, message: "Service temporarily unavailable" } as const;
 
 const MAX_SEARCH_LEN = 200;
+
+// ---- "adjust-balance" validation limits ----
+const MAX_REASON_LEN = 300;
+// Mirrors mining_state.pxn_balance's column type (numeric(20,8)) —
+// rejects absurd/overflow-inviting deltas before they ever reach the
+// database. Well above anything a legitimate admin adjustment needs.
+const MAX_ABS_DELTA = 1_000_000_000;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -240,13 +269,62 @@ function parseSearch(body: unknown): { ok: true; value: string | null } | { ok: 
   return { ok: true, value: trimmed.length > 0 ? trimmed : null };
 }
 
-/** action defaults to "list" (keeps the original `{}`-body call working). Anything other than "list"/"get" is invalid. */
-function parseAction(body: unknown): "list" | "get" | null {
+/** action defaults to "list" (keeps the original `{}`-body call working). Anything other than "list"/"get"/"adjust-balance" is invalid. */
+function parseAction(body: unknown): "list" | "get" | "adjust-balance" | null {
   if (typeof body !== "object" || body === null) return "list";
   const raw = (body as Record<string, unknown>).action;
   if (raw === undefined || raw === null) return "list";
-  if (raw === "list" || raw === "get") return raw;
+  if (raw === "list" || raw === "get" || raw === "adjust-balance") return raw;
   return null;
+}
+
+/**
+ * Strict, field-by-field validation for the "adjust-balance" action's
+ * body: { userId: "<uuid>", delta: <nonzero finite number>, reason: "<text>" }.
+ * Returns which field failed (so the caller can return the exact 400
+ * message required by this feature's spec) or the fully-validated,
+ * normalized values on success. Never coerces types (a numeric string
+ * for `delta`, for example, is rejected rather than parsed).
+ */
+type AdjustBalanceParseResult =
+  | { ok: true; userId: string; delta: number; reason: string }
+  | { ok: false; field: "userId" | "delta" | "delta-zero" | "reason"; message: string };
+
+function parseAdjustBalanceBody(body: unknown): AdjustBalanceParseResult {
+  const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+
+  const rawUserId = record.userId;
+  if (typeof rawUserId !== "string" || !UUID_RE.test(rawUserId.trim())) {
+    return { ok: false, field: "userId", message: "userId must be a valid UUID" };
+  }
+  const userId = rawUserId.trim();
+
+  const rawDelta = record.delta;
+  if (typeof rawDelta !== "number" || !Number.isFinite(rawDelta)) {
+    return { ok: false, field: "delta", message: "delta must be a finite number" };
+  }
+  if (Math.abs(rawDelta) > MAX_ABS_DELTA) {
+    return { ok: false, field: "delta", message: `delta must not exceed ${MAX_ABS_DELTA} in magnitude` };
+  }
+  // Normalize to the same maximum precision the mining_state.pxn_balance
+  // column stores (numeric(20,8)) before the zero-check below, so a
+  // sub-1e-8 delta that would round away to nothing is rejected as
+  // "zero" rather than silently sent to the database as a no-op.
+  const delta = Math.round(rawDelta * 1e8) / 1e8;
+  if (delta === 0) {
+    return { ok: false, field: "delta-zero", message: "delta must not be zero" };
+  }
+
+  const rawReason = record.reason;
+  if (typeof rawReason !== "string") {
+    return { ok: false, field: "reason", message: "reason is required" };
+  }
+  const reason = rawReason.trim();
+  if (reason.length < 1 || reason.length > MAX_REASON_LEN) {
+    return { ok: false, field: "reason", message: `reason must be 1-${MAX_REASON_LEN} characters` };
+  }
+
+  return { ok: true, userId, delta, reason };
 }
 
 /**
@@ -291,17 +369,27 @@ Deno.serve(async (req: Request) => {
 
   const action = parseAction(rawBody);
   if (action === null) {
-    return jsonResponse({ success: false, message: "action must be one of: list, get" }, 400);
+    return jsonResponse({ success: false, message: "action must be one of: list, get, adjust-balance" }, 400);
   }
 
   let targetUserId: string | null = null;
   let searchValue: string | null = null;
+  let adjustDelta: number | null = null;
+  let adjustReason: string | null = null;
 
   if (action === "get") {
     targetUserId = parseTargetUserId(rawBody);
     if (targetUserId === null) {
       return jsonResponse({ success: false, message: "userId must be a valid UUID" }, 400);
     }
+  } else if (action === "adjust-balance") {
+    const parsed = parseAdjustBalanceBody(rawBody);
+    if (!parsed.ok) {
+      return jsonResponse({ success: false, message: parsed.message }, 400);
+    }
+    targetUserId = parsed.userId;
+    adjustDelta = parsed.delta;
+    adjustReason = parsed.reason;
   } else {
     const parsedSearch = parseSearch(rawBody);
     if (!parsedSearch.ok) {
@@ -367,6 +455,65 @@ Deno.serve(async (req: Request) => {
       err instanceof Error ? err.message : "unknown error",
     );
     return jsonResponse(SERVICE_UNAVAILABLE, 500);
+  }
+
+  // ============================ adjust-balance ============================
+  if (action === "adjust-balance") {
+    const userId = targetUserId as string;
+    const delta = adjustDelta as number;
+    const reason = adjustReason as string;
+
+    // Confirm the target player actually exists first, so a typo'd
+    // userId reliably reports 404 rather than surfacing as whatever
+    // error shape the RPC's "no mining_state row" exception happens
+    // to produce.
+    const { data: targetUserRow, error: targetUserError } = await admin
+      .from("users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (targetUserError) {
+      console.error("[admin-users] adjust-balance user lookup failed:", targetUserError.message);
+      return jsonResponse({ success: false, message: "Could not load user" }, 500);
+    }
+    if (!targetUserRow) {
+      return jsonResponse(NOT_FOUND, 404);
+    }
+
+    // The single sanctioned, atomic write path for pxn_balance — see
+    // 0015_pxn_balance_security.sql. This RPC alone locks the row,
+    // applies the delta, and rejects a negative result; no balance
+    // arithmetic happens in this file.
+    const { data: newBalanceData, error: rpcError } = await admin.rpc("adjust_pxn_balance", {
+      p_user_id: userId,
+      p_delta: delta,
+      p_reason: reason,
+    });
+
+    if (rpcError) {
+      const message = rpcError.message || "";
+      if (message.includes("insufficient PXN balance")) {
+        return jsonResponse(
+          { success: false, message: "Adjustment would result in a negative PXN balance" },
+          409,
+        );
+      }
+      if (message.includes("no mining_state row")) {
+        return jsonResponse(NOT_FOUND, 404);
+      }
+      console.error("[admin-users] adjust_pxn_balance RPC failed:", message);
+      return jsonResponse({ success: false, message: "Could not adjust balance" }, 500);
+    }
+
+    return jsonResponse(
+      {
+        success: true,
+        action: "adjust-balance",
+        user: { id: userId, pxn_balance: safeNumber(newBalanceData) },
+      },
+      200,
+    );
   }
 
   // ================================ list ================================
