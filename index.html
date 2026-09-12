@@ -1927,6 +1927,20 @@
   // below (accrue()) — this only affects what the "MINING RATE" UI displays.
   let serverMiningRate = null;
 
+  // ---------- backend PXN balance sync (balance display fix) ----------
+  // public.mining_state.pxn_balance (adjusted only by purchase-miner /
+  // adjust_pxn_balance / accrue-mining server-side — never by this file) is
+  // the ONLY authoritative PXN balance. accrue-mining's response already
+  // includes the full, current mining_state row (see accrue-mining/index.ts),
+  // so the exact same response already being fetched below for the mining
+  // rate also carries the real pxn_balance — no extra network call, no new
+  // endpoint, no new balance system. This corrects state.pxnBalance (and
+  // persists the correction via the existing saveState()) so a stale/drifted
+  // local value from localStorage can never keep being shown once a real
+  // backend response has arrived. Does NOT touch mining calculations,
+  // purchase-miner, inventory, marketplace, or leaderboard logic — it only
+  // ever assigns the number the backend already returned.
+
   // What the UI should actually show for "MINING RATE". Prefers the
   // authoritative backend value (see serverMiningRate above); falls back to
   // the local calculation only when no backend value has been received yet.
@@ -1938,11 +1952,15 @@
 
   let miningRateSyncInFlight = false;
 
-  // Pulls the authoritative rate from POST /accrue-mining and stores it in
-  // serverMiningRate, then re-renders so the display updates immediately —
-  // this is the only place serverMiningRate is ever written. Read-only
-  // against the backend: never writes admin_speed_override, mining_config,
-  // or anything else (that stays exclusively in admin-set-mining-speed).
+  // Pulls the authoritative rate (and, as of the balance display fix, the
+  // authoritative PXN balance) from POST /accrue-mining and stores them in
+  // serverMiningRate / state.pxnBalance, then re-renders so the display
+  // updates immediately — this is the only place serverMiningRate is ever
+  // written, and the only place state.pxnBalance is corrected from the
+  // backend. Read-only against the backend: never writes
+  // admin_speed_override, mining_config, pxn_balance, or anything else
+  // (that stays exclusively in admin-set-mining-speed / purchase-miner /
+  // accrue-mining's own server-side logic).
   async function syncMiningRateFromBackend(){
     if(miningRateSyncInFlight) return;
     if(!window.ProXBackend) return;
@@ -1951,6 +1969,14 @@
       const result = await ProXBackend.fetchAccrueMining();
       if(result.ok && result.data && typeof result.data.mining_rate === "number"){
         serverMiningRate = result.data.mining_rate;
+        const backendState = result.data.mining_state;
+        if(backendState && typeof backendState.pxn_balance !== "undefined"){
+          const backendBalance = Number(backendState.pxn_balance);
+          if(Number.isFinite(backendBalance) && backendBalance !== state.pxnBalance){
+            state.pxnBalance = backendBalance;
+            saveState();
+          }
+        }
         render();
       } else {
         console.info("[ProXBackend] mining rate sync not completed:", result.error);
