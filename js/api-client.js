@@ -225,6 +225,64 @@
     return { ok: false, data: null, error: message };
   }
 
+  /**
+   * Calls the authenticated `claim-mining` Edge Function using the
+   * current Supabase session (via ProXAuth.getAccessToken(), same
+   * pattern as fetchMe()/fetchAccrueMining() above — never
+   * re-implemented here).
+   *
+   * This performs a real (server-side) claim on every call — moving the
+   * caller's own public.mining_state.pending_claim into claimed_total via
+   * public.claim_mining (see backend/supabase/functions/claim-mining/
+   * index.ts and 0027_secure_mpxn_claim.sql). Sends no request body:
+   * there is no field that identifies which player or which amount to
+   * claim — the backend determines the authenticated user from the
+   * access token alone. Never reads or writes pxn_balance.
+   *
+   * Always resolves (never throws) with { ok, data, error }, same shape
+   * as every other ProXBackend call. On success, `data` is the raw JSON
+   * body from claim-mining: { success: true, user_id, claimed_amount,
+   * pending_claim, claimed_total, claim_count }. On a recognized backend
+   * rejection (e.g. nothing to claim), `ok` is false and `data` still
+   * carries the backend's own { success: false, message } body so the
+   * caller can show that exact message. This function does NOT touch
+   * localStorage and does NOT modify any existing mining/claim state
+   * itself — index.html decides what, if anything, to do with the
+   * response.
+   */
+  async function fetchClaimMining() {
+    console.log("[ProXBackend] claiming m.PXN");
+
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      console.warn("[ProXBackend] claim failed");
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      console.warn("[ProXBackend] claim failed");
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("claim-mining", { method: "POST", body: {}, accessToken: accessToken });
+
+    if (result.ok && result.data && result.data.success) {
+      console.log("[ProXBackend] claim succeeded");
+      return { ok: true, data: result.data, error: null };
+    }
+
+    console.warn("[ProXBackend] claim failed");
+    const message =
+      (result.data && (result.data.message || result.data.error)) ||
+      result.error ||
+      "Could not process claim.";
+    // result.data is deliberately still passed through (not null) so the
+    // caller can read the backend's own status/message shape, same
+    // pattern the raw callFunction() result already uses.
+    return { ok: false, data: result.data, error: message };
+  }
+
   const ProXBackend = {
     /** Returns true once real Supabase project values are configured. */
     isConfigured: isConfigured,
@@ -263,6 +321,13 @@
     getLastAccrueMiningResult: function () {
       return lastAccrueMiningResult;
     },
+
+    /**
+     * Calls POST /claim-mining using the current Supabase session,
+     * moving the player's own pending_claim into claimed_total
+     * server-side. See fetchClaimMining() above for the full contract.
+     */
+    fetchClaimMining: fetchClaimMining,
 
     // Internal — exposed so later migration steps (and this module's
     // own tests) can call other functions without duplicating the
