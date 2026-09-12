@@ -8,12 +8,22 @@
 // raised, and it does so by delegating the entire lock / ownership-
 // check / formula / atomic-deduct / update sequence to a single
 // atomic SECURITY DEFINER Postgres function, public.upgrade_miner
-// (see 0025_miner_upgrade_system.sql). This function does NOT
+// (see 0025_miner_upgrade_system.sql, 0026_admin_miner_upgrade_costs.sql,
+// and 0029_upgrade_miner_use_mpxn.sql). This function does NOT
 // implement any of that logic itself, does NOT touch mining accrual
 // (accrue-mining/index.ts is untouched), does NOT touch purchase
 // logic (purchase-miner/index.ts is untouched), does NOT touch
 // apply/remove logic (set-miner-applied/index.ts is untouched), and
 // does NOT modify any existing file.
+//
+// Currency (0029): upgrade_miner() now deducts m.PXN
+// (public.mining_state.claimed_total) instead of PXN
+// (public.mining_state.pxn_balance). This file's ONLY job with
+// respect to that change is to relabel the RPC's legacy output
+// column names to honest, m.PXN-labeled JSON keys before anything
+// reaches the frontend — see the UpgradeMinerRow interface and the
+// success response below. Nothing in this file reads, deducts, or
+// otherwise depends on pxn_balance.
 //
 // Request body: { "inventoryId": <uuid> }
 //   - inventoryId must be a JSON string that is a valid UUID.
@@ -24,15 +34,15 @@
 //     sends one it is ignored — the only source of identity is
 //     auth.getUser() below. There is also no level/speed/cost field
 //     accepted from the client; every one of those values is
-//     computed server-side inside the RPC from miner_catalog and
-//     miner_upgrade_config.
+//     computed server-side inside the RPC from miner_catalog,
+//     miner_upgrade_config, and miner_upgrade_costs.
 //
 // Authentication: identical pattern to functions/me,
 // functions/purchase-miner, functions/set-miner-applied, and
 // functions/accrue-mining — a per-request, caller-scoped supabase-js
 // client (anon key + the caller's own `Authorization: Bearer <token>`
 // access token) is used, and `auth.getUser()` is the sole source of
-// the caller's identity.
+// the caller's identity. UNCHANGED by this update.
 //   - `verify_jwt = true` in config.toml means the Supabase platform
 //     already rejects missing/malformed/expired tokens before this
 //     code even runs. The explicit getUser() call below is a second,
@@ -49,13 +59,13 @@
 // Database access:
 //   - getSupabaseAdmin() (service-role client) is used ONLY to call
 //     the public.upgrade_miner RPC. It is never used to read or
-//     write mining_inventory, mining_state, miner_catalog, or
-//     miner_upgrade_config directly from this file — every one of
-//     those reads/locks/writes happens inside the single atomic
-//     transaction of the SECURITY DEFINER function itself, which is
-//     exactly what makes the upgrade atomic and safe under
-//     concurrent/double-click requests (see the migration's
-//     comments for why).
+//     write mining_inventory, mining_state, miner_catalog,
+//     miner_upgrade_config, or miner_upgrade_costs directly from
+//     this file — every one of those reads/locks/writes happens
+//     inside the single atomic transaction of the SECURITY DEFINER
+//     function itself, which is exactly what makes the upgrade
+//     atomic and safe under concurrent/double-click requests (see
+//     the migration's comments for why).
 //   - public.upgrade_miner is GRANTed to service_role only (REVOKEd
 //     from public/anon/authenticated), so only this Edge Function —
 //     never a client calling the PostgREST RPC endpoint directly —
@@ -65,11 +75,16 @@
 //                 inventory: { id, user_id, miner_tier, miner_name,
 //                              miner_icon, miner_level, miner_speed,
 //                              is_applied, created_at, updated_at },
-//                 pxn_balance: <number>,
-//                 pxn_cost: <number> }
+//                 claimed_total: <number>,
+//                 mpxn_cost: <number> }
+//   (claimed_total is the player's new m.PXN balance after this
+//   upgrade; mpxn_cost is the m.PXN amount charged for it. Neither
+//   field is ever named pxn_balance / pxn_cost in this response —
+//   see the UpgradeMinerRow comment below for why the RPC's own
+//   output columns are still named that way internally.)
 // Response 400: { success: false, message: "..." }
 //   (missing/invalid inventoryId, miner already at max level, or
-//   insufficient PXN balance)
+//   insufficient m.PXN balance)
 // Response 401: { success: false, message: "Unauthorized" }
 // Response 404: { success: false, message: "..." }
 //   (no mining_state row for this player yet, or the inventory item
@@ -90,10 +105,14 @@ import { getSupabaseAdmin } from "../_shared/supabaseAdmin.ts";
 const UNAUTHORIZED = { success: false, message: "Unauthorized" } as const;
 
 // Custom SQLSTATEs raised by public.upgrade_miner (see
-// 0025_miner_upgrade_system.sql). Mapped below to the HTTP status
+// 0025_miner_upgrade_system.sql, 0026_admin_miner_upgrade_costs.sql,
+// 0029_upgrade_miner_use_mpxn.sql). Mapped below to the HTTP status
 // that best reflects each failure mode. Continues the existing PXN
 // error-code sequence (PXN01-PXN11: purchase_miner/set_miner_applied;
 // PXN12-PXN14: admin_set_mining_speed/admin_clear_mining_speed_override).
+// These are SQLSTATE codes only — they do not imply the PXN
+// (pxn_balance) currency is involved; PXN20, in particular, is now
+// raised on insufficient m.PXN (claimed_total).
 const PG_ERR_INVALID_INPUT = "PXN15";
 const PG_ERR_NO_MINING_STATE = "PXN16";
 const PG_ERR_INVENTORY_NOT_FOUND = "PXN17";
@@ -139,6 +158,20 @@ interface UpgradeMinerRow {
   is_applied: boolean;
   created_at: string;
   updated_at: string;
+  // These two column names are LEGACY PostgreSQL output names from
+  // public.upgrade_miner's RETURNS TABLE (unchanged since
+  // 0025_miner_upgrade_system.sql — CREATE OR REPLACE FUNCTION
+  // cannot rename an existing function's output columns without a
+  // breaking DROP/CREATE, so 0029_upgrade_miner_use_mpxn.sql
+  // deliberately kept these names). As of 0029:
+  //   - new_pxn_balance actually carries the player's new
+  //     claimed_total (m.PXN) — NOT pxn_balance, which this RPC no
+  //     longer reads or writes at all.
+  //   - pxn_cost actually carries the m.PXN amount charged for this
+  //     upgrade.
+  // Both are re-labeled to honest, m.PXN-named JSON keys
+  // (claimed_total / mpxn_cost) in the success response below —
+  // this raw shape is never forwarded to the client as-is.
   new_pxn_balance: number;
   pxn_cost: number;
 }
@@ -187,7 +220,7 @@ Deno.serve(async (req: Request) => {
   // Per-request, caller-scoped client — used ONLY for the identity
   // check below, exactly like functions/me, functions/purchase-miner,
   // and functions/set-miner-applied. Never used for any database
-  // read or write in this function.
+  // read or write in this function. UNCHANGED by this update.
   const userClient = createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -197,7 +230,7 @@ Deno.serve(async (req: Request) => {
   // getUser() asks Supabase's Auth server to verify the token; we
   // never decode or trust the JWT's claims ourselves, and the
   // resulting user id is the ONLY identity used anywhere below —
-  // never a value from the request body.
+  // never a value from the request body. UNCHANGED by this update.
   const { data: authData, error: authError } = await userClient.auth.getUser();
   if (authError || !authData?.user) {
     return jsonResponse(UNAUTHORIZED, 401);
@@ -208,7 +241,7 @@ Deno.serve(async (req: Request) => {
   // public.upgrade_miner (GRANTed to service_role only). Every
   // ownership check, level/speed/cost calculation, balance
   // deduction, and inventory update happens inside that single
-  // atomic RPC call, not in this file.
+  // atomic RPC call, not in this file. UNCHANGED by this update.
   let admin;
   try {
     admin = getSupabaseAdmin();
@@ -246,7 +279,7 @@ Deno.serve(async (req: Request) => {
       case PG_ERR_MAX_LEVEL:
         return jsonResponse({ success: false, message: "This miner is already at max level" }, 400);
       case PG_ERR_INSUFFICIENT_BALANCE:
-        return jsonResponse({ success: false, message: "Insufficient PXN balance" }, 400);
+        return jsonResponse({ success: false, message: "Insufficient m.PXN balance" }, 400);
       default:
         console.error("[upgrade-miner] upgrade_miner RPC failed:", rpcError.message);
         return jsonResponse({ success: false, message: "Could not complete upgrade" }, 500);
@@ -274,8 +307,16 @@ Deno.serve(async (req: Request) => {
         created_at: row.created_at,
         updated_at: row.updated_at,
       },
-      pxn_balance: row.new_pxn_balance,
-      pxn_cost: row.pxn_cost,
+      // row.new_pxn_balance is the RPC's legacy output column name
+      // (see the UpgradeMinerRow comment above) — its value is the
+      // player's new claimed_total (m.PXN), not pxn_balance. It is
+      // deliberately surfaced to the frontend under the honest key
+      // "claimed_total", never as "pxn_balance".
+      claimed_total: row.new_pxn_balance,
+      // row.pxn_cost is likewise a legacy-shaped output column name
+      // whose value is now the m.PXN amount charged for this
+      // upgrade. Surfaced under the honest key "mpxn_cost".
+      mpxn_cost: row.pxn_cost,
     },
     200,
   );
