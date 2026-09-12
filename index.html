@@ -1258,11 +1258,18 @@
 
   function minerIconSvg(level){
     const tier = UPGRADES.find(u => u.level === level);
+    let fallback;
     if(tier && tier.icon){
-      return `<img src="${tier.icon}" alt="Miner Lv.${level}">`;
+      fallback = `<img src="${escapeHtml(tier.icon)}" alt="Miner Lv.${level}">`;
+    } else {
+      const inner = MINER_ICON_INNER[level] || MINER_ICON_INNER.default;
+      fallback = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
     }
-    const inner = MINER_ICON_INNER[level] || MINER_ICON_INNER.default;
-    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+    // Inventory items are keyed by miner_tier (`level` here) — if the live
+    // catalog has a real image for this tier, it wins over the old
+    // UPGRADES-derived icon / built-in SVG glyph (requirement: never use a
+    // hardcoded SVG when a valid catalog image URL exists).
+    return getMinerCatalogIcon(level, fallback, "Miner Lv." + level);
   }
 
   function minerIconWithBadge(level){
@@ -1517,6 +1524,73 @@
     return String(str).replace(/[&<>"']/g, function(ch){
       return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch];
     });
+  }
+
+  // ---------- shared miner-icon rendering (Inventory / Marketplace / Leaderboard) ----------
+  // These two helpers are the single place non-Store screens turn a
+  // free-form icon value into markup, so every screen treats
+  // miner_catalog.miner_icon the same safe way. The Store's own
+  // storeCardIconMarkup() above is untouched and keeps its existing,
+  // separate behavior (it already reads the live catalog and is
+  // explicitly required to stay unchanged).
+
+  /**
+   * Renders one free-form icon value (a real http(s):// URL, a
+   * data:image/... URI, or emoji/plain text) as SAFE markup:
+   *   - a genuine image reference becomes an escaped <img src="...">
+   *   - anything else (emoji, plain text, or any other string) is
+   *     rendered as escaped TEXT inside a span — never as an <img src>,
+   *     so emoji/text can never be (mis)treated as an image URL and
+   *     no value can inject arbitrary HTML.
+   * Returns "" for an empty/non-string value so callers can safely
+   * concatenate the result.
+   */
+  function renderIconValueSafely(value, altText){
+    const str = typeof value === "string" ? value.trim() : "";
+    if(!str) return "";
+    if(/^data:image\//i.test(str) || /^https?:\/\//i.test(str)){
+      return '<img src="' + escapeHtml(str) + '" alt="' + escapeHtml(altText || "Miner") + '">';
+    }
+    return '<span class="catalog-icon-emoji">' + escapeHtml(str) + '</span>';
+  }
+
+  /**
+   * Central icon-resolution helper (Inventory / Marketplace / Leaderboard
+   * prize use this — Store keeps using storeCardIconMarkup() as before).
+   *
+   * getMinerCatalogIcon(tier, fallbackMarkup, altText)
+   *
+   * If the live minerCatalogCache has an entry for `tier` (miner_tier)
+   * AND that entry's miner_icon is a genuine image reference (an
+   * http(s):// URL or a data:image/... URI), returns a safe <img> tag
+   * for it. Emoji/plain text is deliberately NEVER matched here and
+   * NEVER turned into an <img src> or a generated URL — it simply
+   * falls through.
+   *
+   * Otherwise (tier not in the cache, cache not loaded yet, or the
+   * catalog's icon value isn't an image reference) returns
+   * `fallbackMarkup` completely unchanged, so every existing caller's
+   * own fallback (an old hardcoded SVG, a locally-stored icon, plain
+   * text, etc.) keeps working exactly as it did before this helper
+   * existed.
+   *
+   * Reads minerCatalogCache.tiers live on every call (no caching of
+   * its own), so once refreshMinerCatalog() updates the cache, the
+   * very next render of any screen using this helper immediately shows
+   * the new icon — no extra polling is introduced here.
+   */
+  function getMinerCatalogIcon(tier, fallbackMarkup, altText){
+    const tiers = minerCatalogCache.tiers;
+    if(tiers && tiers.length){
+      const entry = tiers.find(function(t){ return t.level === tier; });
+      if(entry && typeof entry.icon === "string"){
+        const trimmed = entry.icon.trim();
+        if(/^data:image\//i.test(trimmed) || /^https?:\/\//i.test(trimmed)){
+          return renderIconValueSafely(trimmed, altText || entry.name || ("Miner Lv." + tier));
+        }
+      }
+    }
+    return fallbackMarkup;
   }
 
   /** Renders a Store card's icon from a catalog/UPGRADES entry's free-form `icon` value (URL, data URI, inline <svg>, or emoji/text), falling back to the existing built-in per-level glyph when no icon value is present — same fallback MINER_ICON_INNER set already used by minerIconSvg(). */
@@ -2432,8 +2506,15 @@
   }
 
   function marketItemThumb(item){
-    if(item.icon) return `<img src="${item.icon}" alt="">`;
-    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER[item.level] || MINER_ICON_INNER.default}</svg>`;
+    const fallback = item.icon
+      ? renderIconValueSafely(item.icon, item.name)
+      : `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER[item.level] || MINER_ICON_INNER.default}</svg>`;
+    // Marketplace listings/offers carry a snapshot of the miner item they
+    // were made from (item.level = miner_tier) — prefer the live catalog
+    // image for that tier over the snapshot's own icon/built-in glyph, same
+    // resolution order as Inventory, without touching any listing/offer/
+    // pricing/ownership data itself.
+    return getMinerCatalogIcon(item.level, fallback, item.name);
   }
 
   function renderMarket(){
@@ -2570,10 +2651,21 @@
     const firstPrize = prizes.find(p=>p.rank===1) || prizes[0];
     const banner = document.getElementById("leaderboardPrizeBanner");
     if(firstPrize){
+      // Prizes are admin-configured as a free-form {rank, name, logo} entry
+      // (see admin.html's leaderboard prize editor) with no dedicated
+      // "this prize is a miner" flag today. If a prize is ever set up to
+      // reference a miner tier (firstPrize.minerTier), the live catalog
+      // image for that tier is shown; otherwise this falls back to the
+      // prize's own configured logo exactly as before, just rendered safely.
+      const fallbackLogo = firstPrize.logo ? renderIconValueSafely(firstPrize.logo, firstPrize.name) : '';
+      let prizeIconHtml = getMinerCatalogIcon(firstPrize.minerTier, fallbackLogo, firstPrize.name);
+      if(prizeIconHtml.indexOf('<img ') === 0){
+        prizeIconHtml = prizeIconHtml.replace('<img ', '<img class="prize-logo" ');
+      }
       banner.innerHTML = `
-        ${firstPrize.logo ? `<img class="prize-logo" src="${firstPrize.logo}" alt="">` : ''}
+        ${prizeIconHtml}
         <div class="eyebrow">TOP MINER OF THE MONTH WINS</div>
-        <div class="prize-name">${firstPrize.name}</div>
+        <div class="prize-name">${escapeHtml(firstPrize.name)}</div>
         <div class="prize-sub">Winner announced at the start of next month</div>
       `;
     } else {
