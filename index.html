@@ -531,6 +531,7 @@
   .inv-card-icon svg{ width:58%; height:58%; }
   .inv-card-icon img{ width:76%; height:76%; object-fit:contain; }
   .inv-card-name{ font-size:12px; font-weight:600; line-height:1.25; }
+  .inv-card-level{ font-size:10.5px; color:var(--amber); font-weight:600; margin-top:1px; }
   .inv-card-boost{ font-size:10.5px; color:var(--steel); margin-top:1px; }
   .inv-card .btn{ width:100%; margin-top:8px; font-size:11px; padding:8px 6px; }
   .inv-card .btn.applied{ background:transparent; border:1px solid var(--good); color:var(--good); pointer-events:none; }
@@ -1434,7 +1435,14 @@
       name: row.miner_name,
       icon: row.miner_icon,
       speed: Number(row.miner_speed),
-      applied: !!row.is_applied
+      applied: !!row.is_applied,
+      // Miner Level Upgrade System (0025/0026): the unit's upgradeable
+      // level (1..max_level), distinct from `level` above (which is
+      // actually the miner TIER, used for icon/name lookups elsewhere
+      // in this file — kept as-is to avoid touching existing behavior).
+      // Defaults to 1 if the backend ever omits it, matching
+      // mining_inventory.miner_level's own DB default.
+      minerLevel: Number(row.miner_level) || 1
     };
   }
 
@@ -2292,6 +2300,167 @@
     }
   }
 
+  // ---------- backend-authoritative miner level upgrade (upgrade-miner) ----------
+  // Only used for inventory items with a real backend UUID (see
+  // isBackendLinkedItem above) — the UPGRADE button is never shown for
+  // pre-migration local-only records (see renderInventory below).
+  //
+  // `pendingMinerUpgrades` blocks a double-click / duplicate request on the
+  // same item while one is already in flight for it, exactly like
+  // `pendingApplyRemove` above (a separate Set, so an in-flight Apply/Remove
+  // and an in-flight Upgrade for the same item never interfere with each
+  // other's guard).
+  const pendingMinerUpgrades = new Set();
+
+  // Items the backend has explicitly told us are at max level (from a prior
+  // failed upgrade attempt's message — see handleUpgradeMinerClick below).
+  // Deliberately session-only / in-memory (not persisted via saveState):
+  // this app has no player-safe "max level" preview endpoint, so the only
+  // way to learn this is a real upgrade attempt telling us so; keeping it
+  // in-memory (cleared on reload) means an admin raising max_level later is
+  // reflected again after the player's next reload, rather than a "MAX
+  // LEVEL" label getting stuck forever in localStorage.
+  const maxLevelMiners = new Set();
+
+  /**
+   * Small, self-contained call to POST /functions/v1/upgrade-miner. Used
+   * instead of ProXBackend._callFunction() for the same reason
+   * callPurchaseMinerBackend() above is: that generic helper (js/api-client.js)
+   * normalizes away the HTTP status code, and the required error handling
+   * here (400/401/403/404/409/500) needs it. Reuses the SAME existing
+   * window.PROX_CONFIG (FUNCTIONS_URL / SUPABASE_ANON_KEY) already shipped
+   * with the project — no new URL, no new config, no change to
+   * js/api-client.js itself. Always resolves (never throws). Sends ONLY
+   * inventoryId — never a level, speed, cost, or userId — matching the
+   * backend's own contract exactly.
+   */
+  async function callUpgradeMinerBackend(inventoryId, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/upgrade-miner", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ inventoryId: inventoryId })
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
+    }
+  }
+
+  /**
+   * Safe, non-sensitive message for a failed upgrade-miner call, preferring
+   * the backend's own (already-sanitized) message when present — e.g. "This
+   * miner is already at max level" or "Insufficient PXN balance" are both
+   * safe, specific, and never raw database/SQL text (see
+   * upgrade-miner/index.ts). Falls back to a generic, status-keyed message
+   * otherwise, same pattern as purchaseMinerErrorMessage() above.
+   */
+  function upgradeMinerErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    switch(result.status){
+      case 400: return "This miner cannot be upgraded right now.";
+      case 401: return "Session expired — please reopen the app.";
+      case 403: return "You're not allowed to upgrade this miner.";
+      case 404: return "Miner not found — try refreshing.";
+      case 409: return "Not enough PXN or this upgrade cannot be completed right now.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Network error — try again.";
+    }
+  }
+
+  /**
+   * Handles an UPGRADE click end-to-end: gets the access token, calls
+   * upgrade-miner, and — ONLY on a verified success response — applies the
+   * server's own returned inventory row/balance to local state via the
+   * existing mapBackendInventoryItem() helper (same pattern as
+   * setInventoryApplied()/handleBuyMinerClick() above). Cost, new level, and
+   * new speed are NEVER computed locally — only ever read back from the
+   * response. On any failure, local state (level/speed/balance) is left
+   * completely untouched, and — if the backend's message indicates this
+   * unit is already at max level — that is remembered in maxLevelMiners so
+   * the button stops being offered for this item without this file ever
+   * inventing what the actual max level number is.
+   */
+  async function handleUpgradeMinerClick(item, btn){
+    const uid = item.uid;
+    if(pendingMinerUpgrades.has(uid)) return;
+    if(maxLevelMiners.has(uid)) return;
+
+    pendingMinerUpgrades.add(uid);
+    if(btn){ btn.disabled = true; btn.textContent = "UPGRADING…"; }
+
+    try{
+      if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+        toast("Backend unavailable — try again shortly");
+        return;
+      }
+
+      const accessToken = await ProXAuth.getAccessToken();
+      if(!accessToken){
+        toast("Session expired — please reopen the app.");
+        return;
+      }
+
+      const result = await callUpgradeMinerBackend(item.id, accessToken);
+
+      if(result.ok && result.data && result.data.success && result.data.inventory){
+        // Use the server's own returned row — never a locally-guessed level,
+        // speed, or cost — as the new, server-authoritative state for this
+        // item. is_applied is whatever the backend echoes back (unchanged
+        // by upgrade_miner() server-side), so an already-applied miner
+        // simply stays applied here too — nothing re-applies or removes it.
+        Object.assign(item, mapBackendInventoryItem(result.data.inventory));
+
+        if(typeof result.data.pxn_balance === "number"){
+          state.pxnBalance = result.data.pxn_balance;
+        }
+
+        saveState();
+
+        const cost = typeof result.data.pxn_cost === "number" ? result.data.pxn_cost : null;
+        toast(cost !== null
+          ? "Miner upgraded to Lv. " + item.minerLevel + " for " + fmt(cost, 0) + " PXN"
+          : "Miner upgraded to Lv. " + item.minerLevel);
+      } else {
+        // Failure: local level/speed/balance are untouched (nothing above ran).
+        const message = (result.data && result.data.message) || "";
+        if(message.toLowerCase().indexOf("max level") !== -1){
+          maxLevelMiners.add(uid);
+        }
+        toast(upgradeMinerErrorMessage(result));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      pendingMinerUpgrades.delete(uid);
+      render(); // redraw buttons/state either way (also re-enables on failure)
+    }
+  }
+
+  /** Markup for a backend-linked item's UPGRADE button — MAX LEVEL (disabled) if the backend has told us so, otherwise UPGRADE/UPGRADING… based on pendingMinerUpgrades. */
+  function upgradeButtonMarkup(item){
+    const uid = item.uid;
+    if(maxLevelMiners.has(uid)){
+      return `<button class="btn" disabled>MAX LEVEL</button>`;
+    }
+    const pending = pendingMinerUpgrades.has(uid);
+    return `<button class="btn" data-upgrade="${uid}" ${pending ? "disabled" : ""}>${pending ? "UPGRADING…" : "UPGRADE"}</button>`;
+  }
+
   function renderInventory(){
     const wrap = document.getElementById("inventoryList");
     const banner = document.getElementById("invSlotsBanner");
@@ -2315,13 +2484,16 @@
       const slotsFull = !item.applied && appliedCount >= maxSlots;
       const div = document.createElement("div");
       div.className = "panel inv-card";
+      const backendLinked = isBackendLinkedItem(item);
       div.innerHTML = `
         <div class="inv-card-icon miner-icon-wrap">${minerIconWithBadge(item.level)}</div>
         <div class="inv-card-name">${item.name}</div>
+        ${backendLinked ? `<div class="inv-card-level">Lv. ${item.minerLevel || 1}</div>` : ``}
         <div class="inv-card-boost">+${fmt(item.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
         ${item.applied
           ? `<div class="inv-card-actions"><button class="btn applied" disabled>APPLIED ✓</button><button class="btn secondary" data-remove="${item.uid}">REMOVE</button></div>`
-          : `<button class="btn" data-apply="${item.uid}" ${slotsFull ? 'disabled' : ''}>${slotsFull ? 'SLOTS FULL' : 'APPLY'}</button>`}`;
+          : `<button class="btn" data-apply="${item.uid}" ${slotsFull ? 'disabled' : ''}>${slotsFull ? 'SLOTS FULL' : 'APPLY'}</button>`}
+        ${backendLinked ? upgradeButtonMarkup(item) : ``}`;
       wrap.appendChild(div);
     });
 
@@ -2369,6 +2541,17 @@
         }
 
         setInventoryApplied(item, false, btn);
+      });
+    });
+
+    wrap.querySelectorAll("[data-upgrade]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const uid = btn.dataset.upgrade;
+        const item = state.inventory.find(i=>i.uid===uid);
+        if(!item) return;
+        if(pendingMinerUpgrades.has(uid)) return; // request already in flight for this item
+        if(maxLevelMiners.has(uid)) return; // backend already told us this unit is maxed
+        handleUpgradeMinerClick(item, btn);
       });
     });
   }
