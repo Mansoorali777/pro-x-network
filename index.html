@@ -1,0 +1,3807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pro-X Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --void:#090c11;
+    --panel:#111722;
+    --panel-2:#161e2b;
+    --line:#26303f;
+    --cyan:#3fd0ff;
+    --cyan-dim:#1c5b70;
+    --amber:#ff9b3d;
+    --amber-dim:#8a5222;
+    --steel:#7c8896;
+    --steel-soft:#4d5762;
+    --text:#e9edf2;
+    --good:#4ade80;
+    --danger:#ff5c5c;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--void); color:var(--text); font-family:'Inter',sans-serif; overscroll-behavior:none;}
+  body{ -webkit-user-select:none; user-select:none; }
+
+  #app{
+    max-width:460px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--void);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+
+  /* ---------- shared clipped panel ---------- */
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    clip-path:polygon(0 10px,10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%);
+    position:relative;
+  }
+  .panel::before{
+    content:"";
+    position:absolute; inset:0;
+    clip-path:polygon(0 10px,10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%);
+    pointer-events:none;
+    box-shadow:inset 0 0 0 1px rgba(63,208,255,0.04);
+  }
+
+  .eyebrow{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:11px;
+    letter-spacing:0.14em;
+    color:var(--steel);
+  }
+
+  /* ---------- top status bar ---------- */
+  .statusbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 16px 10px;
+    gap:10px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .brand-mark{
+    width:30px; height:30px;
+    background:linear-gradient(135deg,var(--amber),var(--cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:13px; color:#0a0d12;
+  }
+  .brand-name{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:16px;
+    letter-spacing:0.02em;
+  }
+  .brand-name span{color:var(--amber);}
+
+  .balance-chip{
+    display:flex; flex-direction:column; align-items:flex-end;
+  }
+  .balance-num{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:18px;
+    color:var(--cyan);
+    line-height:1;
+  }
+  .balance-label{
+    font-size:10px;
+    color:var(--steel);
+    letter-spacing:0.08em;
+    margin-top:2px;
+  }
+  .balance-usd{
+    font-size:11px;
+    color:var(--good);
+    margin-top:2px;
+    font-family:'Chakra Petch',sans-serif;
+  }
+  .rig-usd{
+    font-size:11.5px;
+    color:var(--good);
+    margin-top:2px;
+    font-family:'Chakra Petch',sans-serif;
+  }
+  .claim-usd{
+    font-size:12px;
+    color:var(--good);
+    margin-top:3px;
+    font-family:'Chakra Petch',sans-serif;
+  }
+
+  /* ---------- top scrolling announcement ticker ---------- */
+  .ticker{
+    overflow:hidden;
+    white-space:nowrap;
+    background:var(--panel-2);
+    border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+    padding:6px 0;
+  }
+  .ticker-track{
+    display:inline-flex;
+    width:max-content;
+    animation:ticker-scroll 16s linear infinite;
+  }
+  .ticker-track span{
+    display:inline-block;
+    padding-right:48px;
+    font-family:'Chakra Petch',sans-serif;
+    font-size:11.5px;
+    letter-spacing:0.03em;
+    color:var(--amber);
+  }
+  @keyframes ticker-scroll{
+    from{ transform:translateX(0); }
+    to{ transform:translateX(-50%); }
+  }
+
+  /* ---------- screens ---------- */
+  .screen{ display:none; flex:1; flex-direction:column; padding-bottom:86px; }
+  .screen.active{ display:flex; }
+
+  /* MINE screen — backdrop uses the admin-uploaded background image, subtly */
+  .mine-backdrop{
+    position:absolute; inset:0; height:520px;
+    overflow:hidden;
+    pointer-events:none;
+    z-index:0;
+  }
+  .mine-backdrop img{
+    width:100%; height:100%; object-fit:cover; object-position:center 20%;
+    opacity:0.6;
+    filter:blur(2.5px) saturate(1.1);
+  }
+  .mine-backdrop::after{
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(9,12,17,0.15) 0%, rgba(9,12,17,0.35) 55%, var(--void) 92%);
+  }
+  .mine-content{ position:relative; z-index:1; display:flex; flex-direction:column; }
+
+  .mine-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 16px 4px;
+  }
+  .mine-greet{ display:flex; align-items:center; gap:10px; }
+  .mine-avatar{
+    width:38px; height:38px; border-radius:50%;
+    background:linear-gradient(135deg,var(--amber-dim),var(--cyan-dim));
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--text);
+    flex-shrink:0;
+  }
+  .mine-greet-sub{ font-size:11px; color:var(--steel); }
+  .mine-greet-name{ font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:14.5px; }
+  .pill-btn{
+    display:flex; align-items:center; gap:5px;
+    padding:8px 14px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:999px;
+    font-family:'Chakra Petch',sans-serif; font-size:11.5px; color:var(--text);
+    cursor:pointer;
+  }
+  .pill-btn svg{ width:14px; height:14px; }
+
+  /* organic glowing blob button */
+  .blob-wrap{ display:flex; justify-content:center; padding:18px 0 6px; position:relative; }
+  .blob{
+    width:200px; height:200px;
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    background:radial-gradient(circle at 38% 32%, rgba(74,222,128,0.55), rgba(74,222,128,0.08) 70%);
+    border-radius:42% 58% 63% 37% / 41% 44% 56% 59%;
+    box-shadow:0 0 50px rgba(74,222,128,0.35), inset 0 0 40px rgba(74,222,128,0.25);
+    animation:blobMorph 7s ease-in-out infinite, blobGlow 2.4s ease-in-out infinite;
+    transition:transform 0.08s ease;
+  }
+  .blob:active{ transform:scale(0.95); }
+  @keyframes blobMorph{
+    0%,100%{ border-radius:42% 58% 63% 37% / 41% 44% 56% 59%; }
+    25%{ border-radius:58% 42% 39% 61% / 55% 60% 40% 45%; }
+    50%{ border-radius:48% 52% 57% 43% / 60% 38% 62% 40%; }
+    75%{ border-radius:63% 37% 45% 55% / 44% 58% 42% 56%; }
+  }
+  @keyframes blobGlow{
+    0%,100%{ box-shadow:0 0 50px rgba(74,222,128,0.35), inset 0 0 40px rgba(74,222,128,0.25); }
+    50%{ box-shadow:0 0 78px rgba(74,222,128,0.6), inset 0 0 56px rgba(74,222,128,0.4); }
+  }
+  .blob-inner{ position:relative; z-index:1; text-align:center; }
+  .blob-label{
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:17px;
+    color:#eafff0; text-shadow:0 0 14px rgba(74,222,128,0.8);
+  }
+  .blob-sub{ font-size:10.5px; color:#c6f5d4; margin-top:4px; letter-spacing:0.04em; }
+  .blob.locked{ animation-play-state:paused, paused; opacity:0.55; cursor:default; }
+  .blob.locked:active{ transform:none; }
+  .blob.boosted{
+    background:radial-gradient(circle at 38% 32%, rgba(63,208,255,0.6), rgba(63,208,255,0.1) 70%);
+  }
+  .blob.boosted .blob-label{ text-shadow:0 0 14px rgba(63,208,255,0.8); }
+
+  .action-pills-row{ display:flex; gap:10px; margin:8px 14px 0; }
+  .action-pill{
+    flex:1; display:flex; align-items:center; gap:10px;
+    padding:12px 14px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    clip-path:polygon(0 8px,8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%);
+    cursor:pointer;
+  }
+  .action-pill svg{ width:18px; height:18px; flex-shrink:0; }
+  .action-pill-title{ font-family:'Chakra Petch',sans-serif; font-size:12.5px; font-weight:600; }
+  .action-pill-sub{ font-size:10px; color:var(--steel); margin-top:1px; }
+
+  .ads-caption{
+    text-align:center; font-size:10.5px; color:var(--steel);
+    margin:8px 14px 0;
+  }
+  .ads-caption span{ color:var(--good); font-family:'Chakra Petch',sans-serif; }
+
+  .earned-card{
+    margin:16px 14px 0;
+    padding:18px;
+    text-align:center;
+  }
+  .earned-card .eyebrow{ letter-spacing:0.1em; }
+  .earned-big{
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:32px;
+    margin-top:6px;
+  }
+  .earned-big span{ color:var(--good); font-size:18px; }
+  .earned-underline{
+    height:2px; width:60%; margin:10px auto 0;
+    background:linear-gradient(90deg, transparent, var(--good), transparent);
+    opacity:0.6;
+  }
+  .earned-claim-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:16px; padding-top:14px;
+    border-top:1px solid var(--line);
+  }
+  .earned-claim-info{ text-align:left; }
+  .earned-claim-info .val{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--good); }
+
+  .stats-grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 14px 0; }
+  .stat2-box{ padding:12px 14px; }
+  .stat2-box .eyebrow{ margin-bottom:6px; }
+
+  .daily-banner{
+    margin:16px 14px 0;
+    padding:16px;
+    display:flex; align-items:center; gap:14px;
+  }
+  .daily-banner-icon{
+    width:44px; height:44px; flex-shrink:0;
+    background:var(--panel-2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  }
+  .daily-banner-icon svg{ width:22px; height:22px; }
+  .daily-banner-body{ flex:1; }
+  .daily-banner-title{ font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:13.5px; }
+  .daily-banner-sub{ font-size:11px; color:var(--steel); margin-top:2px; }
+
+  .tap-badge{
+    display:none;
+    margin-left:6px;
+    padding:2px 6px;
+    font-size:10px;
+    font-weight:700;
+    color:#0a0d12;
+    background:var(--good);
+    letter-spacing:0.04em;
+    vertical-align:middle;
+  }
+  .tap-badge.show{ display:inline-block; }
+
+  /* ---------- captcha modal ---------- */
+  .modal-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(6,8,12,0.82);
+    backdrop-filter:blur(3px);
+    align-items:center; justify-content:center;
+    z-index:50;
+    padding:20px;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-box{
+    width:100%; max-width:320px;
+    padding:22px;
+    text-align:center;
+  }
+  .modal-title{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:18px;
+    margin-top:6px;
+  }
+  .modal-sub{
+    font-size:12px;
+    color:var(--steel);
+    margin-top:8px;
+    line-height:1.5;
+  }
+  .captcha-question{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:26px;
+    color:var(--cyan);
+    margin-top:18px;
+  }
+  .ad-progress-track{
+    height:8px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    margin-top:18px;
+    overflow:hidden;
+  }
+  .ad-progress-fill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));
+    transition:width 0.2s linear;
+  }
+  .captcha-input{
+    width:100%;
+    margin-top:14px;
+    padding:11px 12px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'Chakra Petch',sans-serif;
+    font-size:16px;
+    text-align:center;
+    outline:none;
+  }
+  .captcha-input:focus{ border-color:var(--cyan-dim); }
+  .captcha-error{
+    display:none;
+    color:var(--danger);
+    font-size:11.5px;
+    margin-top:8px;
+  }
+  .captcha-error.show{ display:block; }
+  .modal-box .btn{ margin-top:16px; }
+
+  /* ---------- miner detail / live upgrade-cost box (Goal A/B/G) ---------- */
+  .modal-box.miner-detail-box{
+    max-width:360px;
+    text-align:left;
+  }
+  .miner-detail-head{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .miner-detail-head .miner-icon-wrap{
+    width:52px; height:52px;
+    margin-bottom:0;
+    flex-shrink:0;
+  }
+  .miner-detail-name{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    line-height:1.2;
+  }
+  .miner-detail-level{ font-size:11.5px; color:var(--amber); font-weight:600; margin-top:2px; }
+  .miner-detail-speed{ font-size:11.5px; color:var(--steel); margin-top:2px; }
+  .miner-detail-balance{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:16px;
+    padding:10px 12px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+  }
+  .miner-detail-balance .eyebrow{ margin:0; }
+  .miner-detail-balance-val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:14px;
+    color:var(--cyan);
+  }
+  .miner-detail-costs-title{ margin-top:16px; margin-bottom:6px; }
+  .miner-detail-costs-list{
+    max-height:160px;
+    overflow-y:auto;
+  }
+  .miner-detail-cost-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-size:12px;
+    padding:7px 2px;
+    border-bottom:1px solid var(--line);
+  }
+  .miner-detail-cost-row:last-child{ border-bottom:none; }
+  .miner-detail-cost-row.next-level .miner-detail-cost-transition{ color:var(--cyan); }
+  .miner-detail-cost-transition{ color:var(--text); }
+  .miner-detail-cost-val{ font-weight:600; color:var(--steel); }
+  .miner-detail-cost-row.next-level .miner-detail-cost-val{ color:var(--text); }
+  .miner-detail-costs-empty{ font-size:11.5px; color:var(--steel); padding:8px 2px; }
+  .miner-detail-max-level{
+    margin-top:16px;
+    padding:10px 12px;
+    text-align:center;
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    letter-spacing:0.06em;
+    color:var(--amber);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+  }
+  .miner-detail-actions{
+    display:flex;
+    gap:8px;
+    margin-top:16px;
+  }
+  .miner-detail-actions .btn{ margin-top:0; flex:1; }
+
+  .stat-row{
+    display:flex;
+    gap:10px;
+    margin:16px 14px 0;
+  }
+  .stat-box{
+    flex:1;
+    padding:10px 12px;
+  }
+  .stat-box .eyebrow{ margin-bottom:6px; }
+  .stat-val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:16px;
+  }
+  .stat-val.cyan{ color:var(--cyan); }
+  .stat-val.amber{ color:var(--amber); }
+
+  .claim-bar{
+    margin:14px 14px 0;
+    padding:14px;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px;
+  }
+  .claim-info .eyebrow{ margin-bottom:4px; }
+  .claim-info .val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:17px;
+    color:var(--good);
+  }
+  .btn{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    letter-spacing:0.04em;
+    padding:11px 18px;
+    border:none;
+    color:#0a0d12;
+    background:var(--cyan);
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn:disabled{ background:var(--steel-soft); color:#93a0ac; cursor:default; }
+  .btn.secondary{ background:transparent; border:1px solid var(--cyan-dim); color:var(--cyan); clip-path:none; }
+  .btn.full{ width:100%; }
+  .btn.good{ background:var(--good); color:#062a13; }
+  .btn.danger{ background:var(--danger); color:#2a0606; }
+
+  .section-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin:20px 16px 10px;
+  }
+  .section-head h2{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:14px;
+    letter-spacing:0.08em;
+    margin:0;
+    color:var(--text);
+  }
+  .section-head .eyebrow{ text-transform:uppercase; }
+
+  /* generic list card */
+  .card{
+    margin:0 14px 10px;
+    padding:14px;
+    display:flex; align-items:center; gap:12px;
+  }
+  .card-icon{
+    width:38px; height:38px;
+    flex-shrink:0;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px);
+  }
+  .card-icon svg{ width:18px; height:18px; }
+  .card-icon.task-icon-wrap img{ width:100%; height:100%; object-fit:contain; }
+  .card-body{ flex:1; min-width:0; }
+  .card-title{ font-size:13.5px; font-weight:600; }
+  .card-sub{ font-size:11.5px; color:var(--steel); margin-top:2px; }
+  .card-cta{ flex-shrink:0; }
+
+  /* STORE — large grid layout */
+  .store-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:0 14px 8px;
+  }
+  .store-card{
+    padding:12px 10px 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:2px;
+  }
+  .store-card-icon{
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:120px;
+    margin-bottom:8px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    position:relative;
+  }
+  .store-card-icon svg{ width:62%; height:62%; }
+  .store-card-icon img{ width:80%; height:80%; object-fit:contain; }
+  .store-card-icon .catalog-icon-emoji{ font-size:34px; line-height:1; }
+  .store-card-icon .level-badge{ font-size:9px; padding:2px 4px; }
+  .store-catalog-status{ display:none; font-size:10.5px; color:var(--danger); text-align:center; margin:0 14px 8px; }
+  .store-catalog-status.show{ display:block; }
+  .store-card-name{ font-size:12.5px; font-weight:600; line-height:1.25; min-height:30px; display:flex; align-items:center; justify-content:center; }
+  .store-card-owned{ color:var(--good); font-size:10.5px; }
+  .store-card-cost{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; color:var(--cyan); margin-top:4px; }
+  .store-card-boost{ font-size:10.5px; color:var(--steel); margin-top:1px; }
+  .store-card .btn{ width:100%; margin-top:8px; font-size:11.5px; padding:9px 6px; }
+
+  /* MY INVENTORY */
+  .inventory-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:0 14px 14px;
+  }
+  .inv-card{
+    padding:12px 10px 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:2px;
+  }
+  .inv-card-icon{
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:100px;
+    margin-bottom:6px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+    position:relative;
+  }
+  .inv-card-icon svg{ width:58%; height:58%; }
+  .inv-card-icon img{ width:76%; height:76%; object-fit:contain; }
+  .inv-card-name{ font-size:12px; font-weight:600; line-height:1.25; }
+  .inv-card-level{ font-size:10.5px; color:var(--amber); font-weight:600; margin-top:1px; }
+  .inv-card-boost{ font-size:10.5px; color:var(--steel); margin-top:1px; }
+  .inv-card .btn{ width:100%; margin-top:8px; font-size:11px; padding:8px 6px; }
+  .inv-card .btn.applied{ background:transparent; border:1px solid var(--good); color:var(--good); pointer-events:none; }
+  .inv-card-actions{ display:flex; gap:6px; width:100%; margin-top:8px; }
+  .inv-card-actions .btn{ width:auto; flex:1; margin-top:0; }
+  .inv-empty{ margin:0 14px 14px; padding:16px; text-align:center; color:var(--steel); font-size:12.5px; }
+  .inv-slots-banner{ margin:0 14px 12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .inv-slots-banner .slots-count{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:16px; color:var(--cyan); }
+  .inv-slots-banner .slots-hint{ font-size:10.5px; color:var(--steel); margin-top:2px; }
+
+  /* UPGRADE screen */
+  .miner-hero{
+    margin:6px 14px 0;
+    padding:16px;
+    text-align:center;
+  }
+  .miner-hero .level{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:26px;
+    color:var(--amber);
+  }
+  .miner-hero .eyebrow{ margin-bottom:4px; }
+  .miner-hero .desc{ font-size:12px; color:var(--steel); margin-top:6px; }
+  .miner-icon-wrap{
+    position:relative;
+    display:inline-flex;
+    margin-bottom:8px;
+  }
+  .miner-icon-wrap svg{ width:80px; height:80px; }
+  .miner-icon-wrap img{ width:80px; height:80px; object-fit:contain; }
+  .miner-icon-wrap.small svg{ width:100%; height:100%; }
+  .miner-icon-wrap.small img{ width:100%; height:100%; object-fit:contain; }
+  .miner-icon-wrap.small{ margin-bottom:0; }
+  .level-badge{
+    position:absolute;
+    bottom:-3px; right:-8px;
+    background:var(--void);
+    border:1px solid var(--line);
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:10px;
+    padding:2px 5px;
+    color:var(--amber);
+    clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px);
+  }
+  .stat-miner-icon{
+    display:flex; align-items:center; gap:8px;
+  }
+  .stat-miner-icon .miner-icon-wrap{ width:26px; height:26px; margin-bottom:0; }
+  .stat-miner-icon .level-badge{ font-size:8px; padding:1px 3px; bottom:-4px; right:-6px; }
+
+  .bar-track{
+    height:6px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    margin-top:12px;
+    overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;
+    background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));
+  }
+
+  /* TASKS screen */
+  .task-done .card-title{ color:var(--steel); text-decoration:line-through; }
+  .task-done .card-icon{ opacity:0.4; }
+
+  /* FRIENDS screen */
+  .invite-panel{
+    margin:6px 14px 0;
+    padding:18px;
+    text-align:center;
+  }
+  .invite-panel .big{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700;
+    font-size:30px;
+    color:var(--cyan);
+  }
+  .link-row{
+    display:flex; gap:8px;
+    margin:14px 14px 0;
+  }
+  .link-box{
+    flex:1;
+    padding:11px 12px;
+    font-size:12px;
+    color:var(--steel);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+
+  /* ---------- marketplace ---------- */
+  .market-tabs, .store-tabs{ display:flex; gap:6px; margin:0 14px 12px; }
+  .market-tab, .store-tab{
+    flex:1; padding:9px 6px;
+    background:var(--panel-2); border:1px solid var(--line);
+    color:var(--steel);
+    font-family:'Chakra Petch',sans-serif; font-size:11px; letter-spacing:0.04em;
+    cursor:pointer;
+  }
+  .market-tab.active, .store-tab.active{ color:var(--cyan); border-color:var(--cyan-dim); background:rgba(63,208,255,0.08); }
+  .market-pane, .store-pane{ display:none; }
+  .market-pane.active, .store-pane.active{ display:block; }
+  .sell-form{ margin:0 14px 6px; }
+  .msel, .mnum{
+    width:100%;
+    padding:10px 11px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    outline:none;
+  }
+  .msel:focus, .mnum:focus{ border-color:var(--cyan-dim); }
+  .mnum{ flex:1; }
+  .listing-offers{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+  .listing-offer-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; font-size:12px; }
+  .listing-offer-row .who{ color:var(--steel); }
+  .listing-offer-row .amt{ font-family:'Chakra Petch',sans-serif; color:var(--good); }
+  .offer-actions{ display:flex; gap:6px; }
+  .offer-actions button{ padding:6px 10px; font-size:10.5px; }
+  .make-offer-row{ display:flex; gap:6px; margin-top:10px; }
+  .make-offer-row input{ flex:1; }
+  .make-offer-row button{ padding:9px 10px; font-size:10.5px; }
+  .empty-note{ margin:8px 14px 16px; font-size:12px; color:var(--steel); text-align:center; }
+
+  /* BROWSE / MY LISTINGS — large grid, matching the Store */
+  .market-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:0 14px 14px;
+  }
+  .market-card{
+    padding:12px 10px 10px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:2px;
+    border-color:rgba(245,232,201,0.28);
+    box-shadow:0 0 1px rgba(245,232,201,0.5) inset, 0 0 18px rgba(245,232,201,0.16), 0 0 34px rgba(245,232,201,0.07);
+    transition:box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+  .market-card:active{
+    border-color:rgba(245,232,201,0.5);
+    box-shadow:0 0 1px rgba(245,232,201,0.7) inset, 0 0 26px rgba(245,232,201,0.28), 0 0 46px rgba(245,232,201,0.12);
+  }
+  .market-card-icon{
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:100px;
+    margin-bottom:6px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+  }
+  .market-card-icon svg{ width:58%; height:58%; }
+  .market-card-icon img{ width:76%; height:76%; object-fit:contain; }
+  .market-card-name{ font-size:12px; font-weight:600; line-height:1.25; }
+  .market-card-sub{ font-size:10.5px; color:var(--steel); margin-top:1px; }
+  .market-card-price{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:14px; color:var(--cyan); margin-top:4px; }
+  .market-card .btn{ width:100%; margin-top:8px; font-size:11px; padding:8px 6px; }
+  .market-card .make-offer-row{ flex-direction:column; width:100%; margin-top:6px; gap:6px; }
+  .market-card .make-offer-row input{ width:100%; }
+  .market-card .make-offer-row button{ width:100%; }
+  .market-card .listing-offers{ width:100%; text-align:left; }
+  .market-card .listing-offer-row{ flex-wrap:wrap; }
+  .market-card .offer-actions{ width:100%; }
+  .market-card .offer-actions button{ flex:1; }
+  .lb-row{ display:flex; align-items:center; gap:12px; margin:0 14px 8px; padding:10px 14px; }
+  .lb-rank{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--steel); width:24px; flex-shrink:0; }
+  .lb-rank.gold{ color:#ffd54a; }
+  .lb-rank.silver{ color:#cfd8e3; }
+  .lb-rank.bronze{ color:#d98a4d; }
+  .lb-name{ flex:1; font-size:13px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lb-amt{ font-family:'Chakra Petch',sans-serif; color:var(--cyan); font-size:12.5px; flex-shrink:0; }
+  .prize-logo{ width:52px; height:52px; object-fit:contain; }
+  .prize-name{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; color:var(--amber); }
+  .prize-sub{ font-size:11px; color:var(--steel); }
+
+  /* ---------- bottom nav ---------- */
+  .navbar{
+    position:fixed;
+    left:50%; transform:translateX(-50%);
+    bottom:0;
+    width:100%; max-width:460px;
+    background:rgba(17,23,34,0.96);
+    backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    display:flex;
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+    z-index:10;
+  }
+  .navbtn{
+    flex:1;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:6px 2px;
+    background:none; border:none;
+    color:var(--steel);
+    font-family:'Chakra Petch',sans-serif;
+    font-size:10px;
+    letter-spacing:0.04em;
+    cursor:pointer;
+  }
+  .navbtn svg{ width:20px; height:20px; }
+  .navbtn.active{ color:var(--cyan); }
+
+  /* toast */
+  .toast{
+    position:fixed; left:50%; bottom:96px; transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2); border:1px solid var(--line);
+    padding:10px 16px;
+    font-size:12.5px;
+    color:var(--text);
+    opacity:0; pointer-events:none;
+    transition:all 0.25s ease;
+    z-index:20;
+    max-width:80%;
+    text-align:center;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  ::-webkit-scrollbar{ display:none; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="statusbar">
+    <div class="brand">
+      <div class="brand-mark">X</div>
+      <div class="brand-name">PRO-<span>X</span> NETWORK</div>
+    </div>
+    <div class="balance-chip">
+      <div class="balance-num" id="topBalance">0.0000</div>
+      <div class="balance-label" id="balanceLabelText">m.PXN MINED</div>
+      <div class="balance-usd" id="topBalanceUsd">≈ $0.0000</div>
+    </div>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker-track">
+      <span>⚡ You will receive a 0.05% boost every time you level up.</span>
+      <span>⚡ You will receive a 0.05% boost every time you level up.</span>
+    </div>
+  </div>
+
+  <!-- ============ MINE SCREEN ============ -->
+  <div class="screen active" id="screen-mine">
+    <div class="mine-backdrop"><img src="assets/bg-mine.png" alt="" id="rigImg"></div>
+    <div class="mine-content">
+
+      <div class="mine-header">
+        <div class="mine-greet">
+          <div class="mine-avatar" id="mineAvatar">P</div>
+          <div>
+            <div class="mine-greet-sub">Welcome back</div>
+            <div class="mine-greet-name" id="mineGreetName">Player</div>
+          </div>
+        </div>
+        <button class="pill-btn" id="roadmapBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19l5-14 6 10 5-14"/></svg>
+          Roadmap
+        </button>
+      </div>
+
+      <div class="blob-wrap">
+        <div class="blob" id="coreBtn">
+          <div class="blob-inner">
+            <div class="blob-label" id="blobLabel">TAP TO BOOST</div>
+            <div class="blob-sub" id="blobSub">2x speed for 10s</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-pills-row">
+        <div class="action-pill" id="watchAdBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.8"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M10 9l5 3-5 3z" fill="#3fd0ff" stroke="none"/></svg>
+          <div>
+            <div class="action-pill-title">Watch Ad</div>
+            <div class="action-pill-sub" id="adsTimer">0 / 5 today</div>
+          </div>
+        </div>
+        <div class="action-pill" id="goFriendsBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg>
+          <div>
+            <div class="action-pill-title">Invite Friends</div>
+            <div class="action-pill-sub">Earn +speed per friend</div>
+          </div>
+        </div>
+      </div>
+      <div class="ads-caption" id="adsCardSub">+2x mining speed for 8 hours after your 5th ad today</div>
+
+      <div class="panel earned-card">
+        <div class="eyebrow">YOU HAVE EARNED</div>
+        <div class="earned-big" id="earnedBig">0.0000 <span>m.PXN</span></div>
+        <div class="earned-underline"></div>
+        <div class="earned-claim-row">
+          <div class="earned-claim-info">
+            <div class="eyebrow">READY TO CLAIM</div>
+            <div class="val" id="claimReady">0.0000 m.PXN</div>
+            <div class="claim-usd" id="claimReadyUsd">≈ $0.0000</div>
+          </div>
+          <button class="btn" id="claimBtn">CLAIM</button>
+        </div>
+      </div>
+
+      <div class="stats-grid-2">
+        <div class="panel stat2-box">
+          <div class="eyebrow">MINER LEVEL</div>
+          <div class="stat-miner-icon">
+            <div class="miner-icon-wrap small" id="statMinerIcon"></div>
+            <div class="stat-val amber" id="statLevel">Lv. 1</div>
+          </div>
+        </div>
+        <div class="panel stat2-box">
+          <div class="eyebrow">LEVEL UP</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <div class="stat-val cyan" id="mineLevelCost" style="font-size:14px;">100 PXN</div>
+            <button class="btn" id="mineLevelUpBtn" style="padding:6px 10px; font-size:11px;">UP</button>
+          </div>
+        </div>
+        <div class="panel stat2-box">
+          <div class="eyebrow">MINING RATE</div>
+          <div class="stat-val cyan" id="rateDisplay" style="font-size:14px;">0.0000 <span style="color:var(--amber); font-size:11px;">m.PXN/sec</span></div>
+        </div>
+        <div class="panel stat2-box">
+          <div class="eyebrow">EST. VALUE</div>
+          <div class="stat-val good" id="rigUsd" style="font-size:14px;">≈ $0.0000/day</div>
+        </div>
+      </div>
+
+      <div class="panel daily-banner" id="boostCard">
+        <div class="daily-banner-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg></div>
+        <div class="daily-banner-body">
+          <div class="daily-banner-title">Daily Boost <span class="tap-badge" id="tapBoostBadge">2x · 10s</span></div>
+          <div class="daily-banner-sub" id="boostCardSub">+2x mining speed for 30 min</div>
+          <div class="daily-banner-sub" id="boostTimer" style="color:var(--good); margin-top:2px;">AVAILABLE</div>
+        </div>
+        <button class="btn secondary" id="boostBtn">ACTIVATE</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ UPGRADE SCREEN ============ -->
+  <div class="screen" id="screen-upgrade">
+    <div class="section-head">
+      <h2>MINERS</h2>
+    </div>
+    <div class="store-tabs">
+      <button class="store-tab active" data-utab="store">MINER STORE</button>
+      <button class="store-tab" data-utab="inventory">MY INVENTORY</button>
+    </div>
+
+    <div class="store-pane active" id="upane-store">
+      <div class="store-catalog-status" id="storeCatalogStatus"></div>
+      <div class="store-grid" id="upgradeList"></div>
+    </div>
+
+    <div class="store-pane" id="upane-inventory">
+      <div class="panel inv-slots-banner" id="invSlotsBanner"></div>
+      <div class="inventory-grid" id="inventoryList"></div>
+    </div>
+  </div>
+
+  <!-- ============ MARKETPLACE SCREEN ============ -->
+  <div class="screen" id="screen-market">
+    <div class="section-head" style="margin-top:16px;">
+      <h2>MARKETPLACE</h2>
+    </div>
+    <div class="market-tabs">
+      <button class="market-tab active" data-mtab="browse">BROWSE</button>
+      <button class="market-tab" data-mtab="mine">MY LISTINGS</button>
+      <button class="market-tab" data-mtab="leaderboard">LEADERBOARD</button>
+    </div>
+
+    <div class="market-pane active" id="mpane-browse">
+      <div class="panel card sell-form" style="flex-direction:column; align-items:stretch; gap:10px;">
+        <div class="eyebrow">LIST ONE OF YOUR MINERS</div>
+        <select class="msel" id="sellMinerSelect"></select>
+        <div style="display:flex; gap:8px;">
+          <input class="mnum" type="number" min="1" step="1" id="sellPriceInput" placeholder="Asking price (PXN)">
+          <button class="btn" id="listMinerBtn">LIST</button>
+        </div>
+      </div>
+      <div class="section-head"><h2>ACTIVE LISTINGS</h2></div>
+      <div class="market-grid" id="marketListings"></div>
+    </div>
+
+    <div class="market-pane" id="mpane-mine">
+      <div class="section-head" style="margin-top:16px;"><h2>YOUR LISTINGS</h2></div>
+      <div class="market-grid" id="myListings"></div>
+      <div class="section-head"><h2>YOUR SENT OFFERS</h2></div>
+      <div id="myOffers"></div>
+    </div>
+
+    <div class="market-pane" id="mpane-leaderboard">
+      <div class="panel card" id="leaderboardPrizeBanner" style="margin-top:16px; flex-direction:column; align-items:center; text-align:center; gap:6px;"></div>
+      <div class="section-head"><h2 id="leaderboardMonthLabel">THIS MONTH</h2></div>
+      <div id="leaderboardList"></div>
+    </div>
+  </div>
+
+  <!-- ============ TASKS SCREEN ============ -->
+  <div class="screen" id="screen-tasks">
+    <div class="section-head" style="margin-top:16px;">
+      <h2>EARN TASKS</h2>
+      <span class="eyebrow" id="tasksProgress">0 / 0 DONE</span>
+    </div>
+    <div id="taskList"></div>
+  </div>
+
+  <!-- ============ FRIENDS SCREEN ============ -->
+  <div class="screen" id="screen-friends">
+    <div class="panel invite-panel">
+      <div class="eyebrow">TOTAL FRIENDS INVITED</div>
+      <div class="big" id="friendsBig">0</div>
+      <div class="card-sub" style="margin-top:6px;" id="friendsSpeedBonusText">Each friend boosts your mining speed by +0.05 m.PXN/sec</div>
+    </div>
+    <div class="link-row">
+      <div class="panel link-box" id="refLink">t.me/ProXNetworkBot?start=ref_000000</div>
+      <button class="btn" id="copyBtn">COPY</button>
+    </div>
+    <div class="section-head">
+      <h2>INVITE REWARDS</h2>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Invite a friend</div>
+        <div class="card-sub" id="referralRewardSub">+50 m.PXN instantly, +0.05 m.PXN/sec permanently</div>
+      </div>
+    </div>
+    <div class="panel card" style="margin-bottom:16px;">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M12 2 L2 7 L12 12 L22 7 Z"/><path d="M2 17 L12 22 L22 17"/><path d="M2 12 L12 17 L22 12"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Friend reaches Lv. 5</div>
+        <div class="card-sub">+150 m.PXN bonus for you both</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ WALLET SCREEN ============ -->
+  <div class="screen" id="screen-wallet">
+    <!-- 1. WALLET HEADER / BALANCE — authoritative PXN balance only, never
+         computed or adjusted on the frontend. Kept in sync by
+         refreshAuthoritativePxnBalance() / renderWallet() below. -->
+    <div class="panel invite-panel" style="margin-top:6px;">
+      <div class="eyebrow">PXN BALANCE</div>
+      <div class="big" id="pxnBalanceBig">0.0000</div>
+      <div class="card-sub" style="margin-top:2px;" id="pxnBalanceSub">PXN — used to buy miners in the Store &amp; level up</div>
+    </div>
+
+    <!-- 2. MINING REWARDS CARD — read-only display of existing
+         state.minedBalance / state.claimedTotal / state.pendingClaim.
+         No new values are computed here. -->
+    <div class="section-head">
+      <h2>MINING REWARDS</h2>
+    </div>
+    <div class="panel card" style="flex-direction:column; align-items:stretch; gap:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-sub" style="margin:0;">Total m.PXN Mined</div>
+        <div class="stat-val cyan" id="miningTotalMined" style="font-size:14px;">0.0000</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-sub" style="margin:0;">Claimed m.PXN</div>
+        <div class="stat-val" style="font-size:14px; color:var(--good);" id="miningClaimed">0.0000</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="card-sub" style="margin:0;">Pending m.PXN</div>
+        <div class="stat-val amber" id="miningPending" style="font-size:14px;">0.0000</div>
+      </div>
+    </div>
+
+    <!-- 3. SWAP CARD — COMING SOON. No local balance math on this card. -->
+    <div class="section-head">
+      <h2>SWAP m.PXN → PXN</h2>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M7 7h11M18 7l-3-3M18 7l-3 3"/><path d="M17 17H6M6 17l3-3M6 17l3 3"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Swap is currently unavailable.</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <!-- 4. TON WALLET CARD — COMING SOON, kept disabled. -->
+    <div class="section-head">
+      <h2>CONNECT TON WALLET</h2>
+      <span class="eyebrow">NOT CONNECTED</span>
+    </div>
+    <div class="panel card">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="#7c8896" stroke="none"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Connect TON Wallet</div>
+        <div class="card-sub">Connect your TON wallet when withdrawals become available.</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <!-- 5. WITHDRAW CARD — COMING SOON, kept disabled. -->
+    <div class="section-head">
+      <h2>WITHDRAW PXN</h2>
+    </div>
+    <div class="panel card" style="margin-bottom:6px;">
+      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></div>
+      <div class="card-body">
+        <div class="card-title">Withdraw PXN</div>
+        <div class="card-sub">PXN withdrawals will become available after the official launch and eligibility rules are announced.</div>
+      </div>
+      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    </div>
+
+    <!-- 6. INFO CARD -->
+    <div class="panel card" style="margin:0 14px 16px; opacity:0.85;">
+      <div class="card-body" style="padding:2px 2px;">
+        <div class="card-sub" style="line-height:1.6;">
+          Your mined m.PXN represents mining rewards inside Pro-X Network. PXN is the project token used for miners and upgrades. Trading, swapping and withdrawals will only become available when the related systems are officially enabled.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-overlay" id="captchaOverlay">
+    <div class="panel modal-box">
+      <div class="eyebrow">SECURITY CHECK</div>
+      <div class="modal-title">Verify you're human</div>
+      <div class="modal-sub">We noticed unusually regular tapping. Solve this to keep mining.</div>
+      <div class="captcha-question" id="captchaQuestion">? + ? = ?</div>
+      <input class="captcha-input" type="number" inputmode="numeric" id="captchaInput" placeholder="Your answer">
+      <div class="captcha-error" id="captchaError">Incorrect — try again</div>
+      <button class="btn full" id="captchaSubmit">VERIFY</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="banOverlay" style="z-index:60;">
+    <div class="panel modal-box">
+      <div class="eyebrow">ACCOUNT STATUS</div>
+      <div class="modal-title" id="banOverlayTitle" style="color:var(--danger);">Account Suspended</div>
+      <div class="modal-sub" id="banOverlayMsg">This account has been suspended by an administrator. Mining is disabled.</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="adOverlay">
+    <div class="panel modal-box">
+      <div class="eyebrow">ADVERTISEMENT</div>
+      <div class="modal-title">Ad Playing…</div>
+      <div class="modal-sub">Please wait for the ad to finish to earn credit.</div>
+      <div class="ad-progress-track"><div class="ad-progress-fill" id="adProgressFill"></div></div>
+      <div class="captcha-question" id="adCountdown" style="font-size:30px;">5</div>
+    </div>
+  </div>
+
+  <!-- Miner detail / live upgrade-cost box (Goal A/B/G). Populated entirely
+       by openMinerDetailBox()/renderMinerDetailBox() — see the script below.
+       Costs always come from GET-miner-upgrade-costs (get-miner-upgrade-costs
+       Edge Function); nothing here computes a cost locally. -->
+  <div class="modal-overlay" id="minerDetailOverlay">
+    <div class="panel modal-box miner-detail-box" id="minerDetailBox">
+      <div class="miner-detail-head">
+        <div class="miner-icon-wrap small" id="minerDetailIcon"></div>
+        <div>
+          <div class="miner-detail-name" id="minerDetailName">—</div>
+          <div class="miner-detail-level" id="minerDetailLevel">Lv. 1</div>
+          <div class="miner-detail-speed" id="minerDetailSpeed">0 PXN/sec</div>
+        </div>
+      </div>
+      <div class="miner-detail-balance">
+        <div class="eyebrow">YOUR BALANCE</div>
+        <div class="miner-detail-balance-val" id="minerDetailBalance">0.00 m.PXN</div>
+      </div>
+      <div class="eyebrow miner-detail-costs-title" id="minerDetailCostsTitle">UPGRADE COSTS</div>
+      <div class="miner-detail-costs-list" id="minerDetailCostsList">
+        <div class="miner-detail-costs-empty">Loading live costs…</div>
+      </div>
+      <div class="miner-detail-actions">
+        <button class="btn secondary" id="minerDetailCloseBtn">CLOSE</button>
+        <button class="btn" id="minerDetailUpgradeBtn">UPGRADE</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="navbar">
+    <button class="navbtn active" data-screen="mine">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/></svg>
+      MINE
+    </button>
+    <button class="navbtn" data-screen="upgrade">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>
+      STORE
+    </button>
+    <button class="navbtn" data-screen="market">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9Z"/><path d="M9 13a3 3 0 0 0 6 0"/></svg>
+      MARKET
+    </button>
+    <button class="navbtn" data-screen="tasks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      TASKS
+    </button>
+    <button class="navbtn" data-screen="friends">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="18" cy="8" r="2.4"/><path d="M16.5 14.2c2.7.4 4.5 2.6 4.5 5.8"/></svg>
+      FRIENDS
+    </button>
+    <button class="navbtn" data-screen="wallet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+      WALLET
+    </button>
+  </div>
+
+</div>
+
+<!-- Backend foundation (new infrastructure — not yet used by any game logic below).
+     See backend/README.md. Safe to load: makes no network calls on its own. -->
+<script src="config/frontend-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/api-client.js"></script>
+<script src="js/auth-client.js"></script>
+<script>
+  // Silent, non-blocking: verifies this Telegram session with the
+  // backend as soon as it's available. Purely additive — nothing in
+  // the game UI/logic below reads or waits on this yet (that wiring
+  // happens in a later migration step). Failures here (e.g. backend
+  // not configured yet, or running outside Telegram) are expected
+  // and are only logged, never shown to the player.
+  ProXAuth.authenticate().then(function (result) {
+    if (result.ok) {
+      console.log("[ProXAuth] session established", result.data.user);
+      // Load the authenticated backend profile (POST /me) using the
+      // session ProXAuth just established. ProXBackend.getCurrentUser()
+      // can be read anywhere afterwards to reuse it in the existing UI.
+      // A failure here (expired/missing session, network issue, etc.)
+      // is only logged — it never throws or blocks the Mini App.
+      ProXBackend.fetchMe().then(function (meResult) {
+        if (!meResult.ok) {
+          console.info("[ProXBackend] backend profile not loaded:", meResult.error);
+        }
+
+        // Mining-rate sync (frontend display/sync fix): pulls the
+        // authoritative `mining_rate` from POST /accrue-mining (which
+        // already reflects any admin_speed_override — see
+        // accrue-mining/index.ts) and feeds it into the existing
+        // "MINING RATE" display via window.__proxSyncMiningRateFromBackend,
+        // exposed from inside the game IIFE further down this page
+        // (same load-order pattern as __proxSyncInventoryFromBackend
+        // below — that IIFE has already finished loading by the time
+        // this callback runs). It does NOT overwrite the existing
+        // localStorage mining state (STORAGE_KEY below), does NOT
+        // change claim/claimedTotal/pxnBalance/referrals/tasks/
+        // miners/boosts/marketplace/wallet logic — it only updates
+        // what the rate display reads. This same call also starts a
+        // periodic re-sync (see that function), so an admin override
+        // applied or cleared mid-session reaches this device without
+        // a full reload. Failures are only logged.
+        if (typeof window.__proxSyncMiningRateFromBackend === "function") {
+          window.__proxSyncMiningRateFromBackend();
+        } else {
+          console.info("[ProXBackend] mining-rate sync hook not ready yet");
+        }
+
+        // One-time backend inventory sync (set-miner-applied migration
+        // step). Defined inside the game IIFE further down this page and
+        // exposed as window.__proxSyncInventoryFromBackend — by the time
+        // this callback runs (after the network round trip above), that
+        // IIFE has already finished loading. Safe no-op if it hasn't
+        // (e.g. unexpected load order): the check below just skips it.
+        if (typeof window.__proxSyncInventoryFromBackend === "function") {
+          window.__proxSyncInventoryFromBackend();
+        }
+
+        // One-time initial load of the Store's miner catalog (public.miner_catalog).
+        // Defined inside the game IIFE further down this page and exposed as
+        // window.__proxRefreshMinerCatalog — by the time this callback runs,
+        // that IIFE has already finished loading. The Store itself also
+        // triggers a fresh refresh each time it's opened (see
+        // switchToScreen("upgrade") below), so an admin catalog edit is
+        // reflected next time the player visits the Store, without ever
+        // polling on a timer.
+        if (typeof window.__proxRefreshMinerCatalog === "function") {
+          window.__proxRefreshMinerCatalog();
+        }
+      });
+    } else {
+      console.info("[ProXAuth] not authenticated:", result.error);
+    }
+  });
+</script>
+
+<script>
+(function(){
+  const tg = window.Telegram ? window.Telegram.WebApp : null;
+  if(tg){ tg.ready(); tg.expand(); }
+
+  const STORAGE_KEY = "proxnetwork_state_v1";
+  const ADMIN_CONFIG_KEY = "proxnetwork_admin_config_v1"; // shared with admin.html (same-origin only)
+
+  function loadAdminConfig(){
+    try{
+      const raw = localStorage.getItem(ADMIN_CONFIG_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+  const adminConfig = loadAdminConfig();
+
+  const DEFAULT_UPGRADES = [
+    {level:1, name:"Miner Power",          cost:0,     speed:0.10, icon:"data:image/webp;base64,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"},
+    {level:2, name:"Reinforced Bore Rig",  cost:200,   speed:0.22},
+    {level:3, name:"Cryo-Cooled Extractor",cost:650,   speed:0.45},
+    {level:4, name:"Plasma Cutter Array",  cost:1800,  speed:0.90},
+    {level:5, name:"Quantum Drill Core",   cost:4500,  speed:1.75},
+    {level:6, name:"Deep Vein Harvester",  cost:11000, speed:3.40},
+    {level:7, name:"Fusion Mining Node",   cost:26000, speed:6.50},
+  ];
+
+  // The admin panel fully owns this list (add/remove/edit miners, any count).
+  // Falls back to the built-in 7-tier set only if nothing's been configured yet.
+  const UPGRADES = (adminConfig && Array.isArray(adminConfig.miners) && adminConfig.miners.length)
+    ? adminConfig.miners.map(m => ({level:m.level, name:m.name, cost:m.cost, speed:m.speed, icon:m.icon||null}))
+    : JSON.parse(JSON.stringify(DEFAULT_UPGRADES));
+
+  const TOKEN_SYMBOL = (adminConfig && adminConfig.token && adminConfig.token.symbol) || "m.PXN";
+
+  // ---------- per-level miner icons ----------
+  // Built-in glyphs used only when a tier has no admin-uploaded icon. Levels
+  // beyond the built-in set (admin-added miners) fall back to a generic glyph
+  // that still scales in glow/complexity with level.
+  const MINER_ICON_INNER = {
+    1: `<rect x="24" y="12" width="16" height="24" rx="2" fill="none" stroke="#9aa5b1" stroke-width="2.2"/>
+        <path d="M32 6 L40 18 H24 Z" fill="#9aa5b1"/>
+        <rect x="20" y="36" width="24" height="7" fill="none" stroke="#9aa5b1" stroke-width="2.2"/>`,
+    2: `<polygon points="32,4 54,16 54,40 32,52 10,40 10,16" fill="none" stroke="#3fd0ff" stroke-width="2"/>
+        <rect x="24" y="14" width="16" height="22" rx="2" fill="none" stroke="#d7dde4" stroke-width="2.2"/>
+        <path d="M32 10 L40 22 H24 Z" fill="#d7dde4"/>`,
+    3: `<polygon points="32,4 54,16 54,40 32,52 10,40 10,16" fill="none" stroke="#3fd0ff" stroke-width="2"/>
+        <rect x="24" y="14" width="16" height="22" rx="2" fill="none" stroke="#e9edf2" stroke-width="2.2"/>
+        <path d="M32 10 L40 22 H24 Z" fill="#e9edf2"/>
+        <path d="M12 20 L16 11 L20 20 Z" fill="#3fd0ff" opacity="0.85"/>
+        <path d="M44 20 L48 11 L52 20 Z" fill="#3fd0ff" opacity="0.85"/>
+        <path d="M27 45 L32 55 L37 45 Z" fill="#3fd0ff" opacity="0.85"/>`,
+    4: `<polygon points="32,4 54,16 54,40 32,52 10,40 10,16" fill="none" stroke="#ff9b3d" stroke-width="2"/>
+        <circle cx="32" cy="28" r="9" fill="none" stroke="#3fd0ff" stroke-width="2.2"/>
+        <line x1="15" y1="11" x2="49" y2="45" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round"/>
+        <line x1="49" y1="11" x2="15" y2="45" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="32" cy="28" r="3.4" fill="#3fd0ff"/>`,
+    5: `<circle cx="32" cy="28" r="6.5" fill="#ff9b3d"/>
+        <circle cx="32" cy="28" r="14" fill="none" stroke="#3fd0ff" stroke-width="1.6" stroke-dasharray="3 3"/>
+        <ellipse cx="32" cy="28" rx="23" ry="10" fill="none" stroke="#3fd0ff" stroke-width="1.6" stroke-dasharray="3 3" transform="rotate(28 32 28)"/>
+        <ellipse cx="32" cy="28" rx="23" ry="10" fill="none" stroke="#ff9b3d" stroke-width="1.4" stroke-dasharray="2 4" transform="rotate(-28 32 28)"/>`,
+    6: `<circle cx="32" cy="30" r="8" fill="#ff9b3d"/>
+        <path d="M32 8 C23 14 17 22 20 30 C13 26 7 31 5 39 C14 41 19 36 23 31" fill="none" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M32 8 C41 14 47 22 44 30 C51 26 57 31 59 39 C50 41 45 36 41 31" fill="none" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M32 8 L32 21" stroke="#ff9b3d" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="32" cy="30" r="15" fill="none" stroke="#3fd0ff" stroke-width="1.4" opacity="0.55"/>`,
+    7: `<polygon points="32,6 50,17 50,39 32,50 14,39 14,17" fill="none" stroke="#ff9b3d" stroke-width="2.2"/>
+        <circle cx="32" cy="28" r="19" fill="none" stroke="#3fd0ff" stroke-width="1.6"/>
+        <circle cx="32" cy="28" r="7.5" fill="#ff9b3d"/>
+        <line x1="32" y1="9" x2="32" y2="20" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="32" y1="36" x2="32" y2="47" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="15" y1="18.5" x2="24" y2="24" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="49" y1="18.5" x2="40" y2="24" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="15" y1="37.5" x2="24" y2="32" stroke="#3fd0ff" stroke-width="2"/>
+        <line x1="49" y1="37.5" x2="40" y2="32" stroke="#3fd0ff" stroke-width="2"/>
+        <circle cx="32" cy="28" r="2.6" fill="#0a0d12"/>`,
+    default: `<circle cx="32" cy="28" r="8" fill="#ff9b3d"/>
+        <circle cx="32" cy="28" r="20" fill="none" stroke="#3fd0ff" stroke-width="1.6" stroke-dasharray="4 3"/>
+        <path d="M32 6 L32 16 M32 40 L32 50 M10 28 L20 28 M44 28 L54 28" stroke="#3fd0ff" stroke-width="2" stroke-linecap="round"/>`
+  };
+
+  function minerIconSvg(level){
+    const tier = UPGRADES.find(u => u.level === level);
+    let fallback;
+    if(tier && tier.icon){
+      fallback = `<img src="${escapeHtml(tier.icon)}" alt="Miner Lv.${level}">`;
+    } else {
+      const inner = MINER_ICON_INNER[level] || MINER_ICON_INNER.default;
+      fallback = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+    }
+    // Inventory items are keyed by miner_tier (`level` here) — if the live
+    // catalog has a real image for this tier, it wins over the old
+    // UPGRADES-derived icon / built-in SVG glyph (requirement: never use a
+    // hardcoded SVG when a valid catalog image URL exists).
+    return getMinerCatalogIcon(level, fallback, "Miner Lv." + level);
+  }
+
+  function minerIconWithBadge(level){
+    return minerIconSvg(level) + `<div class="level-badge">L${level}</div>`;
+  }
+
+  // Mining Level is a standalone stat (bought with PXN, not tied to any store
+  // miner), so its icon must never look up a store item by level id.
+  function levelBadgeIcon(level){
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER.default}</svg><div class="level-badge">L${level}</div>`;
+  }
+
+  const DEFAULT_TASKS = [
+    {id:"t1", title:"Join Pro-X Network Telegram channel", sub:"Verify membership to claim", reward:80, icon:null},
+    {id:"t2", title:"Follow Pro-X Network on X", sub:"Verify follow to claim", reward:60, icon:null},
+    {id:"t3", title:"Invite your first friend", sub:"Use your referral link", reward:100, icon:null},
+    {id:"t4", title:"Reach Miner Level 3", sub:"Upgrade your rig", reward:150, icon:null},
+    {id:"t5", title:"Claim rewards 5 times", sub:"Come back and claim daily", reward:120, icon:null},
+  ];
+
+  // The admin panel fully owns the task list (add/remove/edit tasks + icons).
+  const TASKS = (adminConfig && adminConfig.rewards && Array.isArray(adminConfig.rewards.tasksList) && adminConfig.rewards.tasksList.length)
+    ? adminConfig.rewards.tasksList.map(t => ({id:t.id, title:t.title, sub:t.sub, reward:t.reward, icon:t.icon||null}))
+    : JSON.parse(JSON.stringify(DEFAULT_TASKS));
+
+  function taskIconMarkup(task, done){
+    if(task.icon) return `<img src="${task.icon}" alt="">`;
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="${done ? '#4ade80' : '#3fd0ff'}" stroke-width="1.8"><path d="M5 13l4 4L19 7"/></svg>`;
+  }
+
+  // admin-configured reward economy, with built-in defaults
+  const REWARDS_CONFIG = {
+    referralInstant: 50,
+    referralSpeedBonus: 0.05,
+    boostMultiplier: 2,
+    boostDurationMin: 30,
+    tapBoostMultiplier: 2,
+    tapBoostDurationSec: 10,
+    adsRequiredForBoost: 5,
+    adBoostMultiplier: 2,
+    adBoostDurationHours: 8,
+    adSimSeconds: 5, // length of the simulated ad — see note near watchAdBtn
+    levelUpCostPxn: 100,     // PXN cost to level up (independent of the miner store)
+    levelBoostPercent: 0.05, // % mining-speed boost gained per level, applied cumulatively
+  };
+  if(adminConfig && adminConfig.rewards){
+    Object.assign(REWARDS_CONFIG, adminConfig.rewards);
+    delete REWARDS_CONFIG.tasksList; // task list is handled via TASKS, not merged into REWARDS_CONFIG
+  }
+
+
+  function currentMonthKey(d){
+    d = d || new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+
+  function defaultState(){
+    return {
+      minedBalance: 0,      // total ever mined (lifetime, shown top bar)
+      pendingClaim: 0,      // accumulated since last claim
+      level: 1,
+      lastTick: Date.now(),
+      referrals: 0,
+      tasksDone: {},
+      claimCount: 0,
+      boostUntil: 0,
+      adsWatchedToday: 0,
+      adsWindowStart: 0,
+      adBoostUntil: 0,
+      claimedTotal: 0,       // spendable balance, used for marketplace purchases only
+      pxnBalance: 0,         // PXN token balance — used for the Miner Store + leveling up
+      inventory: [],         // owned miner units — [{uid, level, name, icon, speed}]
+      monthlyPoints: 0,      // leaderboard activity score — resets every calendar month
+      monthlyPeriodKey: currentMonthKey(),
+      refCode: "ref_" + Math.floor(100000 + Math.random()*899999)
+    };
+  }
+
+  // ---------- state-integrity anti-cheat ----------
+  // A lightweight signature over the value-bearing fields. This does NOT stop a
+  // determined attacker who reads this source and recomputes it themselves — no
+  // client-side check can. It DOES catch the common case: someone opening dev
+  // tools and hand-editing a number in localStorage without recalculating this.
+  function simpleHash(str){
+    let h = 5381;
+    for(let i=0; i<str.length; i++){ h = ((h*33) ^ str.charCodeAt(i)) >>> 0; }
+    return h.toString(36);
+  }
+  function computeStateSignature(s){
+    const raw = [s.minedBalance, s.pendingClaim, s.level, s.referrals,
+                 s.claimCount, s.claimedTotal||0, s.pxnBalance||0, s.boostUntil,
+                 s.adsWatchedToday||0, s.adBoostUntil||0].map(v => (typeof v === "number" ? v.toFixed(4) : v)).join("|");
+    return simpleHash(raw + "::proxsalt");
+  }
+
+  let tamperDetectedThisLoad = false;
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return defaultState();
+      const parsed = JSON.parse(raw);
+      const s = Object.assign(defaultState(), parsed);
+      if(parsed.__sig !== undefined && parsed.__sig !== computeStateSignature(s)){
+        // values were edited outside the game (localStorage tampering) — reset for fair play
+        tamperDetectedThisLoad = true;
+        return defaultState();
+      }
+      return s;
+    }catch(e){ return defaultState(); }
+  }
+
+  function saveState(){
+    try{
+      state.__sig = computeStateSignature(state);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch(e){}
+  }
+
+  let state = loadState();
+  let tapBoostUntil = 0; // session-only 2x boost triggered by tapping the core
+
+  // ---------- inventory bootstrap & helpers ----------
+  // Miners bought from the Store become individually-owned units (so they can
+  // later be listed on the Marketplace). Mining Level is a separate, standalone
+  // stat (raised only by spending PXN via levelUp()) — it is not derived from
+  // which miners a player owns. New players own NO store miners at all: they
+  // mine at a fixed baseline speed (DEFAULT_BASE_SPEED, below) until they buy
+  // a miner from the Store and tap "Apply" on it in their Inventory, which
+  // then adds extra speed on top of that baseline.
+  if(!Array.isArray(state.inventory)) state.inventory = [];
+  if(state.claimedTotal === undefined) state.claimedTotal = 0;
+  if(state.pxnBalance === undefined) state.pxnBalance = 0;
+  if(state.monthlyPoints === undefined) state.monthlyPoints = 0;
+  if(!state.monthlyPeriodKey) state.monthlyPeriodKey = currentMonthKey();
+
+  // ---------- backend inventory sync (set-miner-applied migration step) ----------
+  // Merges the canonical backend inventory (public.mining_inventory, via the
+  // get-mining-inventory Edge Function) into the existing local
+  // state.inventory structure, using ProXAuth/ProXBackend exactly as they're
+  // used elsewhere in this file — no new auth/network logic is invented here.
+  //
+  // IMPORTANT COMPATIBILITY RULE: this only ever touches/creates entries that
+  // carry a real backend UUID (`id`). Any pre-migration, locally-created
+  // inventory record (no backend UUID) is left completely alone — never
+  // deleted, never sent to the backend, never assumed to have a database row.
+  //
+  // Fetched once (guarded by backendInventorySynced below), not on every
+  // render, and triggered from the ProXAuth init block above once a session
+  // exists. A failed/unavailable fetch NEVER erases existing local inventory.
+  const BACKEND_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  function isBackendLinkedItem(item){
+    return !!item && typeof item.id === "string" && BACKEND_UUID_RE.test(item.id);
+  }
+
+  function mapBackendInventoryItem(row){
+    return {
+      uid: row.id,
+      id: row.id,
+      level: row.miner_tier,
+      name: row.miner_name,
+      icon: row.miner_icon,
+      speed: Number(row.miner_speed),
+      applied: !!row.is_applied,
+      // Miner Level Upgrade System (0025/0026): the unit's upgradeable
+      // level (1..max_level), distinct from `level` above (which is
+      // actually the miner TIER, used for icon/name lookups elsewhere
+      // in this file — kept as-is to avoid touching existing behavior).
+      // Defaults to 1 if the backend ever omits it, matching
+      // mining_inventory.miner_level's own DB default.
+      minerLevel: Number(row.miner_level) || 1
+    };
+  }
+
+  let backendInventorySynced = false;
+
+  async function syncInventoryFromBackend(){
+    if(backendInventorySynced) return;
+    if(!window.ProXAuth || !window.ProXBackend) return;
+
+    const token = await ProXAuth.getAccessToken();
+    if(!token) return; // no session yet — leave existing local inventory as-is
+
+    const result = await ProXBackend._callFunction("get-mining-inventory", {
+      method: "POST",
+      accessToken: token
+    });
+
+    if(!result.ok || !result.data || result.data.success !== true || !Array.isArray(result.data.inventory)){
+      console.info("[ProXBackend] inventory sync not completed:", result.error);
+      return; // never erase existing local inventory on failure
+    }
+
+    backendInventorySynced = true;
+
+    result.data.inventory.forEach(row => {
+      const mapped = mapBackendInventoryItem(row);
+      const existing = state.inventory.find(i => i.id === mapped.id);
+      if(existing){
+        Object.assign(existing, mapped);
+      } else {
+        state.inventory.push(mapped);
+      }
+    });
+
+    saveState();
+    render();
+  }
+
+  // Exposed so the ProXAuth/ProXBackend init block earlier in this page can
+  // trigger the sync once a session is confirmed established. That block
+  // runs before this IIFE has executed, but only actually calls this (inside
+  // an async .then()) well after the whole page — including this IIFE — has
+  // finished loading, so `state`/`saveState`/`render` above are always ready.
+  window.__proxSyncInventoryFromBackend = syncInventoryFromBackend;
+
+  // ---------- Store miner catalog (public.miner_catalog) ----------
+  // Loads the ACTIVE miner catalog rows (miner_tier, miner_name, miner_icon,
+  // price_pxn, mining_speed, is_active) using the existing authenticated
+  // supabase-js client from js/auth-client.js (ProXAuth.getSupabaseClient()) —
+  // the same client instance already used to hold the player's session, so
+  // RLS's "authenticated users may read active rows" policy applies exactly
+  // as it does for any other authenticated read in this app. No new auth
+  // logic, no new client, and no anon-only fallback: with no session yet,
+  // this fetch simply reports an error and the Store keeps showing whatever
+  // it already had (UPGRADES, i.e. adminConfig/DEFAULT_UPGRADES) — see
+  // getStoreUpgrades() below.
+  //
+  // This is purely a DISPLAY-side change: it never touches UPGRADES itself,
+  // never touches state.inventory, and never modifies REWARDS_CONFIG or any
+  // other gameplay system — it only feeds a separate in-memory cache that
+  // renderUpgrade() reads from. Existing owned inventory items keep resolving
+  // their own icon via minerIconWithBadge()/UPGRADES exactly as before, so
+  // past purchases are never retroactively changed by a catalog edit.
+  //
+  // Fetched once on load (triggered from the ProXAuth init block above once
+  // a session is confirmed, same pattern as syncInventoryFromBackend) and
+  // again each time the Miners screen is opened (see switchToScreen below) —
+  // never on the 1s render()/setInterval loop, so this never polls.
+  const minerCatalogCache = { loaded:false, loading:false, error:null, tiers:null };
+
+  function mapMinerCatalogRow(row){
+    return {
+      level: row.miner_tier,
+      name: row.miner_name,
+      cost: Number(row.price_pxn),
+      speed: Number(row.mining_speed),
+      icon: row.miner_icon
+    };
+  }
+
+  /** Active-catalog tiers if we've ever loaded them successfully, else the existing hardcoded/admin-config list — so the Store is always renderable. */
+  function getStoreUpgrades(){
+    return (minerCatalogCache.tiers && minerCatalogCache.tiers.length) ? minerCatalogCache.tiers : UPGRADES;
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, function(ch){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch];
+    });
+  }
+
+  // ---------- shared miner-icon rendering (Inventory / Marketplace / Leaderboard) ----------
+  // These two helpers are the single place non-Store screens turn a
+  // free-form icon value into markup, so every screen treats
+  // miner_catalog.miner_icon the same safe way. The Store's own
+  // storeCardIconMarkup() above is untouched and keeps its existing,
+  // separate behavior (it already reads the live catalog and is
+  // explicitly required to stay unchanged).
+
+  /**
+   * Renders one free-form icon value (a real http(s):// URL, a
+   * data:image/... URI, or emoji/plain text) as SAFE markup:
+   *   - a genuine image reference becomes an escaped <img src="...">
+   *   - anything else (emoji, plain text, or any other string) is
+   *     rendered as escaped TEXT inside a span — never as an <img src>,
+   *     so emoji/text can never be (mis)treated as an image URL and
+   *     no value can inject arbitrary HTML.
+   * Returns "" for an empty/non-string value so callers can safely
+   * concatenate the result.
+   */
+  function renderIconValueSafely(value, altText){
+    const str = typeof value === "string" ? value.trim() : "";
+    if(!str) return "";
+    if(/^data:image\//i.test(str) || /^https?:\/\//i.test(str)){
+      return '<img src="' + escapeHtml(str) + '" alt="' + escapeHtml(altText || "Miner") + '">';
+    }
+    return '<span class="catalog-icon-emoji">' + escapeHtml(str) + '</span>';
+  }
+
+  /**
+   * Central icon-resolution helper (Inventory / Marketplace / Leaderboard
+   * prize use this — Store keeps using storeCardIconMarkup() as before).
+   *
+   * getMinerCatalogIcon(tier, fallbackMarkup, altText)
+   *
+   * If the live minerCatalogCache has an entry for `tier` (miner_tier)
+   * AND that entry's miner_icon is a genuine image reference (an
+   * http(s):// URL or a data:image/... URI), returns a safe <img> tag
+   * for it. Emoji/plain text is deliberately NEVER matched here and
+   * NEVER turned into an <img src> or a generated URL — it simply
+   * falls through.
+   *
+   * Otherwise (tier not in the cache, cache not loaded yet, or the
+   * catalog's icon value isn't an image reference) returns
+   * `fallbackMarkup` completely unchanged, so every existing caller's
+   * own fallback (an old hardcoded SVG, a locally-stored icon, plain
+   * text, etc.) keeps working exactly as it did before this helper
+   * existed.
+   *
+   * Reads minerCatalogCache.tiers live on every call (no caching of
+   * its own), so once refreshMinerCatalog() updates the cache, the
+   * very next render of any screen using this helper immediately shows
+   * the new icon — no extra polling is introduced here.
+   */
+  function getMinerCatalogIcon(tier, fallbackMarkup, altText){
+    const tiers = minerCatalogCache.tiers;
+    if(tiers && tiers.length){
+      const entry = tiers.find(function(t){ return t.level === tier; });
+      if(entry && typeof entry.icon === "string"){
+        const trimmed = entry.icon.trim();
+        if(/^data:image\//i.test(trimmed) || /^https?:\/\//i.test(trimmed)){
+          return renderIconValueSafely(trimmed, altText || entry.name || ("Miner Lv." + tier));
+        }
+      }
+    }
+    return fallbackMarkup;
+  }
+
+  /** Renders a Store card's icon from a catalog/UPGRADES entry's free-form `icon` value (URL, data URI, inline <svg>, or emoji/text), falling back to the existing built-in per-level glyph when no icon value is present — same fallback MINER_ICON_INNER set already used by minerIconSvg(). */
+  function storeCardIconMarkup(u){
+    const icon = u.icon;
+    const badge = '<div class="level-badge">L' + u.level + '</div>';
+    if(typeof icon === "string" && icon.trim()){
+      const trimmed = icon.trim();
+      if(/^data:/i.test(trimmed) || /^https?:\/\//i.test(trimmed)){
+        return '<img src="' + escapeHtml(trimmed) + '" alt="' + escapeHtml(u.name || "Miner") + '">' + badge;
+      }
+      if(/^<svg[\s>]/i.test(trimmed)){
+        return trimmed + badge;
+      }
+      return '<span class="catalog-icon-emoji">' + escapeHtml(trimmed) + '</span>' + badge;
+    }
+    const inner = MINER_ICON_INNER[u.level] || MINER_ICON_INNER.default;
+    return '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">' + inner + '</svg>' + badge;
+  }
+
+  function updateStoreCatalogStatus(){
+    const el = document.getElementById("storeCatalogStatus");
+    if(!el) return;
+    if(minerCatalogCache.error){
+      el.textContent = minerCatalogCache.loaded
+        ? "Showing last-known miner prices — couldn't refresh from server."
+        : "Showing default miner prices — couldn't load latest from server.";
+      el.classList.add("show");
+    } else {
+      el.classList.remove("show");
+    }
+  }
+
+  /**
+   * Fetches active public.miner_catalog rows, sorted by miner_tier ascending,
+   * via the existing authenticated supabase-js client. Always resolves (never
+   * throws) with { ok, rows, error }, same defensive shape used elsewhere in
+   * this file.
+   */
+  async function fetchMinerCatalogRows(){
+    const auth = window.ProXAuth;
+    const client = auth && typeof auth.getSupabaseClient === "function" ? auth.getSupabaseClient() : null;
+    if(!client){
+      return { ok:false, rows:null, error:"Backend not connected yet." };
+    }
+    try{
+      const { data, error } = await client
+        .from("miner_catalog")
+        .select("miner_tier,miner_name,miner_icon,price_pxn,mining_speed,is_active")
+        .eq("is_active", true)
+        .order("miner_tier", { ascending:true });
+
+      if(error){
+        return { ok:false, rows:null, error: error.message || "Could not load miner catalog." };
+      }
+      return { ok:true, rows: Array.isArray(data) ? data : [], error:null };
+    }catch(err){
+      return { ok:false, rows:null, error: (err && err.message) || "Network error loading miner catalog." };
+    }
+  }
+
+  /**
+   * Refreshes the in-memory miner catalog cache and re-renders the Store.
+   * Guarded against overlapping calls (minerCatalogCache.loading) — safe to
+   * call from multiple triggers (initial load + every Store screen open)
+   * without ever stacking concurrent requests or polling continuously.
+   * On failure, the last successfully-loaded catalog (if any) is kept as-is
+   * and only a small non-blocking status line is shown — the Store itself
+   * never breaks or goes blank.
+   */
+  async function refreshMinerCatalog(){
+    if(minerCatalogCache.loading) return;
+    minerCatalogCache.loading = true;
+
+    const result = await fetchMinerCatalogRows();
+    minerCatalogCache.loading = false;
+
+    if(result.ok){
+      minerCatalogCache.tiers = result.rows
+        .map(mapMinerCatalogRow)
+        .sort((a,b) => a.level - b.level);
+      minerCatalogCache.loaded = true;
+      minerCatalogCache.error = null;
+      console.log("[MinerCatalog] loaded", minerCatalogCache.tiers.length, "active tier(s)");
+    } else {
+      minerCatalogCache.error = result.error || "Could not load miner catalog.";
+      console.info("[MinerCatalog] fetch failed:", minerCatalogCache.error);
+    }
+
+    renderUpgrade();
+  }
+
+  // Exposed so the ProXAuth init block earlier in this page can trigger the
+  // initial load once a session is confirmed established — same load-order
+  // reasoning as window.__proxSyncInventoryFromBackend above.
+  window.__proxRefreshMinerCatalog = refreshMinerCatalog;
+
+  // ---------- server-authoritative Store purchase (purchase-miner) ----------
+  // Replaces the BUY button's previous LOCAL-ONLY balance deduction /
+  // inventory push with a real call to the existing purchase-miner Edge
+  // Function, which is the single source of truth for verifying balance,
+  // deducting PXN, and inserting the mining_inventory row (see that
+  // function's own header comment). Nothing here re-implements any of that
+  // server-side logic — this is purely "call it, then reflect what it
+  // returns". Auth is untouched: the access token comes only from the
+  // existing window.ProXAuth.getAccessToken().
+  //
+  // Keyed by miner_tier (level) so a purchase in flight for one tier never
+  // blocks buying a different tier, and survives the periodic render()
+  // re-render (see renderUpgrade() below, which reads this to keep that
+  // tier's BUY button disabled/labelled until the request settles).
+  const minerPurchaseInProgress = {};
+
+  /**
+   * Small, self-contained call to POST /functions/v1/purchase-miner. Used
+   * instead of ProXBackend._callFunction() only because that generic helper
+   * (js/api-client.js) normalizes away the HTTP status code, and the
+   * required error handling here (400/401/403/404/409/500) needs it. Reuses
+   * the SAME existing window.PROX_CONFIG (FUNCTIONS_URL / SUPABASE_ANON_KEY)
+   * already shipped with the project — no new URL, no new config, no change
+   * to js/api-client.js itself. Always resolves (never throws).
+   */
+  async function callPurchaseMinerBackend(minerTier, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/purchase-miner", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ minerTier: minerTier })
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /** Safe, non-sensitive message for a failed purchase-miner call, preferring the backend's own (already-sanitized) message when present. */
+  function purchaseMinerErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    switch(result.status){
+      case 400: return "That miner can't be purchased right now.";
+      case 401: return "Please reconnect your Telegram account.";
+      case 403: return "You're not allowed to do that.";
+      case 404: return "Miner not found — try refreshing.";
+      case 409: return "Not enough PXN, or that purchase can't be completed right now.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Could not complete purchase — try again.";
+    }
+  }
+
+  /**
+   * Handles a BUY click end-to-end: gets the access token, calls
+   * purchase-miner, and — ONLY on a verified success response — applies the
+   * server's own returned inventory row/balance to local state. On any
+   * failure, local balance/inventory are left completely untouched. Locks
+   * the given tier (via minerPurchaseInProgress) for the duration of the
+   * request to prevent double-click purchases, and always re-renders the
+   * Store afterwards so that lock is visibly released.
+   */
+  async function handleBuyMinerClick(level){
+    if(minerPurchaseInProgress[level]) return;
+
+    const u = getStoreUpgrades().find(x => x.level === level);
+    if(!u){ toast("That miner is no longer available — try refreshing."); return; }
+
+    const accessToken = (window.ProXAuth && typeof window.ProXAuth.getAccessToken === "function")
+      ? await window.ProXAuth.getAccessToken()
+      : null;
+
+    if(!accessToken){
+      toast("Please reconnect your Telegram account.");
+      return;
+    }
+
+    minerPurchaseInProgress[level] = true;
+    renderUpgrade();
+
+    const result = await callPurchaseMinerBackend(level, accessToken);
+
+    minerPurchaseInProgress[level] = false;
+
+    if(result.ok && result.data && result.data.success && result.data.inventory){
+      // Use the server's own returned row — never the price/name/speed the
+      // player merely saw on screen — as the new, server-authoritative
+      // inventory item. Existing local inventory entries are left exactly
+      // as they are; only this new purchase is added.
+      state.inventory.push(mapBackendInventoryItem(result.data.inventory));
+
+      // PostgreSQL numeric columns can arrive as either a JS number or a
+      // numeric string — accept both (Goal E), never only `typeof === "number"`.
+      // purchase-miner now deducts m.PXN (mining_state.claimed_total), not
+      // PXN, and returns the new balance under "claimed_total" — sync that
+      // into state.claimedTotal. state.pxnBalance (the separate,
+      // still-live PXN feature) is intentionally left untouched here.
+      const purchaseClaimedTotal = Number(result.data.claimed_total);
+      if(Number.isFinite(purchaseClaimedTotal)){
+        state.claimedTotal = purchaseClaimedTotal;
+      }
+
+      saveState();
+
+      // Reuses the existing inventory-sync mechanism (guarded/no-op after
+      // its first run — see syncInventoryFromBackend above) so any other
+      // backend-side inventory state is reconciled the same way it already
+      // is elsewhere in this app; the direct push above is what actually
+      // makes this specific purchase show up immediately.
+      if(typeof window.__proxSyncInventoryFromBackend === "function"){
+        window.__proxSyncInventoryFromBackend();
+      }
+
+      render();
+      toast("Miner purchased successfully!");
+      return;
+    }
+
+    // Failure: local balance/inventory are untouched (nothing above ran).
+    toast(purchaseMinerErrorMessage(result));
+    render();
+  }
+
+  // Mining Level boost: +levelBoostPercent% mining speed for every level above 1,
+  // spent 100 PXN at a time via the LEVEL UP button (see levelUp()).
+  function levelBoostMultiplier(){
+    return 1 + (Math.max(1, state.level) - 1) * (REWARDS_CONFIG.levelBoostPercent / 100);
+  }
+
+  function levelUp(){
+    const cost = REWARDS_CONFIG.levelUpCostPxn;
+    if(state.pxnBalance < cost){ toast("Need " + fmt(cost, 0) + " PXN to level up"); return; }
+    state.pxnBalance -= cost;
+    state.level += 1;
+    saveState(); render();
+    toast("Leveled up to " + state.level + " — +" + REWARDS_CONFIG.levelBoostPercent + "% mining boost");
+  }
+
+  function checkMonthlyReset(){
+    const key = currentMonthKey();
+    if(state.monthlyPeriodKey !== key){
+      state.monthlyPeriodKey = key;
+      state.monthlyPoints = 0;
+    }
+  }
+
+  // ---------- leaderboard activity points ----------
+  // 1 task completed = 1 pt · 1 ad watched = 1 pt · daily-boost activation = 0.5 pt
+  // marketplace trade completion = 50 pt each for BOTH the buyer and the seller
+  function addPoints(amount){
+    checkMonthlyReset();
+    state.monthlyPoints = (state.monthlyPoints || 0) + amount;
+  }
+
+  // ---------- tap bot-detection (captcha) ----------
+  let lastTapAt = 0;
+  let lastTapInterval = null;
+  let consistentTapStreak = 0;
+  let captchaActive = false;
+  let captchaAnswer = null;
+  const TAP_INTERVAL_TOLERANCE_MS = 150; // "exact" repeat window
+  const TAP_INTERVAL_MIN_MS = 4500;      // ~5s
+  const TAP_INTERVAL_MAX_MS = 13500;     // ~13s
+
+  function newCaptchaQuestion(){
+    const a = 1 + Math.floor(Math.random()*9);
+    const b = 1 + Math.floor(Math.random()*9);
+    captchaAnswer = a + b;
+    document.getElementById("captchaQuestion").textContent = a + " + " + b + " = ?";
+    document.getElementById("captchaInput").value = "";
+  }
+
+  function openCaptcha(){
+    captchaActive = true;
+    newCaptchaQuestion();
+    document.getElementById("captchaError").classList.remove("show");
+    document.getElementById("captchaOverlay").classList.add("show");
+    document.getElementById("coreBtn").classList.add("locked");
+    setTimeout(()=> document.getElementById("captchaInput").focus(), 50);
+  }
+
+  function closeCaptchaSuccess(){
+    captchaActive = false;
+    tapBoostUntil = 0;
+    lastTapAt = 0;
+    lastTapInterval = null;
+    consistentTapStreak = 0;
+    document.getElementById("captchaOverlay").classList.remove("show");
+    render();
+    toast("Verified — mining taps re-enabled");
+  }
+
+  document.getElementById("captchaSubmit").addEventListener("click", ()=>{
+    const val = parseInt(document.getElementById("captchaInput").value, 10);
+    if(val === captchaAnswer){
+      closeCaptchaSuccess();
+    } else {
+      document.getElementById("captchaError").classList.add("show");
+      newCaptchaQuestion();
+    }
+  });
+  document.getElementById("captchaInput").addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") document.getElementById("captchaSubmit").click();
+  });
+
+  // Fixed baseline mining speed every player has for free, regardless of which
+  // (if any) Store miners they own — Store miners only ever add extra speed
+  // on top of this once bought AND applied.
+  const DEFAULT_BASE_SPEED = 0.10;
+
+  function currentSpeed(){
+    const ownedBoost = (state.inventory || []).reduce((s,u)=> s + (u.applied ? (u.speed||0) : 0), 0);
+    const base = DEFAULT_BASE_SPEED + ownedBoost;
+    let speed = (base + (state.referrals * REWARDS_CONFIG.referralSpeedBonus)) * levelBoostMultiplier();
+    if(state.boostUntil > Date.now()) speed *= REWARDS_CONFIG.boostMultiplier;
+    if(tapBoostUntil > Date.now()) speed *= REWARDS_CONFIG.tapBoostMultiplier;
+    if(state.adBoostUntil > Date.now()) speed *= REWARDS_CONFIG.adBoostMultiplier;
+    return speed;
+  }
+
+  // ---------- backend mining-rate sync (frontend display/sync fix) ----------
+  // The backend (accrue-mining Edge Function) is the source of truth for the
+  // mining rate a player should see — including any admin_speed_override set
+  // via the admin panel (see 0020_admin_mining_speed_control.sql). This cache
+  // holds the last `mining_rate` value that function returned. It starts as
+  // null (no successful sync yet) so currentSpeed()'s local formula above can
+  // still be used as a fallback for the very first paint or if the backend is
+  // briefly unreachable — but the moment a real response arrives, that number
+  // wins and currentSpeed()'s local formula is no longer shown to the player.
+  // Nothing here changes currentSpeed() itself or the local accrual loop
+  // below (accrue()) — this only affects what the "MINING RATE" UI displays.
+  let serverMiningRate = null;
+
+  // ---------- backend PXN balance sync (balance display fix) ----------
+  // public.mining_state.pxn_balance (adjusted only by purchase-miner /
+  // adjust_pxn_balance / accrue-mining server-side — never by this file) is
+  // the ONLY authoritative PXN balance. accrue-mining's response already
+  // includes the full, current mining_state row (see accrue-mining/index.ts),
+  // so the exact same response already being fetched below for the mining
+  // rate also carries the real pxn_balance — no extra network call, no new
+  // endpoint, no new balance system. This corrects state.pxnBalance (and
+  // persists the correction via the existing saveState()) so a stale/drifted
+  // local value from localStorage can never keep being shown once a real
+  // backend response has arrived. Does NOT touch mining calculations,
+  // purchase-miner, inventory, marketplace, or leaderboard logic — it only
+  // ever assigns the number the backend already returned.
+
+  // What the UI should actually show for "MINING RATE". Prefers the
+  // authoritative backend value (see serverMiningRate above); falls back to
+  // the local calculation only when no backend value has been received yet.
+  function effectiveDisplayRate(){
+    return (typeof serverMiningRate === "number" && isFinite(serverMiningRate))
+      ? serverMiningRate
+      : currentSpeed();
+  }
+
+  let miningRateSyncInFlight = false;
+
+  // One-time hydration guard (see the claim/pendingClaim block inside
+  // syncMiningRateFromBackend() below). Deliberately separate from
+  // miningRateSyncInFlight, which guards re-entrancy on every call, not
+  // just the first one.
+  let claimStateHydratedFromBackend = false;
+
+  // Pulls the authoritative rate (and, as of the balance display fix, the
+  // authoritative PXN balance) from POST /accrue-mining and stores them in
+  // serverMiningRate / state.pxnBalance, then re-renders so the display
+  // updates immediately — this is the only place serverMiningRate is ever
+  // written, and the only place state.pxnBalance is corrected from the
+  // backend. Read-only against the backend: never writes
+  // admin_speed_override, mining_config, pxn_balance, or anything else
+  // (that stays exclusively in admin-set-mining-speed / purchase-miner /
+  // accrue-mining's own server-side logic).
+  //
+  // m.PXN hydration (one-time only): accrue-mining's own response already
+  // includes the full, current mining_state row — including claimed_total
+  // and pending_claim (see accrue-mining/index.ts, which SELECTs "*").
+  // The VERY FIRST time this function successfully resolves after
+  // load/login, it uses those two fields to correct state.claimedTotal and
+  // state.pendingClaim against the real database values, so a stale/
+  // inflated localStorage claimedTotal (e.g. accumulated by a
+  // previously-fake local CLAIM flow) is never trusted as authoritative
+  // going forward. This reuses the existing accrue-mining call already
+  // made at init/every 20s — no new endpoint or network request is added.
+  // It intentionally runs only ONCE (guarded by claimStateHydratedFromBackend):
+  // after this initial correction, state.pendingClaim continues to be
+  // driven by the existing local accrue() ticker between claims (unchanged
+  // mining-accrual behavior), and state.claimedTotal continues to be
+  // corrected in real time by claim-mining/purchase-miner/upgrade-miner's
+  // own success responses, exactly as before.
+  async function syncMiningRateFromBackend(){
+    if(miningRateSyncInFlight) return;
+    if(!window.ProXBackend) return;
+    miningRateSyncInFlight = true;
+    try {
+      const result = await ProXBackend.fetchAccrueMining();
+      if(result.ok && result.data && typeof result.data.mining_rate === "number"){
+        serverMiningRate = result.data.mining_rate;
+        const backendState = result.data.mining_state;
+        if(backendState && typeof backendState.pxn_balance !== "undefined"){
+          const backendBalance = Number(backendState.pxn_balance);
+          if(Number.isFinite(backendBalance) && backendBalance !== state.pxnBalance){
+            state.pxnBalance = backendBalance;
+            saveState();
+          }
+        }
+        if(!claimStateHydratedFromBackend && backendState){
+          const backendClaimedTotal = Number(backendState.claimed_total);
+          const backendPendingClaim = Number(backendState.pending_claim);
+          let hydrated = false;
+          if(Number.isFinite(backendClaimedTotal)){
+            state.claimedTotal = backendClaimedTotal;
+            hydrated = true;
+          }
+          if(Number.isFinite(backendPendingClaim)){
+            state.pendingClaim = backendPendingClaim;
+            hydrated = true;
+          }
+          claimStateHydratedFromBackend = true;
+          if(hydrated) saveState();
+        }
+        render();
+      } else {
+        console.info("[ProXBackend] mining rate sync not completed:", result.error);
+      }
+    } finally {
+      miningRateSyncInFlight = false;
+    }
+  }
+
+  // Exposed so the ProXAuth/ProXBackend init block earlier in this page can
+  // trigger the first sync once a session is confirmed established — same
+  // load-order reasoning as window.__proxSyncInventoryFromBackend below.
+  window.__proxSyncMiningRateFromBackend = syncMiningRateFromBackend;
+
+  // Re-checks the backend mining rate periodically (independent of the
+  // one-time inventory sync above) so an admin override applied — or
+  // cleared — mid-session reaches this device without a full reload. 20s
+  // balances promptness against not calling accrue-mining on every 1s tick
+  // of the existing main loop further down this file.
+  setInterval(syncMiningRateFromBackend, 20000);
+
+  // Conversion rate for the estimated USDT display only (m.PXN is an in-app point,
+  // not a tradeable asset — this is a display estimate for players, not a live price feed).
+  // Defaults so Level 1, mining 24h with no taps, earns ~$0.25 worth of m.PXN
+  // (reduced 50% from the original $0.50 baseline) — overridable from the admin panel.
+  let PXN_USD_RATE = 0.25 / (DEFAULT_BASE_SPEED * 86400); // ≈ 0.0000289 USDT per m.PXN
+  if(adminConfig && adminConfig.token && typeof adminConfig.token.usdRate === "number"){
+    PXN_USD_RATE = adminConfig.token.usdRate;
+  }
+
+  function fmt(n, decimals){
+    decimals = decimals === undefined ? 4 : decimals;
+    return n.toLocaleString("en-US",{minimumFractionDigits:decimals, maximumFractionDigits:decimals});
+  }
+
+  function fmtUsd(coins){
+    return "≈ $" + (coins * PXN_USD_RATE).toLocaleString("en-US",{minimumFractionDigits:4, maximumFractionDigits:4});
+  }
+
+  function toast(msg){
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=> el.classList.remove("show"), 1800);
+  }
+
+  // ---------- offline / tick accrual ----------
+  let clockTamperFlaggedThisSession = false;
+  const MAX_OFFLINE_ACCRUAL_SEC = 24*3600; // caps earnings if lastTick was rolled back to fake huge offline gains
+
+  function accrue(){
+    checkMonthlyReset();
+    const now = Date.now();
+    const rawElapsedSec = (now - state.lastTick) / 1000;
+    let elapsedSec = Math.max(0, rawElapsedSec);
+    if(elapsedSec > MAX_OFFLINE_ACCRUAL_SEC){
+      elapsedSec = MAX_OFFLINE_ACCRUAL_SEC;
+      if(!clockTamperFlaggedThisSession){
+        clockTamperFlaggedThisSession = true;
+        flagCheatEvent("CLOCK/OFFLINE ANOMALY", "Elapsed time since last tick exceeded " + (MAX_OFFLINE_ACCRUAL_SEC/3600) + "h — earnings capped");
+      }
+    }
+    const speed = currentSpeed();
+    const gained = elapsedSec * speed;
+    state.pendingClaim += gained;
+    state.minedBalance += gained;
+    state.lastTick = now;
+  }
+
+  // ---------- render ----------
+  function render(){
+    document.getElementById("topBalance").textContent = fmt(state.minedBalance);
+    document.getElementById("balanceLabelText").textContent = TOKEN_SYMBOL + " MINED";
+    document.getElementById("topBalanceUsd").textContent = fmtUsd(state.minedBalance);
+    document.getElementById("earnedBig").innerHTML = fmt(state.minedBalance) + ' <span>' + TOKEN_SYMBOL + '</span>';
+    document.getElementById("mineGreetName").textContent = PLAYER_NAME;
+    document.getElementById("mineAvatar").textContent = PLAYER_NAME.replace("@","").charAt(0).toUpperCase() || "P";
+    const speed = effectiveDisplayRate();
+    document.getElementById("rateDisplay").innerHTML = fmt(speed) + ' <span>' + TOKEN_SYMBOL + ' / SEC</span>';
+    document.getElementById("rigUsd").textContent = fmtUsd(speed * 86400) + " / day";
+
+    const tapBadge = document.getElementById("tapBoostBadge");
+    const core = document.getElementById("coreBtn");
+    const blobLabel = document.getElementById("blobLabel");
+    const blobSub = document.getElementById("blobSub");
+    if(captchaActive){
+      tapBadge.classList.remove("show");
+      core.classList.remove("boosted");
+      core.classList.add("locked");
+      blobLabel.textContent = "VERIFY REQUIRED";
+      blobSub.textContent = "Solve the check to keep mining";
+    } else if(tapBoostUntil > Date.now()){
+      const secsLeft = Math.ceil((tapBoostUntil - Date.now())/1000);
+      tapBadge.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x · " + secsLeft + "s";
+      tapBadge.classList.add("show");
+      core.classList.add("boosted");
+      core.classList.add("locked");
+      blobLabel.textContent = "BOOSTED " + REWARDS_CONFIG.tapBoostMultiplier + "x";
+      blobSub.textContent = secsLeft + "s remaining";
+    } else {
+      tapBadge.classList.remove("show");
+      core.classList.remove("boosted");
+      core.classList.remove("locked");
+      blobLabel.textContent = "TAP TO BOOST";
+      blobSub.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x speed for " + REWARDS_CONFIG.tapBoostDurationSec + "s";
+    }
+    document.getElementById("statLevel").textContent = "Lv. " + state.level;
+    document.getElementById("statMinerIcon").innerHTML = levelBadgeIcon(state.level);
+    document.getElementById("mineLevelCost").textContent = fmt(REWARDS_CONFIG.levelUpCostPxn, 0) + " PXN";
+    document.getElementById("mineLevelUpBtn").disabled = state.pxnBalance < REWARDS_CONFIG.levelUpCostPxn;
+    document.getElementById("claimReady").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
+    document.getElementById("claimReadyUsd").textContent = fmtUsd(state.pendingClaim);
+    document.getElementById("claimBtn").disabled = state.pendingClaim < 0.0001 || claimInProgress;
+    document.getElementById("boostCardSub").textContent = "+" + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " min";
+    document.getElementById("referralRewardSub").textContent = "+" + REWARDS_CONFIG.referralInstant + " " + TOKEN_SYMBOL + " instantly, +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec permanently";
+
+    // boost
+    const boostBtn = document.getElementById("boostBtn");
+    const boostTimer = document.getElementById("boostTimer");
+    if(state.boostUntil > Date.now()){
+      const mins = Math.ceil((state.boostUntil - Date.now())/60000);
+      boostTimer.textContent = "ACTIVE · " + mins + "M LEFT";
+      boostBtn.textContent = "ACTIVE";
+      boostBtn.disabled = true;
+    } else {
+      boostTimer.textContent = "AVAILABLE";
+      boostBtn.textContent = "ACTIVATE";
+      boostBtn.disabled = false;
+    }
+
+    // watch-ads boost
+    checkAdsWindowReset();
+    const adsTimerEl = document.getElementById("adsTimer");
+    const adsCardSub = document.getElementById("adsCardSub");
+    const watchAdBtn = document.getElementById("watchAdBtn");
+    adsCardSub.textContent = "+" + REWARDS_CONFIG.adBoostMultiplier + "x mining speed for " + REWARDS_CONFIG.adBoostDurationHours + " hours after your " +
+      REWARDS_CONFIG.adsRequiredForBoost + (REWARDS_CONFIG.adsRequiredForBoost === 1 ? "st" : "th") + " ad today";
+    if(state.adBoostUntil > Date.now()){
+      const hrsLeft = (state.adBoostUntil - Date.now()) / 3600000;
+      const label = hrsLeft >= 1 ? Math.ceil(hrsLeft) + "h left" : Math.ceil(hrsLeft*60) + "m left";
+      adsTimerEl.textContent = REWARDS_CONFIG.adBoostMultiplier + "x active · " + label;
+    } else {
+      adsTimerEl.textContent = state.adsWatchedToday + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today";
+    }
+    watchAdBtn.style.opacity = captchaActive ? "0.5" : "1";
+    watchAdBtn.style.pointerEvents = captchaActive ? "none" : "auto";
+
+    renderUpgrade();
+    renderMarket();
+    renderTasks();
+    renderFriends();
+    renderWallet();
+  }
+
+  // Wallet screen is read-only display: it renders the existing
+  // authoritative state.pxnBalance (kept correct by
+  // refreshAuthoritativePxnBalance()/accrue-mining sync elsewhere in this
+  // file) plus the existing mining-reward totals. Nothing here computes or
+  // mutates a balance.
+  function renderWallet(){
+    document.getElementById("pxnBalanceBig").textContent = fmt(state.pxnBalance, 2);
+    document.getElementById("miningTotalMined").textContent = fmt(state.minedBalance) + " " + TOKEN_SYMBOL;
+    document.getElementById("miningClaimed").textContent = fmt(state.claimedTotal, 4) + " " + TOKEN_SYMBOL;
+    document.getElementById("miningPending").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
+  }
+
+  function renderUpgrade(){
+    updateStoreCatalogStatus();
+
+    const list = document.getElementById("upgradeList");
+    list.innerHTML = "";
+    const storeUpgrades = getStoreUpgrades();
+    storeUpgrades.forEach(u => {
+      const ownedCount = state.inventory.filter(i => i.level === u.level).length;
+      const isPurchasing = !!minerPurchaseInProgress[u.level];
+      const canAfford = state.claimedTotal >= u.cost;
+      const div = document.createElement("div");
+      div.className = "panel store-card";
+      div.innerHTML = `
+        <div class="store-card-icon miner-icon-wrap">${storeCardIconMarkup(u)}</div>
+        <div class="store-card-name">${escapeHtml(u.name)}</div>
+        ${ownedCount ? '<div class="store-card-owned">OWNED × ' + ownedCount + '</div>' : ''}
+        <div class="store-card-cost">${fmt(u.cost, 0)} ${TOKEN_SYMBOL}</div>
+        <div class="store-card-boost">+${fmt(u.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
+        <button class="btn" ${(canAfford && !isPurchasing) ? '' : 'disabled'} data-buy="${u.level}">${isPurchasing ? 'PURCHASING…' : 'BUY'}</button>`;
+      list.appendChild(div);
+    });
+
+    list.querySelectorAll("[data-buy]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const lvl = parseInt(btn.dataset.buy,10);
+        // Server-authoritative purchase: the backend purchase-miner Edge
+        // Function is the sole source of truth for verifying balance,
+        // deducting PXN, and creating the mining_inventory row — local
+        // state is only ever updated from what it actually returns (see
+        // handleBuyMinerClick above). Always resolves against the
+        // currently-cached catalog (or its fallback) at click time, so the
+        // request uses that tier's live price/name/speed rather than a
+        // stale snapshot taken when the Store was first rendered.
+        handleBuyMinerClick(lvl);
+      });
+    });
+
+    renderInventory();
+  }
+
+  // ---------- MY INVENTORY ----------
+  // Every miner unit a player owns (bought from the Store, or received via the
+  // Marketplace) sits here until the player taps "Apply" once — only applied
+  // units contribute their speed to currentSpeed(). A unit taken off to be
+  // sold on the Marketplace is spliced out of state.inventory immediately
+  // (see listMinerForSale), so it disappears from here right away, and it
+  // never comes back once the listing actually sells.
+  //
+  // How many of those units can be Applied at once is gated by Mining Level:
+  // Lv.1 = 1 slot, Lv.5 = 2 slots, Lv.15 = 3 slots (each tier holds until the
+  // next one is reached — see maxApplySlots()).
+  const APPLY_SLOT_TIERS = [
+    {level:1,  slots:1},
+    {level:5,  slots:2},
+    {level:15, slots:3}
+  ];
+
+  function maxApplySlots(level){
+    let slots = APPLY_SLOT_TIERS[0].slots;
+    APPLY_SLOT_TIERS.forEach(t => { if(level >= t.level) slots = t.slots; });
+    return slots;
+  }
+
+  function nextApplySlotTier(level){
+    return APPLY_SLOT_TIERS.find(t => t.level > level) || null;
+  }
+
+  // ---------- backend-authoritative apply/remove (set-miner-applied) ----------
+  // Only used for inventory items with a real backend UUID (see
+  // isBackendLinkedItem above). Pre-migration local-only records keep the
+  // original immediate local toggle further down in renderInventory().
+  //
+  // `pendingApplyRemove` blocks a double-click / duplicate request on the
+  // same item while one is already in flight for it.
+  const pendingApplyRemove = new Set();
+
+  // Maps backend error messages (already player-safe, see
+  // set-miner-applied/index.ts) to the exact copy shown here, and falls back
+  // to a generic message for anything unexpected — so a technical/database
+  // detail can never reach the player even if the backend's wording changes.
+  function friendlyInventoryError(message){
+    const known = {
+      "Miner is already applied": "That miner is already applied.",
+      "Miner is already removed": "That miner is already removed.",
+      "No applied miner slots available": "Apply slots full.",
+      "Miner not found": "Miner not found — try refreshing.",
+      "Mining state not initialized for this player": "Your mining profile isn't ready yet — try again shortly.",
+      "Unauthorized": "Session expired — please reopen the app.",
+      "Invalid request": "Something went wrong — try again."
+    };
+    return known[message] || "Could not update miner — try again.";
+  }
+
+  async function setInventoryApplied(item, isApplied, btn){
+    const uid = item.uid;
+    if(pendingApplyRemove.has(uid)) return;
+    pendingApplyRemove.add(uid);
+    if(btn) btn.disabled = true;
+
+    try{
+      if(!window.ProXAuth || !window.ProXBackend){
+        toast("Backend unavailable — try again shortly");
+        return;
+      }
+
+      const token = await ProXAuth.getAccessToken();
+      if(!token){
+        toast("Session expired — please reopen the app");
+        return;
+      }
+
+      const result = await ProXBackend._callFunction("set-miner-applied", {
+        method: "POST",
+        accessToken: token,
+        body: { inventoryId: item.id, isApplied: isApplied }
+      });
+
+      if(result.ok && result.data && result.data.success && result.data.inventory){
+        Object.assign(item, mapBackendInventoryItem(result.data.inventory));
+        saveState();
+        toast(isApplied
+          ? "Applied " + item.name + " — its boost is now active"
+          : "Removed " + item.name + " — slot freed up, apply another miner anytime");
+      } else {
+        // Server rejected the change — local state (item.applied) is left untouched.
+        const message = (result.data && result.data.message) || null;
+        toast(friendlyInventoryError(message));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      pendingApplyRemove.delete(uid);
+      render(); // redraw buttons/state either way (also re-enables on failure)
+    }
+  }
+
+  // ---------- backend-authoritative miner level upgrade (upgrade-miner) ----------
+  // Only used for inventory items with a real backend UUID (see
+  // isBackendLinkedItem above) — the UPGRADE button is never shown for
+  // pre-migration local-only records (see renderInventory below).
+  //
+  // `pendingMinerUpgrades` blocks a double-click / duplicate request on the
+  // same item while one is already in flight for it, exactly like
+  // `pendingApplyRemove` above (a separate Set, so an in-flight Apply/Remove
+  // and an in-flight Upgrade for the same item never interfere with each
+  // other's guard).
+  const pendingMinerUpgrades = new Set();
+
+  // Items the backend has explicitly told us are at max level (from a prior
+  // failed upgrade attempt's message — see handleUpgradeMinerClick below).
+  // Deliberately session-only / in-memory (not persisted via saveState):
+  // this app has no player-safe "max level" preview endpoint, so the only
+  // way to learn this is a real upgrade attempt telling us so; keeping it
+  // in-memory (cleared on reload) means an admin raising max_level later is
+  // reflected again after the player's next reload, rather than a "MAX
+  // LEVEL" label getting stuck forever in localStorage.
+  const maxLevelMiners = new Set();
+
+  /**
+   * Small, self-contained call to POST /functions/v1/upgrade-miner. Used
+   * instead of ProXBackend._callFunction() for the same reason
+   * callPurchaseMinerBackend() above is: that generic helper (js/api-client.js)
+   * normalizes away the HTTP status code, and the required error handling
+   * here (400/401/403/404/409/500) needs it. Reuses the SAME existing
+   * window.PROX_CONFIG (FUNCTIONS_URL / SUPABASE_ANON_KEY) already shipped
+   * with the project — no new URL, no new config, no change to
+   * js/api-client.js itself. Always resolves (never throws). Sends ONLY
+   * inventoryId — never a level, speed, cost, or userId — matching the
+   * backend's own contract exactly.
+   */
+  async function callUpgradeMinerBackend(inventoryId, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/upgrade-miner", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ inventoryId: inventoryId })
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
+    }
+  }
+
+  /**
+   * Safe, non-sensitive message for a failed upgrade-miner call, preferring
+   * the backend's own (already-sanitized) message when present — e.g. "This
+   * miner is already at max level" or "Insufficient m.PXN balance" are both
+   * safe, specific, and never raw database/SQL text (see
+   * upgrade-miner/index.ts). Falls back to a generic, status-keyed message
+   * otherwise, same pattern as purchaseMinerErrorMessage() above.
+   */
+  function upgradeMinerErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    switch(result.status){
+      case 400: return "This miner cannot be upgraded right now.";
+      case 401: return "Session expired — please reopen the app.";
+      case 403: return "You're not allowed to upgrade this miner.";
+      case 404: return "Miner not found — try refreshing.";
+      case 409: return "Not enough m.PXN or this upgrade cannot be completed right now.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Network error — try again.";
+    }
+  }
+
+  /**
+   * Handles an UPGRADE click end-to-end: gets the access token, calls
+   * upgrade-miner, and — ONLY on a verified success response — applies the
+   * server's own returned inventory row/balance to local state via the
+   * existing mapBackendInventoryItem() helper (same pattern as
+   * setInventoryApplied()/handleBuyMinerClick() above). Cost, new level, and
+   * new speed are NEVER computed locally — only ever read back from the
+   * response. On any failure, local state (level/speed/balance) is left
+   * completely untouched, and — if the backend's message indicates this
+   * unit is already at max level — that is remembered in maxLevelMiners so
+   * the button stops being offered for this item without this file ever
+   * inventing what the actual max level number is.
+   */
+  async function handleUpgradeMinerClick(item, btn){
+    const uid = item.uid;
+    if(pendingMinerUpgrades.has(uid)) return;
+    if(maxLevelMiners.has(uid)) return;
+
+    pendingMinerUpgrades.add(uid);
+    if(btn){ btn.disabled = true; btn.textContent = "UPGRADING…"; }
+
+    try{
+      if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+        toast("Backend unavailable — try again shortly");
+        return;
+      }
+
+      const accessToken = await ProXAuth.getAccessToken();
+      if(!accessToken){
+        toast("Session expired — please reopen the app.");
+        return;
+      }
+
+      const result = await callUpgradeMinerBackend(item.id, accessToken);
+
+      if(result.ok && result.data && result.data.success && result.data.inventory){
+        // Use the server's own returned row — never a locally-guessed level,
+        // speed, or cost — as the new, server-authoritative state for this
+        // item. is_applied is whatever the backend echoes back (unchanged
+        // by upgrade_miner() server-side), so an already-applied miner
+        // simply stays applied here too — nothing re-applies or removes it.
+        Object.assign(item, mapBackendInventoryItem(result.data.inventory));
+
+        // upgrade-miner now deducts m.PXN (mining_state.claimed_total), not
+        // PXN, and returns the new balance under "claimed_total" — sync that
+        // into state.claimedTotal. state.pxnBalance (the separate,
+        // still-live PXN feature) is intentionally left untouched here.
+        // PostgreSQL numeric columns can arrive as either a JS number or a
+        // numeric string — accept both (Goal D), never only `typeof === "number"`,
+        // and never compute the new balance locally (never oldBalance - cost).
+        const upgradeClaimedTotal = Number(result.data.claimed_total);
+        if(Number.isFinite(upgradeClaimedTotal)){
+          state.claimedTotal = upgradeClaimedTotal;
+        }
+
+        saveState();
+
+        const upgradeCost = Number(result.data.mpxn_cost);
+        toast(Number.isFinite(upgradeCost)
+          ? "Miner upgraded to Lv. " + item.minerLevel + " for " + fmt(upgradeCost, 0) + " " + TOKEN_SYMBOL
+          : "Miner upgraded to Lv. " + item.minerLevel);
+      } else {
+        // Failure: local level/speed/balance are untouched (nothing above ran).
+        const message = (result.data && result.data.message) || "";
+        if(message.toLowerCase().indexOf("max level") !== -1){
+          maxLevelMiners.add(uid);
+        }
+        toast(upgradeMinerErrorMessage(result));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      pendingMinerUpgrades.delete(uid);
+      render(); // redraw buttons/state either way (also re-enables on failure)
+      // Keep the miner detail box (Goal G) in sync with whatever just
+      // happened — new level/speed/balance on success, re-enabled button
+      // on failure — without closing it, if it's open for this item.
+      if(minerDetailItem && minerDetailItem.uid === uid){
+        renderMinerDetailBox();
+      }
+    }
+  }
+
+  /** Markup for a backend-linked item's UPGRADE button — MAX LEVEL (disabled) if the backend has told us so, otherwise UPGRADE/UPGRADING… based on pendingMinerUpgrades. */
+  function upgradeButtonMarkup(item){
+    const uid = item.uid;
+    if(maxLevelMiners.has(uid)){
+      return `<button class="btn" disabled>MAX LEVEL</button>`;
+    }
+    const pending = pendingMinerUpgrades.has(uid);
+    return `<button class="btn" data-upgrade="${uid}" ${pending ? "disabled" : ""}>${pending ? "UPGRADING…" : "UPGRADE"}</button>`;
+  }
+
+  // ---------- live miner upgrade costs (get-miner-upgrade-costs) ----------
+  // Player-facing, read-only costs for every miner_level -> miner_level+1
+  // transition, admin-configured via public.miner_upgrade_costs. This is
+  // the ONLY source of upgrade-cost numbers used anywhere in this file —
+  // nothing here computes or hardcodes a cost locally (see functions/
+  // get-miner-upgrade-costs/index.ts).
+  //
+  // Cached in-memory only — NEVER localStorage (Goal B) — with a short
+  // staleness window, so opening Inventory or the miner detail box
+  // normally reuses a very-recent fetch instead of hitting the network on
+  // every tap, while an admin cost change still reaches the player within
+  // MINER_UPGRADE_COSTS_STALE_MS of their next box-open or Inventory visit.
+  let minerUpgradeCostsCache = null;         // [{fromLevel,toLevel,costPxn,defaultCostPxn}, ...] or null
+  let minerUpgradeCostsFetchedAt = 0;
+  let minerUpgradeCostsFetchInFlight = null; // shared Promise so concurrent callers never double-fetch
+  const MINER_UPGRADE_COSTS_STALE_MS = 15000;
+
+  /**
+   * Small, self-contained call to POST /functions/v1/get-miner-upgrade-costs.
+   * Same pattern as callPurchaseMinerBackend()/callUpgradeMinerBackend()
+   * above — status-code-aware, reuses the existing window.PROX_CONFIG, no
+   * change to js/api-client.js. Always resolves (never throws). Sends no
+   * body fields at all — this endpoint takes none.
+   */
+  async function callGetMinerUpgradeCostsBackend(accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/get-miner-upgrade-costs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({})
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
+    }
+  }
+
+  /**
+   * Returns the current live upgrade-cost list, each row normalized to
+   * { fromLevel, toLevel, costPxn, defaultCostPxn } — every numeric field
+   * run through Number()/Number.isFinite() rather than trusted as-is,
+   * since PostgreSQL numeric columns can arrive as strings (Goal C).
+   * Serves the in-memory cache when it isn't stale and forceRefresh isn't
+   * set; otherwise fetches fresh from get-miner-upgrade-costs. Concurrent
+   * callers during an in-flight fetch share that one request. Never
+   * persisted to localStorage — this cache lives only as long as the page
+   * does, exactly like minerUpgradeCostsCache's own declaration above.
+   */
+  async function getMinerUpgradeCosts(forceRefresh){
+    const isStale = (Date.now() - minerUpgradeCostsFetchedAt) > MINER_UPGRADE_COSTS_STALE_MS;
+    if(!forceRefresh && minerUpgradeCostsCache && !isStale){
+      return minerUpgradeCostsCache;
+    }
+    if(minerUpgradeCostsFetchInFlight){
+      return minerUpgradeCostsFetchInFlight;
+    }
+
+    minerUpgradeCostsFetchInFlight = (async () => {
+      try{
+        if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function") return minerUpgradeCostsCache;
+        const accessToken = await ProXAuth.getAccessToken();
+        if(!accessToken) return minerUpgradeCostsCache;
+
+        const result = await callGetMinerUpgradeCostsBackend(accessToken);
+        if(result.ok && result.data && result.data.success && Array.isArray(result.data.costs)){
+          minerUpgradeCostsCache = result.data.costs
+            .map(row => ({
+              fromLevel: Number(row.fromLevel),
+              toLevel: Number(row.toLevel),
+              costPxn: Number(row.costPxn),
+              defaultCostPxn: Number(row.defaultCostPxn)
+            }))
+            .filter(row => Number.isFinite(row.fromLevel) && Number.isFinite(row.toLevel) && Number.isFinite(row.costPxn))
+            .sort((a,b) => a.fromLevel - b.fromLevel);
+          minerUpgradeCostsFetchedAt = Date.now();
+        } else {
+          console.info("[ProXBackend] get-miner-upgrade-costs fetch not completed:", result.error);
+        }
+        return minerUpgradeCostsCache;
+      } finally {
+        minerUpgradeCostsFetchInFlight = null;
+      }
+    })();
+
+    return minerUpgradeCostsFetchInFlight;
+  }
+
+  // ---------- miner detail / live upgrade-cost box (Goal A/G) ----------
+  // Opened by tapping a backend-linked Inventory card (see renderInventory
+  // below). Shows the miner's current level/speed, the player's
+  // database-authoritative m.PXN balance (state.claimedTotal — kept in sync
+  // by claim/purchase/upgrade flows elsewhere in this file, same ledger the
+  // Store already uses), and LIVE upgrade costs read fresh from
+  // get-miner-upgrade-costs. Never calculates or hardcodes a cost, and
+  // never sends anything but inventoryId to upgrade-miner (the UPGRADE
+  // button below just calls the existing, unmodified
+  // handleUpgradeMinerClick()). Miner upgrades spend m.PXN
+  // (mining_state.claimed_total), NOT PXN (mining_state.pxn_balance) — see
+  // 0029_upgrade_miner_use_mpxn.sql.
+  let minerDetailItem = null; // the inventory item currently shown in the box, or null when closed
+
+  /** From the given live cost rows, the next few transitions at/after currentLevel — "sensible upcoming levels", not all 49 at once. */
+  function upcomingUpgradeRows(costs, currentLevel){
+    if(!Array.isArray(costs)) return [];
+    return costs
+      .filter(row => row.fromLevel >= currentLevel)
+      .slice(0, 5);
+  }
+
+  /** Repaints the box from minerDetailItem + minerUpgradeCostsCache. Safe to call anytime the box may or may not be open. */
+  function renderMinerDetailBox(){
+    const item = minerDetailItem;
+    if(!item) return;
+
+    document.getElementById("minerDetailIcon").innerHTML = minerIconSvg(item.level);
+    document.getElementById("minerDetailName").textContent = item.name;
+
+    const currentLevel = Number(item.minerLevel);
+    const safeCurrentLevel = Number.isFinite(currentLevel) ? currentLevel : 1;
+    document.getElementById("minerDetailLevel").textContent = "Lv. " + safeCurrentLevel;
+
+    const speed = Number(item.speed);
+    document.getElementById("minerDetailSpeed").textContent =
+      "Speed: " + fmt(Number.isFinite(speed) ? speed : 0, 4) + " " + TOKEN_SYMBOL + "/sec";
+
+    // Miner upgrades spend m.PXN (mining_state.claimed_total) — the SAME
+    // spendable ledger the Store's canAfford check already uses (see
+    // renderUpgrade() above) — NOT PXN (state.pxnBalance), which upgrades
+    // never read, deduct, or depend on (see 0029_upgrade_miner_use_mpxn.sql).
+    const balance = Number(state.claimedTotal);
+    const safeBalance = Number.isFinite(balance) ? balance : 0;
+    document.getElementById("minerDetailBalance").textContent =
+      fmt(safeBalance, 2) + " " + TOKEN_SYMBOL;
+
+    const listEl = document.getElementById("minerDetailCostsList");
+    const titleEl = document.getElementById("minerDetailCostsTitle");
+    const upgradeBtn = document.getElementById("minerDetailUpgradeBtn");
+
+    // A prior failed upgrade already told us (via the backend's own
+    // message — see handleUpgradeMinerClick) that this unit is maxed;
+    // trust that over re-deriving it from the cost list.
+    const knownMaxLevel = maxLevelMiners.has(item.uid);
+    const rows = knownMaxLevel ? [] : upcomingUpgradeRows(minerUpgradeCostsCache, safeCurrentLevel);
+
+    if(knownMaxLevel || (minerUpgradeCostsCache && rows.length === 0)){
+      titleEl.style.display = "none";
+      listEl.innerHTML = '<div class="miner-detail-max-level">MAX LEVEL</div>';
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = "MAX LEVEL";
+      return;
+    }
+
+    if(!minerUpgradeCostsCache){
+      titleEl.style.display = "";
+      listEl.innerHTML = '<div class="miner-detail-costs-empty">Loading live costs…</div>';
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = "UPGRADE";
+      return;
+    }
+
+    titleEl.style.display = "";
+    listEl.innerHTML = rows.map((row, idx) => `
+        <div class="miner-detail-cost-row${idx === 0 ? " next-level" : ""}">
+          <div class="miner-detail-cost-transition">Lv.${row.fromLevel} &rarr; Lv.${row.toLevel}</div>
+          <div class="miner-detail-cost-val">${fmt(row.costPxn, 2)} ${TOKEN_SYMBOL}</div>
+        </div>`).join("");
+
+    // Affordability check (m.PXN / state.claimedTotal only — never
+    // state.pxnBalance) for the very next transition. This is advisory on
+    // the client: the server (upgrade_miner(), PXN20) remains the sole
+    // authority and re-checks the live balance itself regardless of what
+    // this button's disabled state shows.
+    const nextCost = rows.length ? Number(rows[0].costPxn) : NaN;
+    const canAffordNext = Number.isFinite(nextCost) ? safeBalance >= nextCost : true;
+
+    const pending = pendingMinerUpgrades.has(item.uid);
+    upgradeBtn.disabled = pending || !canAffordNext;
+    upgradeBtn.textContent = pending ? "UPGRADING…" : (canAffordNext ? "UPGRADE" : "INSUFFICIENT m.PXN");
+  }
+
+  /**
+   * Refreshes state.pxnBalance from the EXISTING accrue-mining Edge
+   * Function response (ProXBackend.fetchAccrueMining() — the same call
+   * syncMiningRateFromBackend() already uses elsewhere in this file; no
+   * new endpoint, migration, or balance system is introduced here).
+   * result.data.mining_state.pxn_balance is public.mining_state.pxn_balance,
+   * the database-authoritative balance — normalized with Number()/
+   * Number.isFinite() rather than trusted as-is, since PostgreSQL numeric
+   * columns can arrive as a string. Never computes a balance locally and
+   * never subtracts an upgrade cost. On any failure or non-finite value,
+   * state.pxnBalance is left exactly as it was (whatever the last
+   * successful sync — from this call or syncMiningRateFromBackend — set
+   * it to), never zeroed or guessed.
+   */
+  async function refreshAuthoritativePxnBalance(){
+    if(!window.ProXBackend || typeof ProXBackend.fetchAccrueMining !== "function") return;
+    const result = await ProXBackend.fetchAccrueMining();
+    if(!result.ok || !result.data || !result.data.mining_state) return;
+    const backendBalance = Number(result.data.mining_state.pxn_balance);
+    if(Number.isFinite(backendBalance) && backendBalance !== state.pxnBalance){
+      state.pxnBalance = backendBalance;
+      saveState();
+    }
+  }
+
+  /**
+   * Opens the box for `item` immediately with whatever's cached, then
+   * refreshes live upgrade costs (Goal B) before a final repaint. The box
+   * now displays m.PXN (state.claimedTotal), which is already kept
+   * database-authoritative by the existing claim/purchase/upgrade success
+   * paths elsewhere in this file — so, unlike before this migration, this
+   * function no longer also calls refreshAuthoritativePxnBalance() (that
+   * function refreshes the separate, untouched PXN balance and is left
+   * fully intact for whatever else in this file may still need it — see
+   * its own definition above).
+   */
+  async function openMinerDetailBox(item){
+    minerDetailItem = item;
+    renderMinerDetailBox();
+    document.getElementById("minerDetailOverlay").classList.add("show");
+
+    // get-miner-upgrade-costs for live costs — no new backend function or
+    // balance system.
+    await getMinerUpgradeCosts(false); // no-op network-wise if the cache is still fresh
+
+    if(minerDetailItem === item){ // the player may have closed the box while this was in flight
+      renderMinerDetailBox();
+    }
+  }
+
+  function closeMinerDetailBox(){
+    document.getElementById("minerDetailOverlay").classList.remove("show");
+    minerDetailItem = null;
+  }
+
+  document.getElementById("minerDetailCloseBtn").addEventListener("click", closeMinerDetailBox);
+  document.getElementById("minerDetailOverlay").addEventListener("click", (e) => {
+    if(e.target.id === "minerDetailOverlay") closeMinerDetailBox(); // tap outside the box to dismiss
+  });
+  document.getElementById("minerDetailUpgradeBtn").addEventListener("click", () => {
+    if(!minerDetailItem) return;
+    const item = minerDetailItem;
+    // Same in-flight/max-level guards as the Inventory card's own UPGRADE
+    // button — this calls the EXACT same handleUpgradeMinerClick(), so
+    // there is no duplicate/second upgrade request path.
+    if(pendingMinerUpgrades.has(item.uid)) return;
+    if(maxLevelMiners.has(item.uid)) return;
+    handleUpgradeMinerClick(item, document.getElementById("minerDetailUpgradeBtn"));
+  });
+
+  function renderInventory(){
+    const wrap = document.getElementById("inventoryList");
+    const banner = document.getElementById("invSlotsBanner");
+    wrap.innerHTML = "";
+
+    const maxSlots = maxApplySlots(state.level);
+    const appliedCount = state.inventory.filter(i => i.applied).length;
+    const nextTier = nextApplySlotTier(state.level);
+    banner.innerHTML = `
+      <div>
+        <div class="eyebrow">APPLIED MINER SLOTS</div>
+        <div class="slots-hint">${nextTier ? "Reach Level " + nextTier.level + " to unlock slot " + nextTier.slots : "Max slots unlocked"}</div>
+      </div>
+      <div class="slots-count">${appliedCount} / ${maxSlots}</div>`;
+
+    if(!state.inventory.length){
+      wrap.innerHTML = '<div class="panel inv-empty">You don\'t own any miners yet — buy one from the Store tab.</div>';
+      return;
+    }
+    state.inventory.forEach(item => {
+      const slotsFull = !item.applied && appliedCount >= maxSlots;
+      const div = document.createElement("div");
+      div.className = "panel inv-card";
+      const backendLinked = isBackendLinkedItem(item);
+      div.innerHTML = `
+        <div class="inv-card-icon miner-icon-wrap">${minerIconWithBadge(item.level)}</div>
+        <div class="inv-card-name">${item.name}</div>
+        ${backendLinked ? `<div class="inv-card-level">Lv. ${item.minerLevel || 1}</div>` : ``}
+        <div class="inv-card-boost">+${fmt(item.speed, 2)} ${TOKEN_SYMBOL}/sec boost</div>
+        ${item.applied
+          ? `<div class="inv-card-actions"><button class="btn applied" disabled>APPLIED ✓</button><button class="btn secondary" data-remove="${item.uid}">REMOVE</button></div>`
+          : `<button class="btn" data-apply="${item.uid}" ${slotsFull ? 'disabled' : ''}>${slotsFull ? 'SLOTS FULL' : 'APPLY'}</button>`}
+        ${backendLinked ? upgradeButtonMarkup(item) : ``}`;
+      wrap.appendChild(div);
+
+      // Goal A: tapping a backend-linked card opens the live upgrade-cost
+      // box. Local-only (pre-migration) cards have no upgrade path, so
+      // they're left exactly as before — no click handler added. Clicks on
+      // any button inside the card (Apply/Remove/Upgrade) are left alone to
+      // run their own existing handlers, not this one.
+      if(backendLinked){
+        div.addEventListener("click", (e) => {
+          if(e.target.closest("button")) return;
+          openMinerDetailBox(item);
+        });
+        div.style.cursor = "pointer";
+      }
+    });
+
+    wrap.querySelectorAll("[data-apply]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const uid = btn.dataset.apply;
+        const item = state.inventory.find(i=>i.uid===uid);
+        if(!item || item.applied) return;
+        if(pendingApplyRemove.has(uid)) return; // request already in flight for this item
+        const currentApplied = state.inventory.filter(i => i.applied).length;
+        if(currentApplied >= maxApplySlots(state.level)){
+          const tier = nextApplySlotTier(state.level);
+          toast(tier ? "Apply slots full — reach Level " + tier.level + " to unlock another slot" : "Apply slots full");
+          return;
+        }
+
+        if(!isBackendLinkedItem(item)){
+          // Pre-migration, local-only inventory record (no backend UUID) —
+          // unchanged legacy behavior; there is nothing to verify against
+          // the backend with. See the compatibility rule further above.
+          item.applied = true;
+          saveState(); render();
+          toast("Applied " + item.name + " — its boost is now active");
+          return;
+        }
+
+        // Server-authoritative path: local state is only updated once the
+        // backend confirms success (see setInventoryApplied above).
+        setInventoryApplied(item, true, btn);
+      });
+    });
+
+    wrap.querySelectorAll("[data-remove]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const uid = btn.dataset.remove;
+        const item = state.inventory.find(i=>i.uid===uid);
+        if(!item || !item.applied) return;
+        if(pendingApplyRemove.has(uid)) return; // request already in flight for this item
+
+        if(!isBackendLinkedItem(item)){
+          item.applied = false;
+          saveState(); render();
+          toast("Removed " + item.name + " — slot freed up, apply another miner anytime");
+          return;
+        }
+
+        setInventoryApplied(item, false, btn);
+      });
+    });
+
+    wrap.querySelectorAll("[data-upgrade]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const uid = btn.dataset.upgrade;
+        const item = state.inventory.find(i=>i.uid===uid);
+        if(!item) return;
+        if(pendingMinerUpgrades.has(uid)) return; // request already in flight for this item
+        if(maxLevelMiners.has(uid)) return; // backend already told us this unit is maxed
+        handleUpgradeMinerClick(item, btn);
+      });
+    });
+  }
+
+  // ---------- marketplace (offchain, shared-local-storage demo — same scope note as admin sync) ----------
+  function ensureMarketplaceDefaults(cfg){
+    if(!cfg.marketplace) cfg.marketplace = { feePercent: 0, listings: [], settlements: [] };
+    if(!Array.isArray(cfg.marketplace.listings)) cfg.marketplace.listings = [];
+    if(!Array.isArray(cfg.marketplace.settlements)) cfg.marketplace.settlements = [];
+    if(!cfg.leaderboard) cfg.leaderboard = { prizes: [{ rank:1, name:"Monthly Champion", logo:null }] };
+    if(!Array.isArray(cfg.leaderboard.prizes)) cfg.leaderboard.prizes = [];
+    return cfg;
+  }
+  function getMarketConfig(){ return ensureMarketplaceDefaults(getFreshAdminConfig()); }
+  function saveMarketConfig(cfg){ try{ localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){} }
+  function genId(prefix){ return prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  function processSettlements(){
+    const cfg = getMarketConfig();
+    if(!cfg.marketplace.settlements.length) return;
+    const mine = [], rest = [];
+    cfg.marketplace.settlements.forEach(s => (s.playerId === PLAYER_ID ? mine : rest).push(s));
+    if(!mine.length) return;
+    mine.forEach(s=>{
+      if(s.kind === "credit"){
+        state.pxnBalance += s.amount;
+        addPoints(50);
+        toast("Marketplace: +" + fmt(s.amount, 0) + " PXN" + (s.note ? " — " + s.note : ""));
+      } else if(s.kind === "refund"){
+        state.pxnBalance += s.amount;
+        toast("Marketplace refund: +" + fmt(s.amount, 0) + " PXN" + (s.note ? " — " + s.note : ""));
+      } else if(s.kind === "itemAdd" && s.item){
+        state.inventory.push(Object.assign({}, s.item, {applied:false}));
+        addPoints(50);
+        toast("You won a marketplace miner: " + s.item.name + " — apply it in your Inventory");
+      } else if(s.kind === "itemReturn" && s.item){
+        state.inventory.push(Object.assign({}, s.item, {applied:false}));
+        toast("A listing was removed — " + s.item.name + " was returned to you");
+      }
+    });
+    cfg.marketplace.settlements = rest;
+    saveMarketConfig(cfg);
+    saveState();
+  }
+
+  function listMinerForSale(uid, price){
+    if(!(price > 0)){ toast("Enter a valid asking price"); return; }
+    const idx = state.inventory.findIndex(i=>i.uid===uid);
+    if(idx === -1){ toast("Miner not found"); return; }
+    const item = state.inventory.splice(idx,1)[0];
+    const cfg = getMarketConfig();
+    cfg.marketplace.listings.push({ id:genId("lst"), sellerId:PLAYER_ID, sellerName:PLAYER_NAME, item, price, offers:[], createdAt:Date.now() });
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
+    renderMarket();
+  }
+
+  function buyListing(listingId){
+    const cfg = getMarketConfig();
+    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
+    if(idx === -1){ toast("Listing no longer available"); renderMarket(); return; }
+    const listing = cfg.marketplace.listings[idx];
+    if(listing.sellerId === PLAYER_ID){ toast("You can't buy your own listing"); return; }
+    if(state.pxnBalance < listing.price){ toast("Not enough PXN"); return; }
+    state.pxnBalance -= listing.price;
+    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
+    addPoints(50);
+    (listing.offers||[]).forEach(o=>{
+      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing sold to another buyer" });
+    });
+    cfg.marketplace.listings.splice(idx,1);
+    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:listing.sellerId, kind:"credit", amount:listing.price, ts:Date.now(), note:"Sold " + listing.item.name });
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Purchased " + listing.item.name + " for " + fmt(listing.price, 0) + " PXN");
+    renderMarket();
+  }
+
+  function makeOffer(listingId, amount){
+    if(!(amount > 0)){ toast("Enter a valid offer amount"); return; }
+    const cfg = getMarketConfig();
+    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
+    if(!listing){ toast("Listing no longer available"); renderMarket(); return; }
+    if(listing.sellerId === PLAYER_ID){ toast("You can't offer on your own listing"); return; }
+    if(state.pxnBalance < amount){ toast("Not enough PXN to offer that"); return; }
+    state.pxnBalance -= amount;
+    listing.offers = listing.offers || [];
+    listing.offers.push({ id:genId("off"), buyerId:PLAYER_ID, buyerName:PLAYER_NAME, amount, ts:Date.now() });
+    saveMarketConfig(cfg);
+    saveState();
+    toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
+    renderMarket();
+  }
+
+  function cancelOffer(listingId, offerId){
+    const cfg = getMarketConfig();
+    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
+    if(!listing) return;
+    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId && o.buyerId===PLAYER_ID);
+    if(oi === -1) return;
+    const off = listing.offers.splice(oi,1)[0];
+    state.pxnBalance += off.amount;
+    saveMarketConfig(cfg);
+    saveState();
+    toast("Offer withdrawn — " + fmt(off.amount, 0) + " PXN refunded");
+    renderMarket();
+  }
+
+  function acceptOffer(listingId, offerId){
+    const cfg = getMarketConfig();
+    const lidx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
+    if(lidx === -1) return;
+    const listing = cfg.marketplace.listings[lidx];
+    if(listing.sellerId !== PLAYER_ID) return;
+    const accepted = (listing.offers||[]).find(o=>o.id===offerId);
+    if(!accepted) return;
+    state.pxnBalance += accepted.amount;
+    addPoints(50);
+    (listing.offers||[]).forEach(o=>{
+      if(o.id !== offerId){
+        cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Seller accepted a different offer" });
+      }
+    });
+    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:accepted.buyerId, kind:"itemAdd", item:listing.item, ts:Date.now(), note:"Offer accepted on " + listing.item.name });
+    cfg.marketplace.listings.splice(lidx,1);
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Offer accepted — " + fmt(accepted.amount, 0) + " PXN added to your balance");
+    renderMarket();
+  }
+
+  function declineOffer(listingId, offerId){
+    const cfg = getMarketConfig();
+    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
+    if(!listing || listing.sellerId !== PLAYER_ID) return;
+    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId);
+    if(oi === -1) return;
+    const off = listing.offers.splice(oi,1)[0];
+    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:off.buyerId, kind:"refund", amount:off.amount, ts:Date.now(), note:"Seller declined your offer" });
+    saveMarketConfig(cfg);
+    toast("Offer declined — buyer refunded");
+    renderMarket();
+  }
+
+  function cancelListing(listingId){
+    const cfg = getMarketConfig();
+    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
+    if(idx === -1) return;
+    const listing = cfg.marketplace.listings[idx];
+    if(listing.sellerId !== PLAYER_ID) return;
+    (listing.offers||[]).forEach(o=>{
+      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing cancelled by seller" });
+    });
+    cfg.marketplace.listings.splice(idx,1);
+    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
+    saveMarketConfig(cfg);
+    saveState(); render();
+    toast("Listing cancelled — miner returned to your inventory");
+    renderMarket();
+  }
+
+  function marketItemThumb(item){
+    const fallback = item.icon
+      ? renderIconValueSafely(item.icon, item.name)
+      : `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER[item.level] || MINER_ICON_INNER.default}</svg>`;
+    // Marketplace listings/offers carry a snapshot of the miner item they
+    // were made from (item.level = miner_tier) — prefer the live catalog
+    // image for that tier over the snapshot's own icon/built-in glyph, same
+    // resolution order as Inventory, without touching any listing/offer/
+    // pricing/ownership data itself.
+    return getMinerCatalogIcon(item.level, fallback, item.name);
+  }
+
+  function renderMarket(){
+    const cfg = getMarketConfig();
+
+    // sell form
+    const sel = document.getElementById("sellMinerSelect");
+    sel.innerHTML = "";
+    state.inventory.forEach(item=>{
+      const opt = document.createElement("option");
+      opt.value = item.uid;
+      opt.textContent = item.name + " (" + item.speed.toFixed(2) + " " + TOKEN_SYMBOL + "/sec)";
+      sel.appendChild(opt);
+    });
+
+    // browse: other players' listings
+    const listingsWrap = document.getElementById("marketListings");
+    listingsWrap.innerHTML = "";
+    const others = cfg.marketplace.listings.filter(l=>l.sellerId !== PLAYER_ID);
+    if(!others.length){
+      listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+    }
+    others.forEach(l=>{
+      const myOffer = (l.offers||[]).find(o=>o.buyerId===PLAYER_ID);
+      const div = document.createElement("div");
+      div.className = "panel market-card";
+      div.innerHTML = `
+        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
+        <div class="market-card-name">${l.item.name}</div>
+        <div class="market-card-sub">${l.item.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${l.sellerName}</div>
+        <div class="market-card-price">${fmt(l.price,0)} PXN</div>
+        <button class="btn" data-buy-listing="${l.id}">BUY NOW</button>
+        ${myOffer
+          ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.amount,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.id}|${myOffer.id}">WITHDRAW</button></div>`
+          : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.id}"><button class="btn secondary" data-make-offer="${l.id}">OFFER</button></div>`}
+      `;
+      listingsWrap.appendChild(div);
+    });
+    listingsWrap.querySelectorAll("[data-buy-listing]").forEach(btn=>{
+      btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing));
+    });
+    listingsWrap.querySelectorAll("[data-make-offer]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const lid = btn.dataset.makeOffer;
+        const val = parseFloat(document.getElementById("offer-" + lid).value);
+        makeOffer(lid, val);
+      });
+    });
+    listingsWrap.querySelectorAll("[data-withdraw-offer]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const [lid, oid] = btn.dataset.withdrawOffer.split("|");
+        cancelOffer(lid, oid);
+      });
+    });
+
+    // my listings
+    const mine = cfg.marketplace.listings.filter(l=>l.sellerId === PLAYER_ID);
+    const myListingsWrap = document.getElementById("myListings");
+    myListingsWrap.innerHTML = "";
+    if(!mine.length){
+      myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
+    }
+    mine.forEach(l=>{
+      const div = document.createElement("div");
+      div.className = "panel market-card";
+      const offersHtml = (l.offers||[]).length
+        ? `<div class="listing-offers">` + l.offers.map(o=>`
+            <div class="listing-offer-row">
+              <span class="who">${o.buyerName}</span>
+              <span class="amt">${fmt(o.amount,0)} PXN</span>
+              <div class="offer-actions">
+                <button class="btn good" data-accept="${l.id}|${o.id}">ACCEPT</button>
+                <button class="btn danger" data-decline="${l.id}|${o.id}">DECLINE</button>
+              </div>
+            </div>`).join("") + `</div>`
+        : "";
+      div.innerHTML = `
+        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
+        <div class="market-card-name">${l.item.name}</div>
+        <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${(l.offers||[]).length} offer(s)</div>
+        <button class="btn secondary" data-cancel-listing="${l.id}">CANCEL</button>
+        ${offersHtml}
+      `;
+      myListingsWrap.appendChild(div);
+    });
+    myListingsWrap.querySelectorAll("[data-cancel-listing]").forEach(btn=>{
+      btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing));
+    });
+    myListingsWrap.querySelectorAll("[data-accept]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.accept.split("|"); acceptOffer(lid,oid); });
+    });
+    myListingsWrap.querySelectorAll("[data-decline]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid); });
+    });
+
+    // my sent offers (across everyone's listings)
+    const myOffersWrap = document.getElementById("myOffers");
+    myOffersWrap.innerHTML = "";
+    const sentOffers = [];
+    cfg.marketplace.listings.forEach(l=>{
+      (l.offers||[]).forEach(o=>{ if(o.buyerId === PLAYER_ID) sentOffers.push({ listing:l, offer:o }); });
+    });
+    if(!sentOffers.length){
+      myOffersWrap.innerHTML = `<div class="empty-note">You haven't made any offers.</div>`;
+    }
+    sentOffers.forEach(({listing,offer})=>{
+      const div = document.createElement("div");
+      div.className = "panel card";
+      div.innerHTML = `
+        <div class="card-icon miner-icon-wrap small">${marketItemThumb(listing.item)}</div>
+        <div class="card-body">
+          <div class="card-title">${listing.item.name}</div>
+          <div class="card-sub">Your offer: ${fmt(offer.amount,0)} PXN · seller ${listing.sellerName}</div>
+        </div>
+        <div class="card-cta"><button class="btn secondary" data-withdraw="${listing.id}|${offer.id}">WITHDRAW</button></div>
+      `;
+      myOffersWrap.appendChild(div);
+    });
+    myOffersWrap.querySelectorAll("[data-withdraw]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid); });
+    });
+
+    // leaderboard
+    renderLeaderboard(cfg);
+  }
+
+  function renderLeaderboard(cfg){
+    cfg = cfg || getMarketConfig();
+    const monthKey = currentMonthKey();
+    const now = new Date();
+    document.getElementById("leaderboardMonthLabel").textContent = now.toLocaleString("en-US",{month:"long"}).toUpperCase() + " LEADERBOARD";
+
+    const prizes = cfg.leaderboard.prizes || [];
+    const firstPrize = prizes.find(p=>p.rank===1) || prizes[0];
+    const banner = document.getElementById("leaderboardPrizeBanner");
+    if(firstPrize){
+      // Prizes are admin-configured as a free-form {rank, name, logo} entry
+      // (see admin.html's leaderboard prize editor) with no dedicated
+      // "this prize is a miner" flag today. If a prize is ever set up to
+      // reference a miner tier (firstPrize.minerTier), the live catalog
+      // image for that tier is shown; otherwise this falls back to the
+      // prize's own configured logo exactly as before, just rendered safely.
+      const fallbackLogo = firstPrize.logo ? renderIconValueSafely(firstPrize.logo, firstPrize.name) : '';
+      let prizeIconHtml = getMinerCatalogIcon(firstPrize.minerTier, fallbackLogo, firstPrize.name);
+      if(prizeIconHtml.indexOf('<img ') === 0){
+        prizeIconHtml = prizeIconHtml.replace('<img ', '<img class="prize-logo" ');
+      }
+      banner.innerHTML = `
+        ${prizeIconHtml}
+        <div class="eyebrow">TOP MINER OF THE MONTH WINS</div>
+        <div class="prize-name">${escapeHtml(firstPrize.name)}</div>
+        <div class="prize-sub">Winner announced at the start of next month</div>
+      `;
+    } else {
+      banner.innerHTML = `<div class="empty-note">No prize configured yet.</div>`;
+    }
+
+    const players = (cfg.players || []).filter(p => p.monthlyPeriodKey === monthKey && (p.monthlyPoints||0) > 0);
+    // include self, in case our own record hasn't synced into cfg.players yet this tick
+    const selfEntry = { id: PLAYER_ID, username: PLAYER_NAME, monthlyPoints: state.monthlyPoints, monthlyPeriodKey: monthKey };
+    const byId = {};
+    players.forEach(p=> byId[p.id] = p);
+    byId[PLAYER_ID] = selfEntry;
+    const ranked = Object.values(byId).sort((a,b)=> (b.monthlyPoints||0) - (a.monthlyPoints||0)).slice(0,20);
+
+    const list = document.getElementById("leaderboardList");
+    list.innerHTML = "";
+    if(!ranked.length){
+      list.innerHTML = `<div class="empty-note">No activity recorded yet this month.</div>`;
+      return;
+    }
+    ranked.forEach((p,i)=>{
+      const rankNum = i+1;
+      const rankClass = rankNum===1 ? "gold" : rankNum===2 ? "silver" : rankNum===3 ? "bronze" : "";
+      const div = document.createElement("div");
+      div.className = "panel lb-row";
+      div.innerHTML = `
+        <div class="lb-rank ${rankClass}">#${rankNum}</div>
+        <div class="lb-name">${p.username}${p.id===PLAYER_ID ? ' (you)' : ''}</div>
+        <div class="lb-amt">${fmt(p.monthlyPoints||0,1)} PTS</div>
+      `;
+      list.appendChild(div);
+    });
+  }
+
+  function renderTasks(){
+    const list = document.getElementById("taskList");
+    list.innerHTML = "";
+    let done = 0;
+    TASKS.forEach(t=>{
+      const isDone = !!state.tasksDone[t.id];
+      if(isDone) done++;
+      const div = document.createElement("div");
+      div.className = "panel card" + (isDone ? " task-done" : "");
+      div.innerHTML = `
+        <div class="card-icon task-icon-wrap">${taskIconMarkup(t, isDone)}</div>
+        <div class="card-body">
+          <div class="card-title">${t.title}</div>
+          <div class="card-sub">${isDone ? 'Reward claimed' : t.sub + ' · +' + t.reward + ' ' + TOKEN_SYMBOL}</div>
+        </div>
+        <div class="card-cta">
+          ${isDone
+            ? `<button class="btn secondary" disabled>DONE</button>`
+            : `<button class="btn" data-task="${t.id}">CLAIM</button>`}
+        </div>`;
+      list.appendChild(div);
+    });
+    document.getElementById("tasksProgress").textContent = done + " / " + TASKS.length + " DONE";
+
+    list.querySelectorAll("[data-task]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const id = btn.dataset.task;
+        const t = TASKS.find(x=>x.id===id);
+        state.tasksDone[id] = true;
+        state.minedBalance += t.reward;
+        if(state.claimedTotal === undefined) state.claimedTotal = 0;
+        state.claimedTotal += t.reward;
+        addPoints(1);
+        saveState(); render();
+        toast("+" + t.reward + " " + TOKEN_SYMBOL + " added to your balance");
+      });
+    });
+  }
+
+  function renderFriends(){
+    document.getElementById("friendsBig").textContent = state.referrals;
+    document.getElementById("refLink").textContent = "t.me/ProXNetworkBot?start=" + state.refCode;
+    document.getElementById("friendsSpeedBonusText").textContent = "Each friend boosts your mining speed by +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec";
+  }
+
+  // ---------- interactions ----------
+  // Tapping the core only starts the 2x speed boost — it never adds coins directly.
+  // All coin income (including the boosted rate) is still applied only by the
+  // once-per-second mining tick below.
+  document.getElementById("coreBtn").addEventListener("click", (e)=>{
+    if(captchaActive) return;
+
+    const now = Date.now();
+    if(lastTapAt){
+      const interval = now - lastTapAt;
+      if(interval >= TAP_INTERVAL_MIN_MS && interval <= TAP_INTERVAL_MAX_MS
+         && lastTapInterval !== null
+         && Math.abs(interval - lastTapInterval) <= TAP_INTERVAL_TOLERANCE_MS){
+        consistentTapStreak++;
+      } else {
+        consistentTapStreak = 1;
+      }
+      lastTapInterval = interval;
+    }
+    lastTapAt = now;
+
+    if(consistentTapStreak >= 10){
+      openCaptcha();
+      return;
+    }
+
+    if(tapBoostUntil > Date.now()) return; // cooldown: ignore taps until the current boost ends
+    tapBoostUntil = Date.now() + REWARDS_CONFIG.tapBoostDurationSec*1000;
+    render();
+
+    if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  });
+
+  // Guards against a double-click firing two overlapping claim requests
+  // while the first is still in flight. Same role as
+  // minerPurchaseInProgress/pendingMinerUpgrades elsewhere in this file.
+  let claimInProgress = false;
+
+  /**
+   * Safe, non-sensitive message for a failed claim-mining call, preferring
+   * the backend's own (already-sanitized) message when present — e.g.
+   * "Nothing available to claim" or "Unauthorized" are both safe,
+   * specific, and never raw database/SQL text (see claim-mining/index.ts).
+   * ProXBackend.fetchClaimMining() (like fetchMe()/fetchAccrueMining())
+   * normalizes to { ok, data, error } without a separate HTTP status code,
+   * so — unlike upgradeMinerErrorMessage()/purchaseMinerErrorMessage()
+   * above, which call their own hand-rolled status-aware fetch helpers —
+   * this falls back directly to result.error (e.g. "No active session.",
+   * a network failure) rather than a status-keyed switch.
+   */
+  function claimMiningErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    return result.error || "Network error — try again.";
+  }
+
+  document.getElementById("claimBtn").addEventListener("click", async ()=>{
+    // Existing local accrual/display behavior — unchanged. This only
+    // updates state.pendingClaim/state.minedBalance for the on-screen
+    // "ready to claim" figure between backend syncs; it is never trusted
+    // as the amount actually claimed below.
+    accrue();
+    if(state.pendingClaim < 0.01) return;
+    if(claimInProgress) return;
+
+    claimInProgress = true;
+    render(); // reflects the disabled state via claimInProgress immediately
+
+    try{
+      if(!window.ProXBackend || typeof ProXBackend.fetchClaimMining !== "function"){
+        toast("Backend unavailable — try again shortly");
+        return;
+      }
+
+      const result = await ProXBackend.fetchClaimMining();
+
+      if(result.ok && result.data && result.data.success){
+        // Server-authoritative only — never computed locally, never added
+        // to the existing local value. mining_state.claimed_total (m.PXN)
+        // and mining_state.pending_claim are read back exactly as
+        // claim_mining() returns them; state.pxnBalance (the separate,
+        // untouched PXN ledger) is not read or written here.
+        const backendClaimedTotal = Number(result.data.claimed_total);
+        const backendPendingClaim = Number(result.data.pending_claim);
+        const backendClaimedAmount = Number(result.data.claimed_amount);
+
+        if(Number.isFinite(backendClaimedTotal)){
+          state.claimedTotal = backendClaimedTotal;
+        }
+        if(Number.isFinite(backendPendingClaim)){
+          state.pendingClaim = backendPendingClaim;
+        }
+        const backendClaimCount = Number(result.data.claim_count);
+        if(Number.isFinite(backendClaimCount)){
+          state.claimCount = backendClaimCount;
+          if(state.claimCount >= 5) state.tasksDone["t5"] = true;
+        }
+
+        // localStorage is only updated AFTER this authoritative response.
+        saveState();
+
+        toast("Claimed " + fmt(Number.isFinite(backendClaimedAmount) ? backendClaimedAmount : 0) + " " + TOKEN_SYMBOL + " to your in-game balance");
+      } else {
+        // Failure: local claimedTotal/pendingClaim/claimCount are left
+        // completely untouched — the pending amount is preserved so the
+        // player can retry, never silently zeroed.
+        toast(claimMiningErrorMessage(result));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      claimInProgress = false;
+      render();
+    }
+  });
+
+  document.getElementById("boostBtn").addEventListener("click", ()=>{
+    if(state.boostUntil > Date.now()) return;
+    state.boostUntil = Date.now() + REWARDS_CONFIG.boostDurationMin*60*1000;
+    addPoints(0.5);
+    saveState(); render();
+    toast("Boost active — " + REWARDS_CONFIG.boostMultiplier + "x mining speed for " + REWARDS_CONFIG.boostDurationMin + " minutes");
+  });
+
+  document.getElementById("mineLevelUpBtn").addEventListener("click", ()=>{
+    levelUp();
+  });
+
+  // NOTE: the m.PXN → PXN swap action/listener was intentionally removed —
+  // the Wallet screen's SWAP card is now a disabled COMING SOON state (see
+  // WALLET SCREEN markup above). No frontend code adjusts PXN or m.PXN
+  // balances from this screen anymore.
+
+  // ---------- watch ads for a big boost ----------
+  // NOTE: no real ad network is wired up here — there's no ad SDK available in
+  // this build environment. This plays a short simulated "ad" (a countdown) so
+  // the full flow and reward logic work end to end. Swapping in a real
+  // rewarded-ad network (e.g. Adsgram, Monetag — common for Telegram Mini Apps)
+  // just means replacing the body of playSimulatedAd() with that SDK's
+  // "show rewarded ad" call and firing onAdComplete() from its success callback.
+  const AD_WINDOW_MS = 24*3600*1000;
+
+  function checkAdsWindowReset(){
+    const now = Date.now();
+    if(!state.adsWindowStart || (now - state.adsWindowStart) > AD_WINDOW_MS){
+      state.adsWindowStart = now;
+      state.adsWatchedToday = 0;
+    }
+  }
+
+  function playSimulatedAd(onAdComplete){
+    const overlay = document.getElementById("adOverlay");
+    const fill = document.getElementById("adProgressFill");
+    const countdownEl = document.getElementById("adCountdown");
+    const totalSec = REWARDS_CONFIG.adSimSeconds;
+    let remaining = totalSec;
+    overlay.classList.add("show");
+    countdownEl.textContent = remaining;
+    fill.style.width = "0%";
+    const timer = setInterval(()=>{
+      remaining -= 1;
+      const pct = Math.max(0, ((totalSec - remaining) / totalSec) * 100);
+      fill.style.width = pct + "%";
+      countdownEl.textContent = Math.max(0, remaining);
+      if(remaining <= 0){
+        clearInterval(timer);
+        overlay.classList.remove("show");
+        onAdComplete();
+      }
+    }, 1000);
+  }
+
+  document.getElementById("watchAdBtn").addEventListener("click", ()=>{
+    if(captchaActive) return;
+    checkAdsWindowReset();
+    playSimulatedAd(()=>{
+      state.adsWatchedToday += 1;
+      addPoints(1);
+      if(state.adsWatchedToday >= REWARDS_CONFIG.adsRequiredForBoost){
+        state.adsWatchedToday = 0;
+        state.adsWindowStart = Date.now();
+        state.adBoostUntil = Date.now() + REWARDS_CONFIG.adBoostDurationHours*3600*1000;
+        toast(REWARDS_CONFIG.adBoostMultiplier + "x mining speed activated for " + REWARDS_CONFIG.adBoostDurationHours + " hours!");
+      } else {
+        toast("Ad credited — " + state.adsWatchedToday + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today");
+      }
+      saveState(); render();
+    });
+  });
+
+  document.getElementById("copyBtn").addEventListener("click", ()=>{
+    const text = "t.me/ProXNetworkBot?start=" + state.refCode;
+    if(navigator.clipboard){ navigator.clipboard.writeText(text).catch(()=>{}); }
+    toast("Referral link copied");
+  });
+
+  // demo helper: tapping the friends "big" number simulates an invite (for testing without real backend)
+  document.getElementById("friendsBig").addEventListener("click", ()=>{
+    state.referrals += 1;
+    state.minedBalance += REWARDS_CONFIG.referralInstant;
+    if(state.claimedTotal === undefined) state.claimedTotal = 0;
+    state.claimedTotal += REWARDS_CONFIG.referralInstant;
+    if(state.referrals >= 1) state.tasksDone["t3"] = true;
+    saveState(); render();
+    toast("Friend joined — +" + REWARDS_CONFIG.referralInstant + " " + TOKEN_SYMBOL + ", +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec");
+  });
+
+  // ---------- device identity ----------
+  // Telegram gives each real account a phone-verified, hard-to-fake user ID —
+  // when running inside Telegram, that's what we use as the player's identity
+  // (far stronger than IP/network, which a webpage can't see anyway).
+  const telegramUser = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) ? tg.initDataUnsafe.user : null;
+  const PLAYER_ID = telegramUser ? ("tg_" + telegramUser.id) : state.refCode;
+  const PLAYER_NAME = telegramUser
+    ? ("@" + (telegramUser.username || telegramUser.first_name || PLAYER_ID))
+    : ("player_" + state.refCode.slice(4));
+
+  function getDeviceFingerprint(){
+    const DFP_KEY = "proxnetwork_device_fp_v1";
+    try{
+      let fp = localStorage.getItem(DFP_KEY);
+      if(fp) return fp;
+      const raw = [navigator.userAgent, screen.width, screen.height, navigator.language,
+                   Intl.DateTimeFormat().resolvedOptions().timeZone].join("|");
+      fp = simpleHash(raw) + "_" + Math.random().toString(36).slice(2,8);
+      localStorage.setItem(DFP_KEY, fp);
+      return fp;
+    }catch(e){ return "unknown"; }
+  }
+  const DEVICE_FP = getDeviceFingerprint();
+
+  // ---------- shared sync with admin panel (same-origin/local demo) ----------
+  function getFreshAdminConfig(){
+    try{
+      const raw = localStorage.getItem(ADMIN_CONFIG_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+
+  function flagCheatEvent(type, details){
+    const cfg = getFreshAdminConfig();
+    if(!Array.isArray(cfg.auditLog)) cfg.auditLog = [];
+    cfg.auditLog.unshift({ ts: Date.now(), action: "CHEAT FLAG: " + type, details: PLAYER_NAME + " (" + PLAYER_ID + ") — " + details });
+    if(cfg.auditLog.length > 300) cfg.auditLog.length = 300;
+    try{ localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+  }
+
+  function syncPlayerRecord(){
+    const cfg = getFreshAdminConfig();
+    if(!Array.isArray(cfg.players)) cfg.players = [];
+    if(!cfg.deviceOwners) cfg.deviceOwners = {};
+    let p = cfg.players.find(x => x.id === PLAYER_ID);
+    const now = Date.now();
+    if(!p){
+      p = { id: PLAYER_ID, username: PLAYER_NAME, status: "active", joinedAt: now, deviceFp: DEVICE_FP };
+      cfg.players.push(p);
+    }
+    p.level = state.level;
+    p.minedBalance = Math.round(state.minedBalance * 10000) / 10000;
+    p.referrals = state.referrals;
+    p.lastSeen = now;
+    p.deviceFp = DEVICE_FP;
+    checkMonthlyReset();
+    p.monthlyPoints = Math.round(state.monthlyPoints * 100) / 100;
+    p.monthlyPeriodKey = state.monthlyPeriodKey;
+
+    // first account seen on a device "claims" it; a different account showing up
+    // later on the same device fingerprint gets flagged (and optionally blocked)
+    if(!cfg.deviceOwners[DEVICE_FP]){
+      cfg.deviceOwners[DEVICE_FP] = PLAYER_ID;
+    } else if(cfg.deviceOwners[DEVICE_FP] !== PLAYER_ID){
+      p.duplicateDevice = true;
+    }
+    try{ localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+  }
+
+  // returns { blocked:false } or { blocked:true, reason }
+  function checkAccessStatus(){
+    const cfg = getFreshAdminConfig();
+    const players = Array.isArray(cfg.players) ? cfg.players : [];
+    const p = players.find(x => x.id === PLAYER_ID);
+    if(p && (p.status === "banned" || p.status === "suspended")){
+      return { blocked:true, reason: p.status };
+    }
+    const anticheat = cfg.anticheat || {};
+    if(anticheat.blockDuplicateDevice){
+      const owner = cfg.deviceOwners && cfg.deviceOwners[DEVICE_FP];
+      if(owner && owner !== PLAYER_ID){
+        return { blocked:true, reason:"duplicate_device" };
+      }
+    }
+    return { blocked:false };
+  }
+
+  function showBlockOverlay(reason){
+    if(reason === "duplicate_device"){
+      document.getElementById("banOverlayTitle").textContent = "One Account Per Device";
+      document.getElementById("banOverlayMsg").textContent = "Only one Pro-X Network account is allowed per device. This device is already linked to a different account.";
+    } else {
+      document.getElementById("banOverlayTitle").textContent = reason === "banned" ? "Account Banned" : "Account Suspended";
+      document.getElementById("banOverlayMsg").textContent = reason === "banned"
+        ? "This account has been banned by an administrator. Mining is disabled."
+        : "This account has been temporarily suspended by an administrator.";
+    }
+    document.getElementById("banOverlay").classList.add("show");
+  }
+  function hideBlockOverlay(){
+    document.getElementById("banOverlay").classList.remove("show");
+  }
+
+  if(tamperDetectedThisLoad){
+    flagCheatEvent("STATE TAMPERING", "Saved progress didn't match its integrity signature — balance was reset");
+    toast("Unusual activity detected — progress reset for fair play");
+  }
+
+  // apply admin-configured background image, if set
+  if(adminConfig && adminConfig.background){
+    document.getElementById("rigImg").src = adminConfig.background;
+  }
+
+  // nav
+  function switchToScreen(name){
+    document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+    const navBtn = document.querySelector('.navbtn[data-screen="' + name + '"]');
+    if(navBtn) navBtn.classList.add("active");
+    document.getElementById("screen-" + name).classList.add("active");
+
+    // Re-sync the Store's miner catalog every time the Miners screen opens
+    // (per-open refresh, not a timer), so an admin catalog edit shows up the
+    // next time the player visits the Store without needing a full reload.
+    if(name === "upgrade"){
+      refreshMinerCatalog();
+    }
+  }
+
+  document.querySelectorAll(".navbtn").forEach(btn=>{
+    btn.addEventListener("click", ()=> switchToScreen(btn.dataset.screen));
+  });
+
+  document.getElementById("goFriendsBtn").addEventListener("click", ()=> switchToScreen("friends"));
+
+  // marketplace tabs
+  document.querySelectorAll(".market-tab").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".market-tab").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".market-pane").forEach(p=>p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("mpane-" + btn.dataset.mtab).classList.add("active");
+    });
+  });
+
+  // store / inventory tabs
+  document.querySelectorAll(".store-tab").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".store-tab").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".store-pane").forEach(p=>p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("upane-" + btn.dataset.utab).classList.add("active");
+      // Goal B: opening Inventory prefetches live upgrade costs in the
+      // background (no-op if the cache is still fresh) so they're already
+      // warm by the time a player taps a miner card — the box itself still
+      // re-fetches on open if the cache turns out missing/stale.
+      if(btn.dataset.utab === "inventory"){
+        getMinerUpgradeCosts(false);
+      }
+    });
+  });
+  document.getElementById("listMinerBtn").addEventListener("click", ()=>{
+    const uid = document.getElementById("sellMinerSelect").value;
+    const price = parseFloat(document.getElementById("sellPriceInput").value);
+    if(!uid){ toast("No miner selected"); return; }
+    listMinerForSale(uid, price);
+    document.getElementById("sellPriceInput").value = "";
+  });
+  document.getElementById("roadmapBtn").addEventListener("click", ()=> toast("Roadmap coming soon!"));
+
+  // level-3 task auto check
+  const origRender = render;
+  render = function(){
+    if(state.level >= 3) state.tasksDone["t4"] = true;
+    origRender();
+  };
+
+  // main loop — also re-checks account access (ban/suspend/duplicate-device) each tick
+  setInterval(()=>{
+    const access = checkAccessStatus();
+    if(access.blocked){ showBlockOverlay(access.reason); return; }
+    hideBlockOverlay();
+    accrue(); saveState(); processSettlements(); render(); syncPlayerRecord();
+  }, 1000);
+
+  const initialAccess = checkAccessStatus();
+  if(initialAccess.blocked){
+    showBlockOverlay(initialAccess.reason);
+  } else {
+    accrue(); processSettlements(); render(); syncPlayerRecord();
+  }
+})();
+</script>
+</body>
+</html>
