@@ -4236,6 +4236,117 @@
     });
   }
 
+  // ---------- server-authoritative Task Claim (claim-task) ----------
+  // Replaces the old LOCAL-ONLY task claim (which set state.tasksDone[id]
+  // = true and added t.reward straight to state.minedBalance/claimedTotal
+  // with nothing server-side ever verifying completion or preventing a
+  // double claim) with a real call to the existing claim-task Edge
+  // Function. That function — via public.claim_task
+  // (0037_task_claims.sql, 0039_claim_task_requirement_verification.sql)
+  // — is the single source of truth for whether a task is actually
+  // verified (manual_claim always requires real verification and is
+  // never auto-approved; referral_count/miner_level/claim_count are
+  // checked against the caller's live mining_state) and for the reward
+  // amount and resulting m.PXN balance. Nothing here re-implements any of
+  // that verification — this is purely "call it, then reflect exactly
+  // what it returns". Auth is untouched: the access token comes only
+  // from the existing window.ProXAuth.getAccessToken(). Only the CLAIM
+  // click handler inside renderTasks() below changes; task rendering
+  // (the markup built per task above) is unchanged.
+
+  // Guards against a double-click firing two overlapping claim requests
+  // for the same task while the first is still in flight — same role as
+  // pendingMarketActions/pendingMinerUpgrades elsewhere in this file,
+  // scoped here to individual task ids.
+  const pendingTaskClaims = new Set();
+
+  /**
+   * Small, self-contained call to POST /functions/v1/claim-task. Used
+   * instead of ProXBackend._callFunction() for the same reason
+   * callMarketplaceBackend()/callLevelUpMiningBackend() above are: the
+   * required error handling here needs the raw HTTP status code, which
+   * that generic helper (js/api-client.js) normalizes away. Reuses the
+   * SAME existing window.PROX_CONFIG (FUNCTIONS_URL / SUPABASE_ANON_KEY)
+   * already shipped with the project — no new URL, no new config. Sends
+   * ONLY task_id and a client-generated request_id (the backend's
+   * idempotency key, so a dropped response can be retried safely without
+   * double-claiming) — never a reward amount, verification result,
+   * user_id, or balance; the backend never reads or trusts any of those
+   * from this body (see claim-task/index.ts). Always resolves (never
+   * throws).
+   */
+  async function callClaimTaskBackend(taskId, requestId, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    if(!accessToken){
+      return { ok:false, status:0, data:null, error:"Please reconnect your Telegram account." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/claim-task", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ task_id: taskId, request_id: requestId })
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      // claim-task's own envelope is { success:false, error:{ code,
+      // message } } on failure (see backend/supabase/functions/claim-task/
+      // index.ts) — same shape as marketplace/index.ts.
+      const errMessage = (json && json.error && json.error.message) || null;
+      return { ok: res.ok, status: res.status, data: json, error: errMessage };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /**
+   * Safe, non-sensitive message for a failed callClaimTaskBackend() call.
+   * Prefers the backend's own already-sanitized error.message when
+   * present. The code-keyed fallback below uses ONLY the actual
+   * application error codes defined in claim-task/index.ts's ERR object
+   * — no new/invented codes. TASK_VERIFICATION_REQUIRED is expected and
+   * routine here (manual_claim tasks always land here; referral_count/
+   * miner_level/claim_count tasks land here until their live mining_state
+   * counter reaches the task's requirement) — it is not treated as a
+   * server error.
+   */
+  function claimTaskErrorMessage(result){
+    const err = result && result.data && result.data.error;
+    if(err && typeof err.message === "string" && err.message.trim()){
+      return err.message;
+    }
+    if(err && typeof err.code === "string"){
+      switch(err.code){
+        case "UNAUTHENTICATED": return "Please reconnect your Telegram account.";
+        case "INVALID_JSON":
+        case "INVALID_BODY":
+        case "INVALID_TASK_ID":
+        case "INVALID_REQUEST_ID": return "That request wasn't valid — try again.";
+        case "TASK_NOT_FOUND": return "This task no longer exists.";
+        case "TASK_INACTIVE": return "This task is not currently active.";
+        case "TASK_ALREADY_CLAIMED": return "This task has already been claimed.";
+        case "TASK_VERIFICATION_REQUIRED": return "This task can't be verified as complete yet.";
+        case "METHOD_NOT_ALLOWED": return "That action isn't supported.";
+        case "INTERNAL_ERROR": return "Could not process this claim right now.";
+      }
+    }
+    switch(result.status){
+      case 401: return "Please reconnect your Telegram account.";
+      case 404: return "This task no longer exists.";
+      case 409: return "This task has already been claimed.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Network error — check your connection";
+    }
+  }
+
   function renderTasks(){
     const list = document.getElementById("taskList");
     list.innerHTML = "";
@@ -4274,14 +4385,73 @@
     list.querySelectorAll("[data-task]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const id = btn.dataset.task;
+        if(pendingTaskClaims.has(id)) return;
         const t = TASKS.find(x=>x.id===id);
-        state.tasksDone[id] = true;
-        state.minedBalance += t.reward;
-        if(state.claimedTotal === undefined) state.claimedTotal = 0;
-        state.claimedTotal += t.reward;
-        addPoints(1);
-        saveState(); render();
-        toast("+" + t.reward + " " + TOKEN_SYMBOL + " added to your balance");
+        if(!t) return;
+
+        pendingTaskClaims.add(id);
+        btn.disabled = true;
+        btn.textContent = "CLAIMING…";
+
+        (async () => {
+          try{
+            if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+              toast("Backend unavailable — try again shortly");
+              return;
+            }
+            const accessToken = await window.ProXAuth.getAccessToken();
+            if(!accessToken){
+              toast("Please reconnect your Telegram account.");
+              return;
+            }
+
+            const requestId = (window.crypto && typeof window.crypto.randomUUID === "function")
+              ? window.crypto.randomUUID()
+              : null;
+
+            const result = await callClaimTaskBackend(t.id, requestId, accessToken);
+
+            if(result.ok && result.data && result.data.success){
+              // Server-authoritative only — never t.reward, never added to
+              // the existing local value. claimed_total (m.PXN) is read
+              // back exactly as claim-task returns it; mined_balance_total
+              // and pxn_balance are never touched by a task claim.
+              const backendClaimedTotal = Number(result.data.data.claimed_total);
+              const backendRewardMpxn = Number(result.data.data.reward_mpxn);
+
+              state.tasksDone[id] = true;
+              if(Number.isFinite(backendClaimedTotal)){
+                state.claimedTotal = backendClaimedTotal;
+              }
+              addPoints(1);
+
+              saveState();
+              toast("+" + fmt(Number.isFinite(backendRewardMpxn) ? backendRewardMpxn : 0) + " " + TOKEN_SYMBOL + " added to your balance");
+            } else {
+              const err = result.data && result.data.error;
+              if(err && err.code === "TASK_ALREADY_CLAIMED"){
+                // Already claimed server-side (e.g. an earlier session or
+                // a retried request) — reflect that honestly in the UI
+                // without awarding anything a second time; claimedTotal is
+                // left exactly as it already is.
+                state.tasksDone[id] = true;
+                saveState();
+                toast("This task was already claimed.");
+              } else {
+                // Failure (including the routine TASK_VERIFICATION_REQUIRED
+                // outcome): tasksDone/claimedTotal are left completely
+                // untouched, and the CLAIM button is re-enabled below so
+                // the player can retry once actually eligible.
+                toast(claimTaskErrorMessage(result));
+              }
+            }
+          } catch(e){
+            toast("Network error — try again");
+          } finally {
+            pendingTaskClaims.delete(id);
+            render();
+          }
+        })();
       });
     });
   }
