@@ -2683,6 +2683,148 @@
     }
   }
 
+  // ---------- Marketplace backend helpers (backend/supabase/functions/marketplace
+  // and marketplace-read) ----------
+  // Same pattern as callPurchaseMinerBackend()/callUpgradeMinerBackend()/
+  // callGetMinerUpgradeCostsBackend() above — status-code-aware, hand-rolled
+  // fetch (not ProXBackend._callFunction(), for the same HTTP-status-code
+  // reason as those), reuses the existing window.PROX_CONFIG (FUNCTIONS_URL /
+  // SUPABASE_ANON_KEY), no change to js/api-client.js. Always resolve (never
+  // throw). These are ONLY thin transport helpers — they do not implement
+  // any Marketplace listing/offer/UI logic themselves, and are not wired
+  // into listMinerForSale()/cancelListing()/buyListing()/makeOffer()/
+  // cancelOffer()/acceptOffer()/declineOffer()/renderMarket() (all of which
+  // remain completely untouched, still driving the existing local/
+  // localStorage Marketplace).
+
+  /**
+   * POSTs { action, ...body } to /functions/v1/marketplace (the mutation
+   * endpoint — create_listing, cancel_listing, buy_listing, make_offer,
+   * cancel_offer, accept_offer, reject_offer). Handles a missing access
+   * token, network errors, and non-JSON responses the same defensive way
+   * callPurchaseMinerBackend()/callUpgradeMinerBackend() do above.
+   */
+  async function callMarketplaceBackend(action, body, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    if(!accessToken){
+      return { ok:false, status:0, data:null, error:"Please reconnect your Telegram account." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/marketplace", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(Object.assign({ action: action }, body || {}))
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      // The marketplace Edge Function's own envelope is
+      // { success:false, error:{ code, message } } on failure (see
+      // backend/supabase/functions/marketplace/index.ts) rather than the
+      // flat { success:false, message } shape purchase-miner/upgrade-miner
+      // use — fall back to a top-level "message" too, just in case.
+      const errMessage = (json && json.error && json.error.message) || (json && json.message) || null;
+      return { ok: res.ok, status: res.status, data: json, error: errMessage };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /**
+   * POSTs { action, ...body } to /functions/v1/marketplace-read (the
+   * read-only endpoint — list_active_listings, get_listing,
+   * get_my_listings, get_my_offers, get_seller_offers). Same defensive
+   * handling as callMarketplaceBackend() above.
+   */
+  async function callMarketplaceReadBackend(action, body, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    if(!accessToken){
+      return { ok:false, status:0, data:null, error:"Please reconnect your Telegram account." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/marketplace-read", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(Object.assign({ action: action }, body || {}))
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      const errMessage = (json && json.error && json.error.message) || (json && json.message) || null;
+      return { ok: res.ok, status: res.status, data: json, error: errMessage };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /**
+   * Safe, non-sensitive message for a failed callMarketplaceBackend()/
+   * callMarketplaceReadBackend() call. Prefers the backend's own
+   * already-sanitized error.message when present. The code-keyed fallback
+   * below uses ONLY the actual application error codes defined in
+   * backend/supabase/functions/marketplace/index.ts's mapPgError() (which
+   * itself maps every PXN24-PXN46 SQLSTATE the marketplace_* RPCs from
+   * 0034_marketplace_rpcs.sql can raise) — no new/invented codes.
+   */
+  function marketplaceErrorMessage(result){
+    const err = result && result.data && result.data.error;
+    if(err && typeof err.message === "string" && err.message.trim()){
+      return err.message;
+    }
+    if(err && typeof err.code === "string"){
+      switch(err.code){
+        case "VALIDATION_ERROR": return "A required field was missing";
+        case "INSUFFICIENT_BALANCE": return "Insufficient m.PXN balance";
+        case "NO_MINING_STATE": return "Mining data is not initialized for one of the accounts in this transaction";
+        case "DUPLICATE_REQUEST": return "This request was already processed";
+        case "INVENTORY_NOT_FOUND": return "Inventory item not found or not owned by you";
+        case "ALREADY_LISTED": return "This item is already listed";
+        case "ITEM_APPLIED": return "Remove this item from its active mining slot before listing it";
+        case "LISTING_NOT_FOUND": return "Listing not found";
+        case "LISTING_NOT_ACTIVE": return "This listing is no longer active";
+        case "NOT_LISTING_OWNER": return "You do not own this listing";
+        case "CANNOT_TRADE_OWN_LISTING": return "You cannot buy or make an offer on your own listing";
+        case "LISTING_INVENTORY_MISMATCH": return "This listing's item is no longer available";
+        case "OFFER_NOT_FOUND": return "Offer not found";
+        case "OFFER_NOT_OPEN": return "This offer is no longer open";
+        case "NOT_OFFER_BUYER": return "You did not place this offer";
+        case "MARKETPLACE_MISCONFIGURED": return "Marketplace is temporarily unavailable";
+        case "MARKETPLACE_PAUSED": return "Marketplace is currently paused";
+        case "DUPLICATE_OFFER": return "You already have an open offer on this listing";
+        case "UNAUTHORIZED": return "Please reconnect your Telegram account.";
+        case "METHOD_NOT_ALLOWED": return "That action isn't supported.";
+        case "SERVICE_UNAVAILABLE": return "Service temporarily unavailable";
+        case "INTERNAL_ERROR": return "Could not complete marketplace request";
+      }
+    }
+    switch(result.status){
+      case 400: return "That request wasn't valid — try again.";
+      case 401: return "Please reconnect your Telegram account.";
+      case 403: return "You're not allowed to do that.";
+      case 404: return "Not found — try refreshing.";
+      case 405: return "That action isn't supported.";
+      case 409: return "That can't be completed right now — try refreshing.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Network error — check your connection";
+    }
+  }
+
   /**
    * Returns the current live upgrade-cost list, each row normalized to
    * { fromLevel, toLevel, costPxn, defaultCostPxn } — every numeric field
