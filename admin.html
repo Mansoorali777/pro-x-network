@@ -312,6 +312,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
         Tasks
       </button>
+      <button class="side-btn" data-page="earnTasks">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Earn Tasks
+      </button>
       <button class="side-btn" data-page="marketplace">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9Z"/><path d="M9 13a3 3 0 0 0 6 0"/></svg>
         Marketplace
@@ -531,6 +535,56 @@
       <div class="panel note">Tasks are claimed manually by the player tapping "Claim" — there's no automatic verification that they actually joined a channel or followed an account (that would need a backend that checks with Telegram/X's own APIs).</div>
     </div>
 
+    <!-- EARN TASKS (database-backed task catalog, public.task_catalog) -->
+    <div class="page" id="page-earnTasks">
+      <div class="page-head">
+        <h2>Earn Tasks</h2>
+        <div class="sub">Live task catalog stored in the database — every add/edit/activate/deactivate/delete/reorder here goes through the admin-task-catalog Edge Function, which verifies your admin session server-side before touching anything. Separate from the local-demo "Tasks" page above. Player-side task claiming/rewards are not implemented yet — this only manages the catalog rows themselves.</div>
+      </div>
+
+      <div class="panel form-grid" id="etAddForm">
+        <div class="field"><label>TITLE</label><input type="text" id="etAddTitle" maxlength="200" placeholder="e.g. Join our Telegram channel" autocomplete="off"></div>
+        <div class="field"><label>SUBTITLE</label><input type="text" id="etAddSubtitle" maxlength="500" placeholder="e.g. Verify membership to claim" autocomplete="off"></div>
+        <div class="field">
+          <label>ICON / LOGO</label>
+          <input type="text" id="etAddIcon" maxlength="2000" placeholder="Emoji, URL, or data URI (optional)" autocomplete="off">
+          <div class="mc-icon-upload">
+            <div class="mc-icon-preview" id="etAddIconPreview"></div>
+          </div>
+        </div>
+        <div class="field"><label>ACTION URL</label><input type="text" id="etAddActionUrl" maxlength="2000" placeholder="https:// (optional)" autocomplete="off"></div>
+        <div class="field">
+          <label>VERIFICATION TYPE</label>
+          <select id="etAddVerificationType">
+            <option value="manual_claim">Manual Claim</option>
+            <option value="referral_count">Referral Count</option>
+            <option value="miner_level">Miner Level</option>
+            <option value="claim_count">Claim Count</option>
+          </select>
+        </div>
+        <div class="field"><label>REWARD (m.PXN)</label><input type="number" id="etAddReward" min="0.00000001" max="100000000" step="0.00000001" placeholder="e.g. 100"></div>
+        <div class="field"><label>SORT ORDER</label><input type="number" id="etAddSortOrder" min="0" max="100000" step="1" placeholder="e.g. 0"></div>
+        <div class="field" style="display:flex; align-items:center; gap:8px; padding-top:22px;">
+          <input type="checkbox" id="etAddActive" checked style="width:16px; height:16px; flex-shrink:0;">
+          <label style="margin:0;" for="etAddActive">ACTIVE</label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn amber" id="etAddBtn">+ ADD TASK</button>
+        <button class="btn ghost" id="etRefreshBtn">REFRESH LIST</button>
+      </div>
+      <div class="note" id="etAddMsg" style="display:none; padding:10px 16px;"></div>
+
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>ORDER</th><th>ICON</th><th>TITLE</th><th>SUBTITLE</th><th>REWARD (m.PXN)</th><th>VERIFICATION</th><th>SORT</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+          <tbody id="etTableBody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="etEmptyNote" style="display:none;">No earn tasks yet — add one above.</div>
+      <div class="note" id="etListMsg" style="display:none; padding:10px 16px;"></div>
+    </div>
+
     <!-- MARKETPLACE -->
     <div class="page" id="page-marketplace">
       <div class="page-head"><h2>Marketplace</h2><div class="sub">Player-to-player miner trading — offchain, tracked on this device the same way Players data is. See note below.</div></div>
@@ -642,6 +696,44 @@
     <div class="btn-row" style="margin:0;">
       <button class="btn" id="mcEditSaveBtn">SAVE CHANGES</button>
       <button class="btn ghost" id="mcEditCancelBtn">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- EARN TASKS — edit modal -->
+<div id="etEditOverlay" class="mc-modal-overlay">
+  <div class="panel mc-modal">
+    <h3 style="font-size:15px; margin-bottom:16px;">Edit Earn Task</h3>
+    <input type="hidden" id="etEditId">
+    <div class="field" style="margin-bottom:12px;"><label>TITLE</label><input type="text" id="etEditTitle" maxlength="200"></div>
+    <div class="field" style="margin-bottom:12px;"><label>SUBTITLE</label><input type="text" id="etEditSubtitle" maxlength="500"></div>
+    <div class="field" style="margin-bottom:12px;">
+      <label>ICON / LOGO</label>
+      <input type="text" id="etEditIcon" maxlength="2000">
+      <div class="mc-icon-upload">
+        <div class="mc-icon-preview" id="etEditIconPreview"></div>
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:12px;"><label>ACTION URL</label><input type="text" id="etEditActionUrl" maxlength="2000"></div>
+    <div class="field" style="margin-bottom:12px;">
+      <label>VERIFICATION TYPE</label>
+      <select id="etEditVerificationType">
+        <option value="manual_claim">Manual Claim</option>
+        <option value="referral_count">Referral Count</option>
+        <option value="miner_level">Miner Level</option>
+        <option value="claim_count">Claim Count</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:12px;"><label>REWARD (m.PXN)</label><input type="number" id="etEditReward" min="0.00000001" max="100000000" step="0.00000001"></div>
+    <div class="field" style="margin-bottom:12px;"><label>SORT ORDER</label><input type="number" id="etEditSortOrder" min="0" max="100000" step="1"></div>
+    <div class="field" style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+      <input type="checkbox" id="etEditActive" style="width:16px; height:16px; flex-shrink:0;">
+      <label style="margin:0;" for="etEditActive">ACTIVE</label>
+    </div>
+    <div class="note" id="etEditMsg" style="display:none; padding:0 0 12px;"></div>
+    <div class="btn-row" style="margin:0;">
+      <button class="btn" id="etEditSaveBtn">SAVE CHANGES</button>
+      <button class="btn ghost" id="etEditCancelBtn">CANCEL</button>
     </div>
   </div>
 </div>
@@ -1944,6 +2036,430 @@
   document.getElementById("dbUserDetailOverlay").addEventListener("click", (e)=>{
     if(e.target.id === "dbUserDetailOverlay") closeDbUserDetail();
   });
+
+  // ---------- Earn Tasks (database-backed task catalog, public.task_catalog) ----------
+  // Talks to the real backend (admin-task-catalog Edge Function), via
+  // the SAME signed-in supabase-js client/session as every other live
+  // section above (getAdminSupabaseClient()) —
+  // client.functions.invoke() attaches the current session's
+  // Authorization bearer token automatically, so no token is ever
+  // read or attached by hand here, and the service-role key is never
+  // present in this file. Every write
+  // (create/update/delete/set_active/reorder) goes through this one
+  // Edge Function; this code never queries public.task_catalog
+  // directly via supabase-js .from(), so it can never bypass the
+  // server-side admin check baked into that function. This section
+  // does not implement task claiming/rewards, does not touch
+  // task_claims, mining, marketplace, referrals, or Miner Management,
+  // and is completely separate from the local-demo "Tasks" page
+  // above (which still reads/writes cfg.rewards.tasksList in
+  // localStorage exactly as before).
+  const ET_MIN_TITLE_LEN = 1;
+  const ET_MAX_TITLE_LEN = 200;
+  const ET_MIN_SUBTITLE_LEN = 1;
+  const ET_MAX_SUBTITLE_LEN = 500;
+  const ET_MAX_ICON_LEN = 2000;
+  const ET_MAX_ACTION_URL_LEN = 2000;
+  const ET_MAX_REWARD_MPXN = 100000000;
+  const ET_MAX_SORT_ORDER = 100000;
+
+  const ET_VERIFICATION_LABELS = {
+    manual_claim: "Manual Claim",
+    referral_count: "Referral Count",
+    miner_level: "Miner Level",
+    claim_count: "Claim Count",
+  };
+
+  let earnTasksList = [];
+  let earnTasksPending = false;
+
+  function setEtAddMsg(text, isError){
+    const el = document.getElementById("etAddMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+  function setEtListMsg(text, isError){
+    const el = document.getElementById("etListMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+  function setEtEditMsg(text, isError){
+    const el = document.getElementById("etEditMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+
+  // Maps a supabase-js Edge Function error (network-level, or a
+  // non-2xx response from admin-task-catalog) to a short, safe,
+  // user-facing message keyed off HTTP status. admin-task-catalog's
+  // response envelope is { success:false, error:{ code, message } }
+  // (see backend/supabase/functions/admin-task-catalog/index.ts) —
+  // this only ever surfaces that clean, pre-sanitized message, never
+  // raw database/server error text — and falls back to a fixed
+  // generic message for anything unrecognized (e.g. 500).
+  async function etErrorMessage(error){
+    let status = null;
+    let serverMessage = null;
+    if(error && error.context){
+      try{
+        if(typeof error.context.status === "number") status = error.context.status;
+        if(typeof error.context.json === "function"){
+          const parsed = await error.context.json();
+          if(parsed && parsed.error && typeof parsed.error.message === "string") serverMessage = parsed.error.message;
+        }
+      }catch(e){ /* keep defaults below */ }
+    }
+    switch(status){
+      case 400: return serverMessage || "That request wasn't valid — check the fields and try again.";
+      case 401: return "Session expired — please log in again.";
+      case 403: return "Admin access denied.";
+      case 404: return "That task no longer exists — refreshing the list.";
+      default: return serverMessage || "Server error — please try again.";
+    }
+  }
+
+  async function callAdminTaskCatalog(body){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      return { data: null, message: "Backend not configured — edit config/frontend-config.js." };
+    }
+    const { data, error } = await client.functions.invoke("admin-task-catalog", { body });
+    if(error){
+      return { data: null, message: await etErrorMessage(error) };
+    }
+    if(!data || data.success !== true){
+      return { data: null, message: (data && data.error && data.error.message) || "Request failed" };
+    }
+    return { data: data.data, message: null };
+  }
+
+  function etIconMarkup(icon){
+    const safe = String(icon == null ? "" : icon);
+    if(!safe) return `<div class="miner-thumb" style="width:32px; height:32px;"></div>`;
+    if(/^(data:|https?:)/i.test(safe)){
+      return `<div class="miner-thumb" style="width:32px; height:32px;"><img src="${safe.replace(/"/g,"&quot;")}" alt=""></div>`;
+    }
+    return `<div class="miner-thumb" style="width:32px; height:32px; font-size:16px;">${safe.replace(/</g,"&lt;")}</div>`;
+  }
+
+  // Renders whatever's currently in an icon text field (emoji, URL,
+  // or data URI) into its small preview box. No Storage upload here
+  // (the task-icons bucket is deliberately wired up in a later,
+  // separate step) — this only ever previews the text value.
+  function etRefreshIconPreviewFromField(prefix){
+    const preview = document.getElementById(prefix + "IconPreview");
+    const iconEl = document.getElementById(prefix + "Icon");
+    if(!preview || !iconEl) return;
+    const val = iconEl.value.trim();
+    if(!val){ preview.innerHTML = ""; return; }
+    if(/^(data:|https?:)/i.test(val)){
+      preview.innerHTML = `<img src="${val.replace(/"/g,"&quot;")}" alt="">`;
+    } else {
+      preview.innerHTML = `<span style="font-size:16px;">${val.replace(/</g,"&lt;")}</span>`;
+    }
+  }
+  document.getElementById("etAddIcon").addEventListener("input", ()=> etRefreshIconPreviewFromField("etAdd"));
+  document.getElementById("etEditIcon").addEventListener("input", ()=> etRefreshIconPreviewFromField("etEdit"));
+
+  function renderEarnTasksTable(){
+    const body = document.getElementById("etTableBody");
+    body.innerHTML = "";
+    document.getElementById("etEmptyNote").style.display = earnTasksList.length ? "none" : "block";
+    earnTasksList.forEach((t, idx)=>{
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <div class="row-actions">
+            <button class="btn ghost" data-et-up="${t.id}" ${idx === 0 ? "disabled" : ""} title="Move up">↑</button>
+            <button class="btn ghost" data-et-down="${t.id}" ${idx === earnTasksList.length - 1 ? "disabled" : ""} title="Move down">↓</button>
+          </div>
+        </td>
+        <td>${etIconMarkup(t.icon)}</td>
+        <td>${(t.title || "").replace(/</g,"&lt;")}</td>
+        <td>${(t.subtitle || "").replace(/</g,"&lt;")}</td>
+        <td>${Number(t.reward_mpxn || 0).toLocaleString("en-US",{maximumFractionDigits:2})}</td>
+        <td>${ET_VERIFICATION_LABELS[t.verification_type] || t.verification_type}</td>
+        <td>${t.sort_order}</td>
+        <td><span class="tag ${t.is_active ? "active" : "inactive"}">${t.is_active ? "ACTIVE" : "INACTIVE"}</span></td>
+        <td>
+          <div class="row-actions">
+            <button class="btn ghost" data-et-edit="${t.id}">EDIT</button>
+            <button class="btn ${t.is_active ? "amber" : "good"}" data-et-toggle="${t.id}">${t.is_active ? "DEACTIVATE" : "ACTIVATE"}</button>
+            <button class="btn danger" data-et-delete="${t.id}">DELETE</button>
+          </div>
+        </td>`;
+      body.appendChild(tr);
+    });
+
+    body.querySelectorAll("[data-et-edit]").forEach(btn=>{
+      btn.addEventListener("click", ()=> openEtEditModal(btn.dataset.etEdit));
+    });
+    body.querySelectorAll("[data-et-toggle]").forEach(btn=>{
+      btn.addEventListener("click", ()=> etToggleActive(btn.dataset.etToggle));
+    });
+    body.querySelectorAll("[data-et-delete]").forEach(btn=>{
+      btn.addEventListener("click", ()=> etDeleteTask(btn.dataset.etDelete));
+    });
+    body.querySelectorAll("[data-et-up]").forEach(btn=>{
+      btn.addEventListener("click", ()=> etMove(btn.dataset.etUp, -1));
+    });
+    body.querySelectorAll("[data-et-down]").forEach(btn=>{
+      btn.addEventListener("click", ()=> etMove(btn.dataset.etDown, 1));
+    });
+  }
+
+  async function fetchEarnTasksList(){
+    if(earnTasksPending) return;
+    earnTasksPending = true;
+    setEtListMsg("", false);
+    const { data, message } = await callAdminTaskCatalog({ action: "list_tasks" });
+    earnTasksPending = false;
+    if(!data){
+      setEtListMsg(message, true);
+      return;
+    }
+    // Backend already returns rows ordered by sort_order, created_at —
+    // keep that order as-is rather than re-sorting client-side.
+    earnTasksList = data.tasks || [];
+    renderEarnTasksTable();
+  }
+
+  // Shared client-side validation for both the Add form and the Edit
+  // modal — mirrors admin-task-catalog's own limits so obviously bad
+  // input never leaves the browser, but the server re-validates
+  // everything independently regardless (defense in depth).
+  function etReadFormFields(prefix){
+    const title = document.getElementById(prefix + "Title").value.trim();
+    const subtitle = document.getElementById(prefix + "Subtitle").value.trim();
+    const iconRaw = document.getElementById(prefix + "Icon").value.trim();
+    const actionUrlRaw = document.getElementById(prefix + "ActionUrl").value.trim();
+    const verificationType = document.getElementById(prefix + "VerificationType").value;
+    const rewardRaw = document.getElementById(prefix + "Reward").value;
+    const sortOrderRaw = document.getElementById(prefix + "SortOrder").value;
+    const active = document.getElementById(prefix + "Active").checked;
+
+    const reward = parseFloat(rewardRaw);
+    const sortOrder = parseInt(sortOrderRaw, 10);
+
+    if(!title || title.length < ET_MIN_TITLE_LEN || title.length > ET_MAX_TITLE_LEN){
+      return { error: `Title must be ${ET_MIN_TITLE_LEN}-${ET_MAX_TITLE_LEN} characters.` };
+    }
+    if(!subtitle || subtitle.length < ET_MIN_SUBTITLE_LEN || subtitle.length > ET_MAX_SUBTITLE_LEN){
+      return { error: `Subtitle must be ${ET_MIN_SUBTITLE_LEN}-${ET_MAX_SUBTITLE_LEN} characters.` };
+    }
+    if(iconRaw.length > ET_MAX_ICON_LEN){
+      return { error: `Icon must be at most ${ET_MAX_ICON_LEN} characters.` };
+    }
+    if(actionUrlRaw.length > ET_MAX_ACTION_URL_LEN){
+      return { error: `Action URL must be at most ${ET_MAX_ACTION_URL_LEN} characters.` };
+    }
+    if(!ET_VERIFICATION_LABELS.hasOwnProperty(verificationType)){
+      return { error: "Choose a valid verification type." };
+    }
+    if(!Number.isFinite(reward) || reward <= 0 || reward > ET_MAX_REWARD_MPXN){
+      return { error: `Reward must be greater than 0 and up to ${ET_MAX_REWARD_MPXN}.` };
+    }
+    if(!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > ET_MAX_SORT_ORDER){
+      return { error: `Sort order must be a whole number from 0 to ${ET_MAX_SORT_ORDER}.` };
+    }
+
+    return {
+      value: {
+        title: title,
+        subtitle: subtitle,
+        icon: iconRaw ? iconRaw : null,
+        action_url: actionUrlRaw ? actionUrlRaw : null,
+        verification_type: verificationType,
+        reward_mpxn: reward,
+        sort_order: sortOrder,
+        is_active: active,
+      }
+    };
+  }
+
+  // ---- add ----
+  let etAddPending = false;
+  document.getElementById("etAddBtn").addEventListener("click", async ()=>{
+    if(etAddPending) return;
+    setEtAddMsg("", false);
+    const parsed = etReadFormFields("etAdd");
+    if(parsed.error){ setEtAddMsg(parsed.error, true); return; }
+
+    etAddPending = true;
+    const btn = document.getElementById("etAddBtn");
+    btn.disabled = true;
+    try{
+      const { data, message } = await callAdminTaskCatalog(Object.assign({ action: "create_task" }, parsed.value));
+      if(!data){ setEtAddMsg(message, true); return; }
+      setEtAddMsg("Task added.", false);
+      logAction("EARN TASK CREATED", parsed.value.title + " (+" + parsed.value.reward_mpxn + " m.PXN)");
+      toast("Earn task added");
+      document.getElementById("etAddTitle").value = "";
+      document.getElementById("etAddSubtitle").value = "";
+      document.getElementById("etAddIcon").value = "";
+      document.getElementById("etAddActionUrl").value = "";
+      document.getElementById("etAddVerificationType").value = "manual_claim";
+      document.getElementById("etAddReward").value = "";
+      document.getElementById("etAddSortOrder").value = "";
+      document.getElementById("etAddActive").checked = true;
+      document.getElementById("etAddIconPreview").innerHTML = "";
+      fetchEarnTasksList();
+    } finally {
+      etAddPending = false;
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("etRefreshBtn").addEventListener("click", ()=> fetchEarnTasksList());
+
+  // ---- edit ----
+  function openEtEditModal(id){
+    const task = earnTasksList.find(t=> t.id === id);
+    if(!task) return;
+    document.getElementById("etEditId").value = task.id;
+    document.getElementById("etEditTitle").value = task.title;
+    document.getElementById("etEditSubtitle").value = task.subtitle;
+    document.getElementById("etEditIcon").value = task.icon || "";
+    document.getElementById("etEditActionUrl").value = task.action_url || "";
+    document.getElementById("etEditVerificationType").value = task.verification_type;
+    document.getElementById("etEditReward").value = task.reward_mpxn;
+    document.getElementById("etEditSortOrder").value = task.sort_order;
+    document.getElementById("etEditActive").checked = !!task.is_active;
+    setEtEditMsg("", false);
+    etRefreshIconPreviewFromField("etEdit");
+    document.getElementById("etEditOverlay").classList.add("show");
+  }
+  function closeEtEditModal(){
+    document.getElementById("etEditOverlay").classList.remove("show");
+  }
+  document.getElementById("etEditCancelBtn").addEventListener("click", closeEtEditModal);
+  document.getElementById("etEditOverlay").addEventListener("click", (e)=>{
+    if(e.target.id === "etEditOverlay") closeEtEditModal();
+  });
+
+  let etEditPending = false;
+  document.getElementById("etEditSaveBtn").addEventListener("click", async ()=>{
+    if(etEditPending) return;
+    setEtEditMsg("", false);
+    const id = document.getElementById("etEditId").value;
+    if(!id){ setEtEditMsg("Missing task id.", true); return; }
+    const original = earnTasksList.find(t=> t.id === id);
+    const parsed = etReadFormFields("etEdit");
+    if(parsed.error){ setEtEditMsg(parsed.error, true); return; }
+
+    // Only send fields that actually changed, so update_task's "at
+    // least one updatable field" rule is met without ever forcing a
+    // write to fields the admin didn't touch.
+    const patch = { action: "update_task", task_id: id };
+    if(!original || original.title !== parsed.value.title) patch.title = parsed.value.title;
+    if(!original || original.subtitle !== parsed.value.subtitle) patch.subtitle = parsed.value.subtitle;
+    if(!original || (original.icon || null) !== parsed.value.icon) patch.icon = parsed.value.icon;
+    if(!original || (original.action_url || null) !== parsed.value.action_url) patch.action_url = parsed.value.action_url;
+    if(!original || original.verification_type !== parsed.value.verification_type) patch.verification_type = parsed.value.verification_type;
+    if(!original || Number(original.reward_mpxn) !== parsed.value.reward_mpxn) patch.reward_mpxn = parsed.value.reward_mpxn;
+    if(!original || original.sort_order !== parsed.value.sort_order) patch.sort_order = parsed.value.sort_order;
+    if(!original || !!original.is_active !== parsed.value.is_active) patch.is_active = parsed.value.is_active;
+
+    if(Object.keys(patch).length <= 2){
+      setEtEditMsg("No changes to save.", true);
+      return;
+    }
+
+    etEditPending = true;
+    const btn = document.getElementById("etEditSaveBtn");
+    btn.disabled = true;
+    try{
+      const { data, message } = await callAdminTaskCatalog(patch);
+      if(!data){ setEtEditMsg(message, true); return; }
+      logAction("EARN TASK UPDATED", parsed.value.title);
+      toast("Task updated");
+      closeEtEditModal();
+      fetchEarnTasksList();
+    } finally {
+      etEditPending = false;
+      btn.disabled = false;
+    }
+  });
+
+  // ---- activate / deactivate ----
+  async function etToggleActive(id){
+    const task = earnTasksList.find(t=> t.id === id);
+    if(!task) return;
+    const nextActive = !task.is_active;
+    setEtListMsg("", false);
+    const { data, message } = await callAdminTaskCatalog({ action: "set_active", task_id: id, is_active: nextActive });
+    if(!data){
+      setEtListMsg(message, true);
+      if(message && message.indexOf("no longer exists") !== -1) fetchEarnTasksList();
+      return;
+    }
+    logAction("EARN TASK " + (nextActive ? "ACTIVATED" : "DEACTIVATED"), task.title);
+    toast(nextActive ? "Task activated" : "Task deactivated");
+    fetchEarnTasksList();
+  }
+
+  // ---- delete ----
+  async function etDeleteTask(id){
+    const task = earnTasksList.find(t=> t.id === id);
+    if(!task) return;
+    const confirmed = window.confirm("Are you sure you want to permanently delete this earn task?");
+    if(!confirmed) return;
+    setEtListMsg("", false);
+    const { data, message } = await callAdminTaskCatalog({ action: "delete_task", task_id: id });
+    if(!data){
+      setEtListMsg(message, true);
+      if(message && message.indexOf("no longer exists") !== -1) fetchEarnTasksList();
+      return;
+    }
+    logAction("EARN TASK DELETED", task.title);
+    toast("Task deleted");
+    fetchEarnTasksList();
+  }
+
+  // ---- reorder (simple up/down admin control — no drag-and-drop
+  // library needed). Moving a row swaps it with its neighbor in the
+  // CURRENT list order, then the entire list's sort_order is
+  // renumbered sequentially (0, 1, 2, …) in that new order and sent
+  // to reorder_tasks in one call. The list is always re-fetched from
+  // the backend afterward — nothing here is treated as authoritative
+  // until admin-task-catalog confirms it. ----
+  let etReorderPending = false;
+  async function etMove(id, direction){
+    if(etReorderPending) return;
+    const idx = earnTasksList.findIndex(t=> t.id === id);
+    if(idx === -1) return;
+    const swapIdx = idx + direction;
+    if(swapIdx < 0 || swapIdx >= earnTasksList.length) return;
+
+    const reordered = earnTasksList.slice();
+    const tmp = reordered[idx];
+    reordered[idx] = reordered[swapIdx];
+    reordered[swapIdx] = tmp;
+
+    const items = reordered.map((t, i)=> ({ task_id: t.id, sort_order: i }));
+
+    etReorderPending = true;
+    setEtListMsg("", false);
+    try{
+      const { data, message } = await callAdminTaskCatalog({ action: "reorder_tasks", items: items });
+      if(!data){ setEtListMsg(message, true); return; }
+      logAction("EARN TASKS REORDERED", reordered.map(t=> t.title).join(", "));
+      toast("Task order updated");
+      earnTasksList = data.tasks || reordered;
+      renderEarnTasksTable();
+    } finally {
+      etReorderPending = false;
+    }
+  }
+
+  // Load the catalog automatically the moment this section is opened.
+  // A separate listener on just this one nav button — the shared
+  // side-nav show/hide loop below is left completely untouched.
+  const etNavBtn = document.querySelector('.side-btn[data-page="earnTasks"]');
+  if(etNavBtn) etNavBtn.addEventListener("click", fetchEarnTasksList);
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
