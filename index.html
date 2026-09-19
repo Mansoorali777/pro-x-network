@@ -1296,6 +1296,17 @@
         if (typeof window.__proxRefreshMinerCatalog === "function") {
           window.__proxRefreshMinerCatalog();
         }
+
+        // One-time initial load of Marketplace READ data (Browse/My
+        // Listings/My Sent Offers/Offers Received — the Marketplace READ
+        // migration stage). Defined inside the game IIFE further down this
+        // page and exposed as window.__proxRefreshMarketplaceReadData —
+        // same load-order reasoning as the two calls above. renderMarket()
+        // also triggers this itself (with its own staleness/in-flight
+        // guards), so this is purely a "have it ready sooner" prefetch.
+        if (typeof window.__proxRefreshMarketplaceReadData === "function") {
+          window.__proxRefreshMarketplaceReadData(false);
+        }
       });
     } else {
       console.info("[ProXAuth] not authenticated:", result.error);
@@ -2683,6 +2694,149 @@
     }
   }
 
+  // ---------- Marketplace backend helpers (backend/supabase/functions/marketplace
+  // and marketplace-read) ----------
+  // Same pattern as callPurchaseMinerBackend()/callUpgradeMinerBackend()/
+  // callGetMinerUpgradeCostsBackend() above — status-code-aware, hand-rolled
+  // fetch (not ProXBackend._callFunction(), for the same HTTP-status-code
+  // reason as those), reuses the existing window.PROX_CONFIG (FUNCTIONS_URL /
+  // SUPABASE_ANON_KEY), no change to js/api-client.js. Always resolve (never
+  // throw). These are ONLY thin transport helpers — they do not implement
+  // any Marketplace listing/offer/UI logic themselves. callMarketplaceBackend()
+  // is now wired into listMinerForSale()/cancelListing()/buyListing()/
+  // makeOffer()/cancelOffer()/acceptOffer()/declineOffer() (see the
+  // "marketplace MUTATIONS" section below) — the old local/localStorage
+  // Marketplace those functions used to drive is left in place but no
+  // longer read or written by them.
+
+  /**
+   * POSTs { action, ...body } to /functions/v1/marketplace (the mutation
+   * endpoint — create_listing, cancel_listing, buy_listing, make_offer,
+   * cancel_offer, accept_offer, reject_offer). Handles a missing access
+   * token, network errors, and non-JSON responses the same defensive way
+   * callPurchaseMinerBackend()/callUpgradeMinerBackend() do above.
+   */
+  async function callMarketplaceBackend(action, body, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    if(!accessToken){
+      return { ok:false, status:0, data:null, error:"Please reconnect your Telegram account." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/marketplace", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(Object.assign({ action: action }, body || {}))
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      // The marketplace Edge Function's own envelope is
+      // { success:false, error:{ code, message } } on failure (see
+      // backend/supabase/functions/marketplace/index.ts) rather than the
+      // flat { success:false, message } shape purchase-miner/upgrade-miner
+      // use — fall back to a top-level "message" too, just in case.
+      const errMessage = (json && json.error && json.error.message) || (json && json.message) || null;
+      return { ok: res.ok, status: res.status, data: json, error: errMessage };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /**
+   * POSTs { action, ...body } to /functions/v1/marketplace-read (the
+   * read-only endpoint — list_active_listings, get_listing,
+   * get_my_listings, get_my_offers, get_seller_offers). Same defensive
+   * handling as callMarketplaceBackend() above.
+   */
+  async function callMarketplaceReadBackend(action, body, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    if(!accessToken){
+      return { ok:false, status:0, data:null, error:"Please reconnect your Telegram account." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/marketplace-read", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(Object.assign({ action: action }, body || {}))
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      const errMessage = (json && json.error && json.error.message) || (json && json.message) || null;
+      return { ok: res.ok, status: res.status, data: json, error: errMessage };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — check your connection" };
+    }
+  }
+
+  /**
+   * Safe, non-sensitive message for a failed callMarketplaceBackend()/
+   * callMarketplaceReadBackend() call. Prefers the backend's own
+   * already-sanitized error.message when present. The code-keyed fallback
+   * below uses ONLY the actual application error codes defined in
+   * backend/supabase/functions/marketplace/index.ts's mapPgError() (which
+   * itself maps every PXN24-PXN46 SQLSTATE the marketplace_* RPCs from
+   * 0034_marketplace_rpcs.sql can raise) — no new/invented codes.
+   */
+  function marketplaceErrorMessage(result){
+    const err = result && result.data && result.data.error;
+    if(err && typeof err.message === "string" && err.message.trim()){
+      return err.message;
+    }
+    if(err && typeof err.code === "string"){
+      switch(err.code){
+        case "VALIDATION_ERROR": return "A required field was missing";
+        case "INSUFFICIENT_BALANCE": return "Insufficient m.PXN balance";
+        case "NO_MINING_STATE": return "Mining data is not initialized for one of the accounts in this transaction";
+        case "DUPLICATE_REQUEST": return "This request was already processed";
+        case "INVENTORY_NOT_FOUND": return "Inventory item not found or not owned by you";
+        case "ALREADY_LISTED": return "This item is already listed";
+        case "ITEM_APPLIED": return "Remove this item from its active mining slot before listing it";
+        case "LISTING_NOT_FOUND": return "Listing not found";
+        case "LISTING_NOT_ACTIVE": return "This listing is no longer active";
+        case "NOT_LISTING_OWNER": return "You do not own this listing";
+        case "CANNOT_TRADE_OWN_LISTING": return "You cannot buy or make an offer on your own listing";
+        case "LISTING_INVENTORY_MISMATCH": return "This listing's item is no longer available";
+        case "OFFER_NOT_FOUND": return "Offer not found";
+        case "OFFER_NOT_OPEN": return "This offer is no longer open";
+        case "NOT_OFFER_BUYER": return "You did not place this offer";
+        case "MARKETPLACE_MISCONFIGURED": return "Marketplace is temporarily unavailable";
+        case "MARKETPLACE_PAUSED": return "Marketplace is currently paused";
+        case "DUPLICATE_OFFER": return "You already have an open offer on this listing";
+        case "UNAUTHORIZED": return "Please reconnect your Telegram account.";
+        case "METHOD_NOT_ALLOWED": return "That action isn't supported.";
+        case "SERVICE_UNAVAILABLE": return "Service temporarily unavailable";
+        case "INTERNAL_ERROR": return "Could not complete marketplace request";
+      }
+    }
+    switch(result.status){
+      case 400: return "That request wasn't valid — try again.";
+      case 401: return "Please reconnect your Telegram account.";
+      case 403: return "You're not allowed to do that.";
+      case 404: return "Not found — try refreshing.";
+      case 405: return "That action isn't supported.";
+      case 409: return "That can't be completed right now — try refreshing.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Network error — check your connection";
+    }
+  }
+
   /**
    * Returns the current live upgrade-cost list, each row normalized to
    * { fromLevel, toLevel, costPxn, defaultCostPxn } — every numeric field
@@ -3045,121 +3199,318 @@
     saveState();
   }
 
-  function listMinerForSale(uid, price){
+  // ---------- marketplace MUTATIONS (server-authoritative, via
+  // callMarketplaceBackend()) ----------
+  //
+  // create_listing / cancel_listing / buy_listing / make_offer /
+  // cancel_offer / accept_offer / reject_offer now go straight to the
+  // backend via callMarketplaceBackend() (defined above), always using the
+  // authenticated user from ProXAuth.getAccessToken() — never a
+  // frontend-supplied user id. The backend (public.marketplace_* RPCs) is
+  // the sole source of truth for m.PXN (mining_state.claimed_total)
+  // movement and listing/offer/inventory-custody state: none of the
+  // functions below ever adds/subtracts state.claimedTotal themselves
+  // except by copying a *_claimed_total value straight out of a
+  // successful response, and none of them locally transfers/settles
+  // inventory or PXN — see refreshInventoryAfterMarketplaceMutation()
+  // below for how a changed inventory custody is reflected (always a
+  // re-fetch from the backend, never a local guess).
+  //
+  // cfg.marketplace.listings/settlements (the old local/localStorage demo
+  // store), ensureMarketplaceDefaults()/getMarketConfig()/saveMarketConfig()/
+  // genId(), and processSettlements() above are left completely alone —
+  // nothing below reads or writes them anymore, but they are not deleted
+  // yet per the migration plan.
+
+  // Guards a single in-flight backend request per listing/offer/inventory
+  // id so a double-click can't fire the same mutation twice — same
+  // purpose as pendingMinerUpgrades elsewhere in this file, scoped here to
+  // Marketplace mutations.
+  const pendingMarketActions = new Set();
+
+  /** Copies a *_claimed_total field straight out of a successful Marketplace mutation response into state.claimedTotal (the authoritative m.PXN balance) — never computed locally. No-op if the field is missing/non-finite. */
+  function applyMarketplaceClaimedTotal(data, field){
+    const v = Number(data && data[field]);
+    if(Number.isFinite(v)) state.claimedTotal = v;
+  }
+
+  /**
+   * Re-syncs state.inventory from the backend's own get-mining-inventory
+   * endpoint — same call and per-item merge pattern as
+   * syncInventoryFromBackend() above, but not gated by that function's
+   * one-time backendInventorySynced flag, since this needs to re-run after
+   * every inventory-affecting Marketplace mutation (create_listing,
+   * cancel_listing, buy_listing). Any locally-held item the backend no
+   * longer returns for us is dropped (e.g. just listed or just sold) —
+   * this is the ONLY way an item's local listed/owned status changes;
+   * nothing here sets it from a frontend assumption. Best-effort and
+   * silent on failure, same fallback behavior as syncInventoryFromBackend()
+   * (existing local inventory is left as-is rather than erased).
+   */
+  async function refreshInventoryAfterMarketplaceMutation(accessToken){
+    if(!window.ProXBackend) return;
+    const result = await ProXBackend._callFunction("get-mining-inventory", {
+      method: "POST",
+      accessToken: accessToken
+    });
+    if(!result.ok || !result.data || result.data.success !== true || !Array.isArray(result.data.inventory)) return;
+    const backendIds = new Set(result.data.inventory.map(row => row.id));
+    state.inventory = state.inventory.filter(i => backendIds.has(i.id));
+    result.data.inventory.forEach(row => {
+      const mapped = mapBackendInventoryItem(row);
+      const existing = state.inventory.find(i => i.id === mapped.id);
+      if(existing){ Object.assign(existing, mapped); } else { state.inventory.push(mapped); }
+    });
+  }
+
+  /** Shared prelude for every Marketplace mutation handler below: resolves an access token via ProXAuth.getAccessToken(), surfacing the existing auth-error toast (and returning null) if one isn't available. */
+  async function getMarketplaceAccessToken(){
+    if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+      toast("Backend unavailable — try again shortly");
+      return null;
+    }
+    const accessToken = await ProXAuth.getAccessToken();
+    if(!accessToken){
+      toast("Please reconnect your Telegram account.");
+      return null;
+    }
+    return accessToken;
+  }
+
+  function listMinerForSale(uid, price, btn){
     if(!(price > 0)){ toast("Enter a valid asking price"); return; }
-    const idx = state.inventory.findIndex(i=>i.uid===uid);
-    if(idx === -1){ toast("Miner not found"); return; }
-    const item = state.inventory.splice(idx,1)[0];
-    const cfg = getMarketConfig();
-    cfg.marketplace.listings.push({ id:genId("lst"), sellerId:PLAYER_ID, sellerName:PLAYER_NAME, item, price, offers:[], createdAt:Date.now() });
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
-    renderMarket();
-  }
+    if(pendingMarketActions.has(uid)) return;
+    const item = state.inventory.find(i=>i.uid===uid);
+    if(!item){ toast("Miner not found"); return; }
 
-  function buyListing(listingId){
-    const cfg = getMarketConfig();
-    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
-    if(idx === -1){ toast("Listing no longer available"); renderMarket(); return; }
-    const listing = cfg.marketplace.listings[idx];
-    if(listing.sellerId === PLAYER_ID){ toast("You can't buy your own listing"); return; }
-    if(state.pxnBalance < listing.price){ toast("Not enough PXN"); return; }
-    state.pxnBalance -= listing.price;
-    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
-    addPoints(50);
-    (listing.offers||[]).forEach(o=>{
-      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing sold to another buyer" });
-    });
-    cfg.marketplace.listings.splice(idx,1);
-    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:listing.sellerId, kind:"credit", amount:listing.price, ts:Date.now(), note:"Sold " + listing.item.name });
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Purchased " + listing.item.name + " for " + fmt(listing.price, 0) + " PXN");
-    renderMarket();
-  }
+    pendingMarketActions.add(uid);
+    if(btn){ btn.disabled = true; btn.textContent = "LISTING…"; }
 
-  function makeOffer(listingId, amount){
-    if(!(amount > 0)){ toast("Enter a valid offer amount"); return; }
-    const cfg = getMarketConfig();
-    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
-    if(!listing){ toast("Listing no longer available"); renderMarket(); return; }
-    if(listing.sellerId === PLAYER_ID){ toast("You can't offer on your own listing"); return; }
-    if(state.pxnBalance < amount){ toast("Not enough PXN to offer that"); return; }
-    state.pxnBalance -= amount;
-    listing.offers = listing.offers || [];
-    listing.offers.push({ id:genId("off"), buyerId:PLAYER_ID, buyerName:PLAYER_NAME, amount, ts:Date.now() });
-    saveMarketConfig(cfg);
-    saveState();
-    toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
-    renderMarket();
-  }
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
 
-  function cancelOffer(listingId, offerId){
-    const cfg = getMarketConfig();
-    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
-    if(!listing) return;
-    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId && o.buyerId===PLAYER_ID);
-    if(oi === -1) return;
-    const off = listing.offers.splice(oi,1)[0];
-    state.pxnBalance += off.amount;
-    saveMarketConfig(cfg);
-    saveState();
-    toast("Offer withdrawn — " + fmt(off.amount, 0) + " PXN refunded");
-    renderMarket();
-  }
+        const result = await callMarketplaceBackend("create_listing", {
+          inventory_id: uid,
+          asking_price_mpxn: price
+        }, accessToken);
 
-  function acceptOffer(listingId, offerId){
-    const cfg = getMarketConfig();
-    const lidx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
-    if(lidx === -1) return;
-    const listing = cfg.marketplace.listings[lidx];
-    if(listing.sellerId !== PLAYER_ID) return;
-    const accepted = (listing.offers||[]).find(o=>o.id===offerId);
-    if(!accepted) return;
-    state.pxnBalance += accepted.amount;
-    addPoints(50);
-    (listing.offers||[]).forEach(o=>{
-      if(o.id !== offerId){
-        cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Seller accepted a different offer" });
+        if(result.ok && result.data && result.data.success){
+          await refreshInventoryAfterMarketplaceMutation(accessToken);
+          saveState();
+          toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete(uid);
+        if(btn){ btn.disabled = false; btn.textContent = "LIST"; }
+        render(); renderMarket();
       }
-    });
-    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:accepted.buyerId, kind:"itemAdd", item:listing.item, ts:Date.now(), note:"Offer accepted on " + listing.item.name });
-    cfg.marketplace.listings.splice(lidx,1);
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Offer accepted — " + fmt(accepted.amount, 0) + " PXN added to your balance");
-    renderMarket();
+    })();
   }
 
-  function declineOffer(listingId, offerId){
-    const cfg = getMarketConfig();
-    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
-    if(!listing || listing.sellerId !== PLAYER_ID) return;
-    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId);
-    if(oi === -1) return;
-    const off = listing.offers.splice(oi,1)[0];
-    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:off.buyerId, kind:"refund", amount:off.amount, ts:Date.now(), note:"Seller declined your offer" });
-    saveMarketConfig(cfg);
-    toast("Offer declined — buyer refunded");
-    renderMarket();
+  function buyListing(listingId, btn){
+    if(pendingMarketActions.has("buy:" + listingId)) return;
+    pendingMarketActions.add("buy:" + listingId);
+    if(btn){ btn.disabled = true; btn.textContent = "BUYING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("buy_listing", {
+          listing_id: listingId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          await refreshInventoryAfterMarketplaceMutation(accessToken);
+          addPoints(50);
+          saveState();
+          toast("Purchase complete — " + fmt(result.data.data.asking_price_mpxn, 0) + " PXN");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("buy:" + listingId);
+        if(btn){ btn.disabled = false; btn.textContent = "BUY NOW"; }
+        render(); renderMarket();
+      }
+    })();
   }
 
-  function cancelListing(listingId){
-    const cfg = getMarketConfig();
-    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
-    if(idx === -1) return;
-    const listing = cfg.marketplace.listings[idx];
-    if(listing.sellerId !== PLAYER_ID) return;
-    (listing.offers||[]).forEach(o=>{
-      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing cancelled by seller" });
-    });
-    cfg.marketplace.listings.splice(idx,1);
-    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Listing cancelled — miner returned to your inventory");
-    renderMarket();
+  function makeOffer(listingId, amount, btn){
+    if(!(amount > 0)){ toast("Enter a valid offer amount"); return; }
+    if(pendingMarketActions.has("offer:" + listingId)) return;
+    pendingMarketActions.add("offer:" + listingId);
+    if(btn){ btn.disabled = true; btn.textContent = "SENDING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("make_offer", {
+          listing_id: listingId,
+          offer_price_mpxn: amount
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          saveState();
+          toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("offer:" + listingId);
+        if(btn){ btn.disabled = false; btn.textContent = "OFFER"; }
+        render(); renderMarket();
+      }
+    })();
+  }
+
+  function cancelOffer(listingId, offerId, btn){
+    if(pendingMarketActions.has("canceloffer:" + offerId)) return;
+    pendingMarketActions.add("canceloffer:" + offerId);
+    if(btn){ btn.disabled = true; btn.textContent = "WITHDRAWING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("cancel_offer", {
+          offer_id: offerId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          saveState();
+          toast("Offer withdrawn" + (Number.isFinite(Number(result.data.data.refund_amount_mpxn)) ? " — " + fmt(result.data.data.refund_amount_mpxn, 0) + " PXN refunded" : ""));
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("canceloffer:" + offerId);
+        if(btn){ btn.disabled = false; btn.textContent = "WITHDRAW"; }
+        render(); renderMarket();
+      }
+    })();
+  }
+
+  function acceptOffer(listingId, offerId, btn){
+    if(pendingMarketActions.has("accept:" + offerId)) return;
+    pendingMarketActions.add("accept:" + offerId);
+    if(btn){ btn.disabled = true; btn.textContent = "ACCEPTING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("accept_offer", {
+          offer_id: offerId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "seller_claimed_total");
+          addPoints(50);
+          saveState();
+          toast("Offer accepted" + (Number.isFinite(Number(result.data.data.seller_proceeds_mpxn)) ? " — " + fmt(result.data.data.seller_proceeds_mpxn, 0) + " PXN added to your balance" : ""));
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("accept:" + offerId);
+        if(btn){ btn.disabled = false; btn.textContent = "ACCEPT"; }
+        render(); renderMarket();
+      }
+    })();
+  }
+
+  function declineOffer(listingId, offerId, btn){
+    if(pendingMarketActions.has("reject:" + offerId)) return;
+    pendingMarketActions.add("reject:" + offerId);
+    if(btn){ btn.disabled = true; btn.textContent = "DECLINING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        // reject_offer only refunds the buyer (reflected the next time the
+        // buyer's own session reads their balance) — the seller's own
+        // state.claimedTotal never changes here, so nothing is applied
+        // locally from this response.
+        const result = await callMarketplaceBackend("reject_offer", {
+          offer_id: offerId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          toast("Offer declined — buyer refunded");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("reject:" + offerId);
+        if(btn){ btn.disabled = false; btn.textContent = "DECLINE"; }
+        renderMarket();
+      }
+    })();
+  }
+
+  function cancelListing(listingId, btn){
+    if(pendingMarketActions.has("cancellisting:" + listingId)) return;
+    pendingMarketActions.add("cancellisting:" + listingId);
+    if(btn){ btn.disabled = true; btn.textContent = "CANCELLING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("cancel_listing", {
+          listing_id: listingId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          await refreshInventoryAfterMarketplaceMutation(accessToken);
+          saveState();
+          toast("Listing cancelled — miner returned to your inventory");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("cancellisting:" + listingId);
+        if(btn){ btn.disabled = false; btn.textContent = "CANCEL"; }
+        render(); renderMarket();
+      }
+    })();
   }
 
   function marketItemThumb(item){
@@ -3174,6 +3525,232 @@
     return getMinerCatalogIcon(item.level, fallback, item.name);
   }
 
+  // ---------- marketplace READ migration (list_active_listings / get_my_listings /
+  // get_my_offers / get_seller_offers via callMarketplaceReadBackend) ----------
+  //
+  // This section supplies the READ/display source for Browse, My
+  // Listings, and My Sent Offers (Offers Received is merged into My
+  // Listings below, matching the existing combined UI). The BUY NOW /
+  // OFFER / CANCEL / ACCEPT / DECLINE buttons below call
+  // listMinerForSale()/cancelListing()/buyListing()/makeOffer()/
+  // cancelOffer()/acceptOffer()/declineOffer() with the real backend
+  // listing_id/offer_id these rows carry — those mutation handlers now go
+  // straight to callMarketplaceBackend() (see the "marketplace MUTATIONS"
+  // section) rather than the old local cfg.marketplace.listings.
+  //
+  // Field-name note: the marketplace-read Edge Function's exact response
+  // shape wasn't provided alongside this task (it's already deployed).
+  // The normalizers below assume the same { success, data } envelope as
+  // backend/supabase/functions/marketplace/index.ts (this project's own
+  // mutation function) and read the miner display fields using the same
+  // names mapBackendInventoryItem() already uses elsewhere in this file
+  // (miner_name/miner_icon/miner_tier/miner_speed), but fall back
+  // defensively through a few other plausible names/envelope shapes so a
+  // schema difference degrades gracefully (a generic "Miner" label/icon)
+  // instead of throwing. Never assumed: ownership. Ownership is read ONLY
+  // from is_own_listing / is_own_offer / seller_user_id / buyer_user_id as
+  // returned by the backend — never compared against PLAYER_ID (a local
+  // Telegram-derived pseudo-id, not the Supabase auth UUID the backend
+  // actually authorizes against).
+
+  /** First defined/non-null value of `keys` on `row`, else `fallback`. Never throws on a missing/null row. */
+  function marketPickField(row, keys, fallback){
+    if(!row) return fallback;
+    for(let i=0;i<keys.length;i++){
+      const v = row[keys[i]];
+      if(v !== undefined && v !== null) return v;
+    }
+    return fallback;
+  }
+
+  /** Array of rows from a callMarketplaceReadBackend() response body, trying the { data:[...] } envelope first, then a few plausible fallback keys. Returns null if none matched (caller treats that as a failed/unexpected response, not an empty result). */
+  function marketExtractArray(resultData, fallbackKeys){
+    if(!resultData) return null;
+    if(Array.isArray(resultData.data)) return resultData.data;
+    if(resultData.data && typeof resultData.data === "object"){
+      for(let i=0;i<fallbackKeys.length;i++){
+        if(Array.isArray(resultData.data[fallbackKeys[i]])) return resultData.data[fallbackKeys[i]];
+      }
+    }
+    for(let i=0;i<fallbackKeys.length;i++){
+      if(Array.isArray(resultData[fallbackKeys[i]])) return resultData[fallbackKeys[i]];
+    }
+    return null;
+  }
+
+  function normalizeMarketListingRow(row){
+    return {
+      listingId: marketPickField(row, ["listing_id","id"], null),
+      sellerUserId: marketPickField(row, ["seller_user_id"], null),
+      inventoryId: marketPickField(row, ["mining_inventory_id","inventory_id"], null),
+      price: Number(marketPickField(row, ["asking_price_mpxn"], 0)) || 0,
+      status: marketPickField(row, ["status"], "active"),
+      createdAt: marketPickField(row, ["created_at"], null),
+      isOwn: !!marketPickField(row, ["is_own_listing","is_own"], false),
+      sellerName: marketPickField(row, ["seller_name","seller_username"], "Seller"),
+      name: marketPickField(row, ["miner_name","item_name","name"], "Miner"),
+      icon: marketPickField(row, ["miner_icon","item_icon","icon"], null),
+      level: Number(marketPickField(row, ["miner_tier","miner_level","item_level","level"], 1)) || 1,
+      speed: Number(marketPickField(row, ["miner_speed","item_speed","speed"], 0)) || 0
+    };
+  }
+
+  function normalizeMarketOfferRow(row){
+    return {
+      offerId: marketPickField(row, ["offer_id","id"], null),
+      listingId: marketPickField(row, ["listing_id"], null),
+      buyerUserId: marketPickField(row, ["buyer_user_id"], null),
+      sellerUserId: marketPickField(row, ["seller_user_id"], null),
+      price: Number(marketPickField(row, ["offer_price_mpxn"], 0)) || 0,
+      status: marketPickField(row, ["status"], "open"),
+      createdAt: marketPickField(row, ["created_at"], null),
+      isOwnOffer: !!marketPickField(row, ["is_own_offer","is_own"], false),
+      buyerName: marketPickField(row, ["buyer_name","buyer_username"], "Buyer"),
+      name: marketPickField(row, ["miner_name","item_name","name"], "Miner"),
+      icon: marketPickField(row, ["miner_icon","item_icon","icon"], null),
+      level: Number(marketPickField(row, ["miner_tier","miner_level","item_level","level"], 1)) || 1
+    };
+  }
+
+  // In-memory only (never persisted to localStorage — this is a live
+  // mirror of backend state, same reasoning as maxLevelMiners/
+  // minerUpgradeCostsCache elsewhere in this file). Whatever was last
+  // successfully fetched stays on screen (rather than being blanked)
+  // if a later background refresh fails, so a transient network hiccup
+  // doesn't flash the Marketplace panes empty.
+  const marketReadCache = {
+    loaded: false,
+    loading: false,
+    listings: [],
+    myListings: [],
+    myOffers: [],
+    sellerOffers: [],
+    errors: { listings: null, myListings: null, myOffers: null, sellerOffers: null }
+  };
+  let marketReadFetchedAt = 0;
+  let marketReadFetchInFlight = null;
+  const MARKET_READ_STALE_MS = 10000;
+
+  /**
+   * Fetches all four Marketplace READ actions in parallel via
+   * callMarketplaceReadBackend() and populates marketReadCache. Same
+   * staleness-cache + shared-in-flight-promise pattern as
+   * getMinerUpgradeCosts() above, so renderMarket() (called every render()
+   * tick) triggering this every time it runs does NOT mean a network
+   * request every tick — only when the cache is missing/stale and no
+   * fetch is already in flight. Always resolves (never throws); a partial
+   * failure (e.g. one of the four actions erroring) leaves that section's
+   * previous cached data in place and records a safe message in
+   * marketReadCache.errors for renderMarket() to show only if there is no
+   * previous data to fall back to.
+   */
+  async function refreshMarketplaceReadData(forceRefresh){
+    const isStale = (Date.now() - marketReadFetchedAt) > MARKET_READ_STALE_MS;
+    if(!forceRefresh && marketReadCache.loaded && !isStale){
+      return marketReadCache;
+    }
+    if(marketReadFetchInFlight){
+      return marketReadFetchInFlight;
+    }
+
+    marketReadCache.loading = true;
+    renderMarket();
+
+    marketReadFetchInFlight = (async () => {
+      try{
+        if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+          const msg = "Backend unavailable — try again shortly";
+          marketReadCache.errors = { listings: msg, myListings: msg, myOffers: msg, sellerOffers: msg };
+          return marketReadCache;
+        }
+        const accessToken = await ProXAuth.getAccessToken();
+        if(!accessToken){
+          const msg = "Please reconnect your Telegram account.";
+          marketReadCache.errors = { listings: msg, myListings: msg, myOffers: msg, sellerOffers: msg };
+          return marketReadCache;
+        }
+
+        const [listRes, myListRes, myOffersRes, sellerOffersRes] = await Promise.all([
+          callMarketplaceReadBackend("list_active_listings", {}, accessToken),
+          callMarketplaceReadBackend("get_my_listings", {}, accessToken),
+          callMarketplaceReadBackend("get_my_offers", {}, accessToken),
+          callMarketplaceReadBackend("get_seller_offers", {}, accessToken)
+        ]);
+
+        if(listRes.ok && listRes.data && listRes.data.success){
+          const rows = marketExtractArray(listRes.data, ["listings","active_listings","rows"]);
+          if(rows){
+            marketReadCache.listings = rows.map(normalizeMarketListingRow);
+            marketReadCache.errors.listings = null;
+          } else {
+            marketReadCache.errors.listings = "Could not load Marketplace listings — try again.";
+            console.info("[Marketplace] list_active_listings returned an unexpected shape:", listRes.data);
+          }
+        } else {
+          marketReadCache.errors.listings = marketplaceErrorMessage(listRes);
+          console.info("[Marketplace] list_active_listings fetch not completed:", marketReadCache.errors.listings);
+        }
+
+        if(myListRes.ok && myListRes.data && myListRes.data.success){
+          const rows = marketExtractArray(myListRes.data, ["listings","my_listings","rows"]);
+          if(rows){
+            marketReadCache.myListings = rows.map(normalizeMarketListingRow);
+            marketReadCache.errors.myListings = null;
+          } else {
+            marketReadCache.errors.myListings = "Could not load your listings — try again.";
+            console.info("[Marketplace] get_my_listings returned an unexpected shape:", myListRes.data);
+          }
+        } else {
+          marketReadCache.errors.myListings = marketplaceErrorMessage(myListRes);
+          console.info("[Marketplace] get_my_listings fetch not completed:", marketReadCache.errors.myListings);
+        }
+
+        if(myOffersRes.ok && myOffersRes.data && myOffersRes.data.success){
+          const rows = marketExtractArray(myOffersRes.data, ["offers","my_offers","rows"]);
+          if(rows){
+            marketReadCache.myOffers = rows.map(normalizeMarketOfferRow);
+            marketReadCache.errors.myOffers = null;
+          } else {
+            marketReadCache.errors.myOffers = "Could not load your sent offers — try again.";
+            console.info("[Marketplace] get_my_offers returned an unexpected shape:", myOffersRes.data);
+          }
+        } else {
+          marketReadCache.errors.myOffers = marketplaceErrorMessage(myOffersRes);
+          console.info("[Marketplace] get_my_offers fetch not completed:", marketReadCache.errors.myOffers);
+        }
+
+        if(sellerOffersRes.ok && sellerOffersRes.data && sellerOffersRes.data.success){
+          const rows = marketExtractArray(sellerOffersRes.data, ["offers","seller_offers","rows"]);
+          if(rows){
+            marketReadCache.sellerOffers = rows.map(normalizeMarketOfferRow);
+            marketReadCache.errors.sellerOffers = null;
+          } else {
+            marketReadCache.errors.sellerOffers = "Could not load offers on your listings — try again.";
+            console.info("[Marketplace] get_seller_offers returned an unexpected shape:", sellerOffersRes.data);
+          }
+        } else {
+          marketReadCache.errors.sellerOffers = marketplaceErrorMessage(sellerOffersRes);
+          console.info("[Marketplace] get_seller_offers fetch not completed:", marketReadCache.errors.sellerOffers);
+        }
+
+        marketReadCache.loaded = true;
+        marketReadFetchedAt = Date.now();
+        return marketReadCache;
+      } finally {
+        marketReadCache.loading = false;
+        marketReadFetchInFlight = null;
+        renderMarket();
+      }
+    })();
+
+    return marketReadFetchInFlight;
+  }
+
+  // Exposed so the ProXAuth init block earlier in this page can trigger the
+  // initial load once a session is confirmed established — same load-order
+  // reasoning as window.__proxRefreshMinerCatalog/window.__proxSyncInventoryFromBackend.
+  window.__proxRefreshMarketplaceReadData = refreshMarketplaceReadData;
+
   function renderMarket(){
     const cfg = getMarketConfig();
 
@@ -3187,111 +3764,151 @@
       sel.appendChild(opt);
     });
 
-    // browse: other players' listings
+    // Marketplace READ data is refreshed only via the explicit
+    // initial-load (window.__proxRefreshMarketplaceReadData), Marketplace
+    // tab-click (refreshMarketplaceReadData(true)), and post-mutation
+    // (refreshMarketplaceReadData(true)) paths elsewhere in this file —
+    // NOT from here. renderMarket() below simply paints whatever is
+    // currently in marketReadCache.
+
+    const showInitialLoading = marketReadCache.loading && !marketReadCache.loaded;
+
+    // browse: other players' active listings (list_active_listings).
+    // is_own_listing (when present) is the ONLY signal used to exclude the
+    // caller's own listings here — never a comparison against PLAYER_ID
+    // (see the section header comment above for why).
     const listingsWrap = document.getElementById("marketListings");
     listingsWrap.innerHTML = "";
-    const others = cfg.marketplace.listings.filter(l=>l.sellerId !== PLAYER_ID);
-    if(!others.length){
-      listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+    if(showInitialLoading){
+      listingsWrap.innerHTML = `<div class="empty-note">Loading Marketplace listings…</div>`;
+    } else if(marketReadCache.errors.listings && !marketReadCache.listings.length){
+      listingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.listings)}</div>`;
+    } else {
+      const others = marketReadCache.listings.filter(l=>!l.isOwn);
+      if(!others.length){
+        listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+      }
+      others.forEach(l=>{
+        // "Your offer already pending on this listing" comes from the
+        // separately-fetched get_my_offers list, matched by listing_id —
+        // list_active_listings itself is not assumed to carry the
+        // caller's own offers inline.
+        const myOffer = marketReadCache.myOffers.find(o=>o.listingId===l.listingId && o.status==="open");
+        const div = document.createElement("div");
+        div.className = "panel market-card";
+        div.innerHTML = `
+          <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
+          <div class="market-card-name">${escapeHtml(l.name)}</div>
+          <div class="market-card-sub">${l.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${escapeHtml(l.sellerName)}</div>
+          <div class="market-card-price">${fmt(l.price,0)} PXN</div>
+          <button class="btn" data-buy-listing="${l.listingId}">BUY NOW</button>
+          ${myOffer
+            ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.price,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.listingId}|${myOffer.offerId}">WITHDRAW</button></div>`
+            : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.listingId}"><button class="btn secondary" data-make-offer="${l.listingId}">OFFER</button></div>`}
+        `;
+        listingsWrap.appendChild(div);
+      });
     }
-    others.forEach(l=>{
-      const myOffer = (l.offers||[]).find(o=>o.buyerId===PLAYER_ID);
-      const div = document.createElement("div");
-      div.className = "panel market-card";
-      div.innerHTML = `
-        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
-        <div class="market-card-name">${l.item.name}</div>
-        <div class="market-card-sub">${l.item.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${l.sellerName}</div>
-        <div class="market-card-price">${fmt(l.price,0)} PXN</div>
-        <button class="btn" data-buy-listing="${l.id}">BUY NOW</button>
-        ${myOffer
-          ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.amount,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.id}|${myOffer.id}">WITHDRAW</button></div>`
-          : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.id}"><button class="btn secondary" data-make-offer="${l.id}">OFFER</button></div>`}
-      `;
-      listingsWrap.appendChild(div);
-    });
+    // Mutation handlers (buyListing/makeOffer/cancelOffer) — wired up as
+    // before, now backed by callMarketplaceBackend() against the real
+    // backend listing_id/offer_id these rows carry.
     listingsWrap.querySelectorAll("[data-buy-listing]").forEach(btn=>{
-      btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing));
+      btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing, btn));
     });
     listingsWrap.querySelectorAll("[data-make-offer]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const lid = btn.dataset.makeOffer;
         const val = parseFloat(document.getElementById("offer-" + lid).value);
-        makeOffer(lid, val);
+        makeOffer(lid, val, btn);
       });
     });
     listingsWrap.querySelectorAll("[data-withdraw-offer]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const [lid, oid] = btn.dataset.withdrawOffer.split("|");
-        cancelOffer(lid, oid);
+        cancelOffer(lid, oid, btn);
       });
     });
 
-    // my listings
-    const mine = cfg.marketplace.listings.filter(l=>l.sellerId === PLAYER_ID);
+    // my listings (get_my_listings), with Offers Received merged in from
+    // get_seller_offers by listing_id — matching the existing combined UI
+    // (a single "YOUR LISTINGS" pane that already showed each listing's
+    // own offers inline, rather than a separate Offers Received pane).
     const myListingsWrap = document.getElementById("myListings");
     myListingsWrap.innerHTML = "";
-    if(!mine.length){
-      myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
+    if(showInitialLoading){
+      myListingsWrap.innerHTML = `<div class="empty-note">Loading your listings…</div>`;
+    } else if(marketReadCache.errors.myListings && !marketReadCache.myListings.length){
+      myListingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.myListings)}</div>`;
+    } else {
+      const mine = marketReadCache.myListings;
+      if(!mine.length){
+        myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
+      }
+      mine.forEach(l=>{
+        const offersForListing = marketReadCache.sellerOffers.filter(o=>o.listingId===l.listingId && o.status==="open");
+        const offersHtml = offersForListing.length
+          ? `<div class="listing-offers">` + offersForListing.map(o=>`
+              <div class="listing-offer-row">
+                <span class="who">${escapeHtml(o.buyerName)}</span>
+                <span class="amt">${fmt(o.price,0)} PXN</span>
+                <div class="offer-actions">
+                  <button class="btn good" data-accept="${l.listingId}|${o.offerId}">ACCEPT</button>
+                  <button class="btn danger" data-decline="${l.listingId}|${o.offerId}">DECLINE</button>
+                </div>
+              </div>`).join("") + `</div>`
+          : "";
+        const div = document.createElement("div");
+        div.className = "panel market-card";
+        div.innerHTML = `
+          <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
+          <div class="market-card-name">${escapeHtml(l.name)}</div>
+          <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${offersForListing.length} offer(s)</div>
+          <button class="btn secondary" data-cancel-listing="${l.listingId}">CANCEL</button>
+          ${offersHtml}
+        `;
+        myListingsWrap.appendChild(div);
+      });
     }
-    mine.forEach(l=>{
-      const div = document.createElement("div");
-      div.className = "panel market-card";
-      const offersHtml = (l.offers||[]).length
-        ? `<div class="listing-offers">` + l.offers.map(o=>`
-            <div class="listing-offer-row">
-              <span class="who">${o.buyerName}</span>
-              <span class="amt">${fmt(o.amount,0)} PXN</span>
-              <div class="offer-actions">
-                <button class="btn good" data-accept="${l.id}|${o.id}">ACCEPT</button>
-                <button class="btn danger" data-decline="${l.id}|${o.id}">DECLINE</button>
-              </div>
-            </div>`).join("") + `</div>`
-        : "";
-      div.innerHTML = `
-        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
-        <div class="market-card-name">${l.item.name}</div>
-        <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${(l.offers||[]).length} offer(s)</div>
-        <button class="btn secondary" data-cancel-listing="${l.id}">CANCEL</button>
-        ${offersHtml}
-      `;
-      myListingsWrap.appendChild(div);
-    });
+    // Mutation handlers (cancelListing/acceptOffer/declineOffer), backed by callMarketplaceBackend().
     myListingsWrap.querySelectorAll("[data-cancel-listing]").forEach(btn=>{
-      btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing));
+      btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing, btn));
     });
     myListingsWrap.querySelectorAll("[data-accept]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.accept.split("|"); acceptOffer(lid,oid); });
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.accept.split("|"); acceptOffer(lid,oid,btn); });
     });
     myListingsWrap.querySelectorAll("[data-decline]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid); });
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid,btn); });
     });
 
-    // my sent offers (across everyone's listings)
+    // my sent offers (get_my_offers) — across everyone's listings.
     const myOffersWrap = document.getElementById("myOffers");
     myOffersWrap.innerHTML = "";
-    const sentOffers = [];
-    cfg.marketplace.listings.forEach(l=>{
-      (l.offers||[]).forEach(o=>{ if(o.buyerId === PLAYER_ID) sentOffers.push({ listing:l, offer:o }); });
-    });
-    if(!sentOffers.length){
-      myOffersWrap.innerHTML = `<div class="empty-note">You haven't made any offers.</div>`;
+    if(showInitialLoading){
+      myOffersWrap.innerHTML = `<div class="empty-note">Loading your sent offers…</div>`;
+    } else if(marketReadCache.errors.myOffers && !marketReadCache.myOffers.length){
+      myOffersWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.myOffers)}</div>`;
+    } else {
+      const sentOffers = marketReadCache.myOffers.filter(o=>o.status==="open");
+      if(!sentOffers.length){
+        myOffersWrap.innerHTML = `<div class="empty-note">You haven't made any offers.</div>`;
+      }
+      sentOffers.forEach(o=>{
+        const div = document.createElement("div");
+        div.className = "panel card";
+        div.innerHTML = `
+          <div class="card-icon miner-icon-wrap small">${marketItemThumb(o)}</div>
+          <div class="card-body">
+            <div class="card-title">${escapeHtml(o.name)}</div>
+            <div class="card-sub">Your offer: ${fmt(o.price,0)} PXN</div>
+          </div>
+          <div class="card-cta"><button class="btn secondary" data-withdraw="${o.listingId}|${o.offerId}">WITHDRAW</button></div>
+        `;
+        myOffersWrap.appendChild(div);
+      });
     }
-    sentOffers.forEach(({listing,offer})=>{
-      const div = document.createElement("div");
-      div.className = "panel card";
-      div.innerHTML = `
-        <div class="card-icon miner-icon-wrap small">${marketItemThumb(listing.item)}</div>
-        <div class="card-body">
-          <div class="card-title">${listing.item.name}</div>
-          <div class="card-sub">Your offer: ${fmt(offer.amount,0)} PXN · seller ${listing.sellerName}</div>
-        </div>
-        <div class="card-cta"><button class="btn secondary" data-withdraw="${listing.id}|${offer.id}">WITHDRAW</button></div>
-      `;
-      myOffersWrap.appendChild(div);
-    });
+    // Mutation handler (cancelOffer), backed by callMarketplaceBackend().
     myOffersWrap.querySelectorAll("[data-withdraw]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid); });
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid,btn); });
     });
 
     // leaderboard
@@ -3752,6 +4369,13 @@
       document.querySelectorAll(".market-pane").forEach(p=>p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById("mpane-" + btn.dataset.mtab).classList.add("active");
+      // Same "prefetch on open" pattern as the store-tab handler below
+      // (Inventory prefetching live upgrade costs) — forces a fresh
+      // Marketplace read on Browse/My Listings open rather than waiting
+      // for the next stale-cache window (see refreshMarketplaceReadData()).
+      if(btn.dataset.mtab === "browse" || btn.dataset.mtab === "mine"){
+        refreshMarketplaceReadData(true);
+      }
     });
   });
 
@@ -3775,7 +4399,7 @@
     const uid = document.getElementById("sellMinerSelect").value;
     const price = parseFloat(document.getElementById("sellPriceInput").value);
     if(!uid){ toast("No miner selected"); return; }
-    listMinerForSale(uid, price);
+    listMinerForSale(uid, price, document.getElementById("listMinerBtn"));
     document.getElementById("sellPriceInput").value = "";
   });
   document.getElementById("roadmapBtn").addEventListener("click", ()=> toast("Roadmap coming soon!"));
@@ -3792,14 +4416,14 @@
     const access = checkAccessStatus();
     if(access.blocked){ showBlockOverlay(access.reason); return; }
     hideBlockOverlay();
-    accrue(); saveState(); processSettlements(); render(); syncPlayerRecord();
+    accrue(); saveState(); /* processSettlements(); — disabled: obsolete localStorage Marketplace settlement processor, see processSettlements() definition above */ render(); syncPlayerRecord();
   }, 1000);
 
   const initialAccess = checkAccessStatus();
   if(initialAccess.blocked){
     showBlockOverlay(initialAccess.reason);
   } else {
-    accrue(); processSettlements(); render(); syncPlayerRecord();
+    accrue(); /* processSettlements(); — disabled: obsolete localStorage Marketplace settlement processor, see processSettlements() definition above */ render(); syncPlayerRecord();
   }
 })();
 </script>
