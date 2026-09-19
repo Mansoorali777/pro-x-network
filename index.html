@@ -931,7 +931,7 @@
         <div class="panel stat2-box">
           <div class="eyebrow">LEVEL UP</div>
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-            <div class="stat-val cyan" id="mineLevelCost" style="font-size:14px;">100 PXN</div>
+            <div class="stat-val cyan" id="mineLevelCost" style="font-size:14px;">100 m.PXN</div>
             <button class="btn" id="mineLevelUpBtn" style="padding:6px 10px; font-size:11px;">UP</button>
           </div>
         </div>
@@ -995,7 +995,7 @@
         <div class="eyebrow">LIST ONE OF YOUR MINERS</div>
         <select class="msel" id="sellMinerSelect"></select>
         <div style="display:flex; gap:8px;">
-          <input class="mnum" type="number" min="1" step="1" id="sellPriceInput" placeholder="Asking price (PXN)">
+          <input class="mnum" type="number" min="1" step="1" id="sellPriceInput" placeholder="Asking price (m.PXN)">
           <button class="btn" id="listMinerBtn">LIST</button>
         </div>
       </div>
@@ -1058,14 +1058,15 @@
 
   <!-- ============ WALLET SCREEN ============ -->
   <div class="screen" id="screen-wallet">
-    <!-- 1. WALLET HEADER / BALANCE — authoritative PXN balance only, never
-         computed or adjusted on the frontend. Kept in sync by
-         refreshAuthoritativePxnBalance() / renderWallet() below. -->
-    <div class="panel invite-panel" style="margin-top:6px;">
-      <div class="eyebrow">PXN BALANCE</div>
-      <div class="big" id="pxnBalanceBig">0.0000</div>
-      <div class="card-sub" style="margin-top:2px;" id="pxnBalanceSub">PXN — used to buy miners in the Store &amp; level up</div>
-    </div>
+    <!-- 1. WALLET HEADER / BALANCE — the obsolete gameplay "PXN BALANCE"
+         panel (which described PXN as "used to buy miners in the Store &
+         level up") has been removed: the Store and Level Up both now spend
+         m.PXN (mining_state.claimed_total) via purchase-miner /
+         level-up-mining, so that description is no longer accurate. The
+         underlying state.pxnBalance field and its backend sync
+         (refreshAuthoritativePxnBalance() / syncMiningRateFromBackend())
+         are left fully intact — only this now-inaccurate display panel is
+         removed, not the PXN token feature itself. -->
 
     <!-- 2. MINING REWARDS CARD — read-only display of existing
          state.minedBalance / state.claimedTotal / state.pendingClaim.
@@ -1414,8 +1415,9 @@
     return minerIconSvg(level) + `<div class="level-badge">L${level}</div>`;
   }
 
-  // Mining Level is a standalone stat (bought with PXN, not tied to any store
-  // miner), so its icon must never look up a store item by level id.
+  // Mining Level is a standalone stat (bought with m.PXN via level-up-mining,
+  // not tied to any store miner), so its icon must never look up a store
+  // item by level id.
   function levelBadgeIcon(level){
     return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${MINER_ICON_INNER.default}</svg><div class="level-badge">L${level}</div>`;
   }
@@ -1450,7 +1452,7 @@
     adBoostMultiplier: 2,
     adBoostDurationHours: 8,
     adSimSeconds: 5, // length of the simulated ad — see note near watchAdBtn
-    levelUpCostPxn: 100,     // PXN cost to level up (independent of the miner store)
+    levelUpCostPxn: 100,     // m.PXN cost to level up, mirroring mining_config.level_up_cost_pxn (independent of the miner store)
     levelBoostPercent: 0.05, // % mining-speed boost gained per level, applied cumulatively
   };
   if(adminConfig && adminConfig.rewards){
@@ -1478,7 +1480,7 @@
       adsWindowStart: 0,
       adBoostUntil: 0,
       claimedTotal: 0,       // spendable balance, used for marketplace purchases only
-      pxnBalance: 0,         // PXN token balance — used for the Miner Store + leveling up
+      pxnBalance: 0,         // separate PXN token balance (not m.PXN) — no longer spent by the Miner Store or leveling up; kept in sync for future PXN token use
       inventory: [],         // owned miner units — [{uid, level, name, icon, speed}]
       monthlyPoints: 0,      // leaderboard activity score — resets every calendar month
       monthlyPeriodKey: currentMonthKey(),
@@ -1533,7 +1535,7 @@
   // ---------- inventory bootstrap & helpers ----------
   // Miners bought from the Store become individually-owned units (so they can
   // later be listed on the Marketplace). Mining Level is a separate, standalone
-  // stat (raised only by spending PXN via levelUp()) — it is not derived from
+  // stat (raised only by spending m.PXN via levelUp()/level-up-mining) — it is not derived from
   // which miners a player owns. New players own NO store miners at all: they
   // mine at a fixed baseline speed (DEFAULT_BASE_SPEED, below) until they buy
   // a miner from the Store and tap "Apply" on it in their Inventory, which
@@ -1970,18 +1972,132 @@
   }
 
   // Mining Level boost: +levelBoostPercent% mining speed for every level above 1,
-  // spent 100 PXN at a time via the LEVEL UP button (see levelUp()).
+  // spent 100 m.PXN at a time via the LEVEL UP button (see levelUp()).
   function levelBoostMultiplier(){
     return 1 + (Math.max(1, state.level) - 1) * (REWARDS_CONFIG.levelBoostPercent / 100);
   }
 
-  function levelUp(){
-    const cost = REWARDS_CONFIG.levelUpCostPxn;
-    if(state.pxnBalance < cost){ toast("Need " + fmt(cost, 0) + " PXN to level up"); return; }
-    state.pxnBalance -= cost;
-    state.level += 1;
-    saveState(); render();
-    toast("Leveled up to " + state.level + " — +" + REWARDS_CONFIG.levelBoostPercent + "% mining boost");
+  // ---------- server-authoritative Mining Level Up (level-up-mining) ----------
+  // Replaces the old LOCAL-ONLY levelUp() (which deducted state.pxnBalance
+  // and incremented state.level with nothing server-side ever validating
+  // either change) with a real call to the existing level-up-mining Edge
+  // Function, which is the single source of truth for the level cap, cost
+  // lookup, and m.PXN (mining_state.claimed_total) deduction — see that
+  // function's own header comment. Nothing here re-implements any of that
+  // server-side logic — this is purely "call it, then reflect what it
+  // returns". Auth is untouched: the access token comes only from the
+  // existing window.ProXAuth.getAccessToken().
+
+  // Guards against a double-click firing two overlapping level-up requests
+  // while the first is still in flight — same role as
+  // claimInProgress/minerPurchaseInProgress/pendingMinerUpgrades elsewhere
+  // in this file.
+  let levelUpInProgress = false;
+
+  /**
+   * Small, self-contained call to POST /functions/v1/level-up-mining. Used
+   * instead of ProXBackend._callFunction() for the same reason
+   * callPurchaseMinerBackend()/callUpgradeMinerBackend() above are: that
+   * generic helper (js/api-client.js) normalizes away the HTTP status code,
+   * and the required error handling here (400/401/404/409/500) needs it.
+   * Reuses the SAME existing window.PROX_CONFIG (FUNCTIONS_URL /
+   * SUPABASE_ANON_KEY) already shipped with the project — no new URL, no
+   * new config. Always resolves (never throws). Sends a client-generated
+   * requestId — the backend's idempotency key — so a dropped response can
+   * be retried safely without double-charging; the backend never trusts
+   * any level, cost, or userId from this body (see level-up-mining/index.ts).
+   */
+  async function callLevelUpMiningBackend(requestId, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/level-up-mining", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ requestId: requestId })
+      });
+
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON/empty body — leave json null */ }
+
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
+    }
+  }
+
+  /** Safe, non-sensitive message for a failed level-up-mining call, preferring the backend's own (already-sanitized) message when present — e.g. "Not enough m.PXN to level up" or "Already at the maximum level" are both safe and specific (see level-up-mining/index.ts). Falls back to a generic, status-keyed message otherwise, same pattern as purchaseMinerErrorMessage()/upgradeMinerErrorMessage() above. */
+  function levelUpErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    switch(result.status){
+      case 401: return "Please reconnect your Telegram account.";
+      case 404: return "No mining data found — try refreshing.";
+      case 409: return "That level-up request was already processed.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Network error — try again.";
+    }
+  }
+
+  /**
+   * Handles a LEVEL UP click end-to-end: gets the access token, calls
+   * level-up-mining, and — ONLY on a verified success response — applies
+   * the server's own returned new_level/claimed_total to local state. The
+   * cost is NEVER computed or deducted locally. On any failure, local
+   * level/claimedTotal are left completely untouched, and state.pxnBalance
+   * (the separate, still-live PXN feature) is never read or written here.
+   */
+  async function levelUp(){
+    if(levelUpInProgress) return;
+    if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+      toast("Backend unavailable — try again shortly");
+      return;
+    }
+
+    levelUpInProgress = true;
+    render(); // reflects the disabled/pending state via levelUpInProgress immediately
+
+    try{
+      const accessToken = await window.ProXAuth.getAccessToken();
+      if(!accessToken){
+        toast("Please reconnect your Telegram account.");
+        return;
+      }
+
+      const requestId = (window.crypto && typeof window.crypto.randomUUID === "function")
+        ? window.crypto.randomUUID()
+        : null;
+      const result = await callLevelUpMiningBackend(requestId, accessToken);
+
+      if(result.ok && result.data && result.data.success){
+        // Server-authoritative only — never computed locally, never
+        // derived from the cost shown on screen. level-up-mining deducts
+        // m.PXN (mining_state.claimed_total), NOT PXN (state.pxnBalance),
+        // which is intentionally left untouched here.
+        const newLevel = Number(result.data.new_level);
+        const newClaimedTotal = Number(result.data.claimed_total);
+        if(Number.isFinite(newLevel)) state.level = newLevel;
+        if(Number.isFinite(newClaimedTotal)) state.claimedTotal = newClaimedTotal;
+
+        saveState();
+        toast("Leveled up to " + state.level + " — +" + REWARDS_CONFIG.levelBoostPercent + "% mining boost");
+      } else {
+        // Failure: local level/claimedTotal are left completely untouched.
+        toast(levelUpErrorMessage(result));
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      levelUpInProgress = false;
+      render();
+    }
   }
 
   function checkMonthlyReset(){
@@ -2276,8 +2392,9 @@
     }
     document.getElementById("statLevel").textContent = "Lv. " + state.level;
     document.getElementById("statMinerIcon").innerHTML = levelBadgeIcon(state.level);
-    document.getElementById("mineLevelCost").textContent = fmt(REWARDS_CONFIG.levelUpCostPxn, 0) + " PXN";
-    document.getElementById("mineLevelUpBtn").disabled = state.pxnBalance < REWARDS_CONFIG.levelUpCostPxn;
+    document.getElementById("mineLevelCost").textContent = fmt(REWARDS_CONFIG.levelUpCostPxn, 0) + " m.PXN";
+    document.getElementById("mineLevelUpBtn").disabled = levelUpInProgress || state.claimedTotal < REWARDS_CONFIG.levelUpCostPxn;
+    document.getElementById("mineLevelUpBtn").textContent = levelUpInProgress ? "…" : "UP";
     document.getElementById("claimReady").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
     document.getElementById("claimReadyUsd").textContent = fmtUsd(state.pendingClaim);
     document.getElementById("claimBtn").disabled = state.pendingClaim < 0.0001 || claimInProgress;
@@ -2322,13 +2439,13 @@
     renderWallet();
   }
 
-  // Wallet screen is read-only display: it renders the existing
-  // authoritative state.pxnBalance (kept correct by
-  // refreshAuthoritativePxnBalance()/accrue-mining sync elsewhere in this
-  // file) plus the existing mining-reward totals. Nothing here computes or
-  // mutates a balance.
+  // Wallet screen is read-only display: the obsolete "PXN BALANCE" panel
+  // (and its pxnBalanceBig element) has been removed from the markup above,
+  // so this no longer displays state.pxnBalance — it only renders the
+  // existing mining-reward totals. state.pxnBalance itself is still kept
+  // correct by refreshAuthoritativePxnBalance()/accrue-mining sync
+  // elsewhere in this file; nothing here computes or mutates a balance.
   function renderWallet(){
-    document.getElementById("pxnBalanceBig").textContent = fmt(state.pxnBalance, 2);
     document.getElementById("miningTotalMined").textContent = fmt(state.minedBalance) + " " + TOKEN_SYMBOL;
     document.getElementById("miningClaimed").textContent = fmt(state.claimedTotal, 4) + " " + TOKEN_SYMBOL;
     document.getElementById("miningPending").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
@@ -3299,7 +3416,7 @@
         if(result.ok && result.data && result.data.success){
           await refreshInventoryAfterMarketplaceMutation(accessToken);
           saveState();
-          toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
+          toast("Listed " + item.name + " for " + fmt(price, 0) + " m.PXN");
           await refreshMarketplaceReadData(true);
         } else {
           toast(marketplaceErrorMessage(result));
@@ -3333,7 +3450,7 @@
           await refreshInventoryAfterMarketplaceMutation(accessToken);
           addPoints(50);
           saveState();
-          toast("Purchase complete — " + fmt(result.data.data.asking_price_mpxn, 0) + " PXN");
+          toast("Purchase complete — " + fmt(result.data.data.asking_price_mpxn, 0) + " m.PXN");
           await refreshMarketplaceReadData(true);
         } else {
           toast(marketplaceErrorMessage(result));
@@ -3367,7 +3484,7 @@
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
           saveState();
-          toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
+          toast("Offer of " + fmt(amount, 0) + " m.PXN sent — held in escrow");
           await refreshMarketplaceReadData(true);
         } else {
           toast(marketplaceErrorMessage(result));
@@ -3399,7 +3516,7 @@
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
           saveState();
-          toast("Offer withdrawn" + (Number.isFinite(Number(result.data.data.refund_amount_mpxn)) ? " — " + fmt(result.data.data.refund_amount_mpxn, 0) + " PXN refunded" : ""));
+          toast("Offer withdrawn" + (Number.isFinite(Number(result.data.data.refund_amount_mpxn)) ? " — " + fmt(result.data.data.refund_amount_mpxn, 0) + " m.PXN refunded" : ""));
           await refreshMarketplaceReadData(true);
         } else {
           toast(marketplaceErrorMessage(result));
@@ -3432,7 +3549,7 @@
           applyMarketplaceClaimedTotal(result.data.data, "seller_claimed_total");
           addPoints(50);
           saveState();
-          toast("Offer accepted" + (Number.isFinite(Number(result.data.data.seller_proceeds_mpxn)) ? " — " + fmt(result.data.data.seller_proceeds_mpxn, 0) + " PXN added to your balance" : ""));
+          toast("Offer accepted" + (Number.isFinite(Number(result.data.data.seller_proceeds_mpxn)) ? " — " + fmt(result.data.data.seller_proceeds_mpxn, 0) + " m.PXN added to your balance" : ""));
           await refreshMarketplaceReadData(true);
         } else {
           toast(marketplaceErrorMessage(result));
@@ -3800,11 +3917,11 @@
           <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
           <div class="market-card-name">${escapeHtml(l.name)}</div>
           <div class="market-card-sub">${l.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${escapeHtml(l.sellerName)}</div>
-          <div class="market-card-price">${fmt(l.price,0)} PXN</div>
+          <div class="market-card-price">${fmt(l.price,0)} m.PXN</div>
           <button class="btn" data-buy-listing="${l.listingId}">BUY NOW</button>
           ${myOffer
-            ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.price,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.listingId}|${myOffer.offerId}">WITHDRAW</button></div>`
-            : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.listingId}"><button class="btn secondary" data-make-offer="${l.listingId}">OFFER</button></div>`}
+            ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.price,0)} m.PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.listingId}|${myOffer.offerId}">WITHDRAW</button></div>`
+            : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (m.PXN)" id="offer-${l.listingId}"><button class="btn secondary" data-make-offer="${l.listingId}">OFFER</button></div>`}
         `;
         listingsWrap.appendChild(div);
       });
@@ -3850,7 +3967,7 @@
           ? `<div class="listing-offers">` + offersForListing.map(o=>`
               <div class="listing-offer-row">
                 <span class="who">${escapeHtml(o.buyerName)}</span>
-                <span class="amt">${fmt(o.price,0)} PXN</span>
+                <span class="amt">${fmt(o.price,0)} m.PXN</span>
                 <div class="offer-actions">
                   <button class="btn good" data-accept="${l.listingId}|${o.offerId}">ACCEPT</button>
                   <button class="btn danger" data-decline="${l.listingId}|${o.offerId}">DECLINE</button>
@@ -3862,7 +3979,7 @@
         div.innerHTML = `
           <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
           <div class="market-card-name">${escapeHtml(l.name)}</div>
-          <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${offersForListing.length} offer(s)</div>
+          <div class="market-card-sub">Asking ${fmt(l.price,0)} m.PXN · ${offersForListing.length} offer(s)</div>
           <button class="btn secondary" data-cancel-listing="${l.listingId}">CANCEL</button>
           ${offersHtml}
         `;
@@ -3899,7 +4016,7 @@
           <div class="card-icon miner-icon-wrap small">${marketItemThumb(o)}</div>
           <div class="card-body">
             <div class="card-title">${escapeHtml(o.name)}</div>
-            <div class="card-sub">Your offer: ${fmt(o.price,0)} PXN</div>
+            <div class="card-sub">Your offer: ${fmt(o.price,0)} m.PXN</div>
           </div>
           <div class="card-cta"><button class="btn secondary" data-withdraw="${o.listingId}|${o.offerId}">WITHDRAW</button></div>
         `;
