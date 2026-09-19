@@ -1296,6 +1296,17 @@
         if (typeof window.__proxRefreshMinerCatalog === "function") {
           window.__proxRefreshMinerCatalog();
         }
+
+        // One-time initial load of Marketplace READ data (Browse/My
+        // Listings/My Sent Offers/Offers Received — the Marketplace READ
+        // migration stage). Defined inside the game IIFE further down this
+        // page and exposed as window.__proxRefreshMarketplaceReadData —
+        // same load-order reasoning as the two calls above. renderMarket()
+        // also triggers this itself (with its own staleness/in-flight
+        // guards), so this is purely a "have it ready sooner" prefetch.
+        if (typeof window.__proxRefreshMarketplaceReadData === "function") {
+          window.__proxRefreshMarketplaceReadData(false);
+        }
       });
     } else {
       console.info("[ProXAuth] not authenticated:", result.error);
@@ -3316,6 +3327,232 @@
     return getMinerCatalogIcon(item.level, fallback, item.name);
   }
 
+  // ---------- marketplace READ migration (list_active_listings / get_my_listings /
+  // get_my_offers / get_seller_offers via callMarketplaceReadBackend) ----------
+  //
+  // This section replaces ONLY the READ/display source for Browse, My
+  // Listings, and My Sent Offers (Offers Received is merged into My
+  // Listings below, matching the existing combined UI). It does NOT touch
+  // listMinerForSale()/cancelListing()/buyListing()/makeOffer()/
+  // cancelOffer()/acceptOffer()/declineOffer() — those mutation handlers,
+  // and the underlying cfg.marketplace.listings/settlements localStorage
+  // data they still read/write above, are left completely alone and are
+  // migrated in a later stage. Because those handlers are unchanged, the
+  // BUY NOW / OFFER / CANCEL / ACCEPT / DECLINE buttons below still call
+  // them with a real backend listing_id/offer_id — until the mutation
+  // stage lands, those calls will not find a matching row in the old
+  // local cfg.marketplace.listings and will surface the existing "Listing
+  // no longer available" toast rather than actually completing. That is
+  // expected for this stage.
+  //
+  // Field-name note: the marketplace-read Edge Function's exact response
+  // shape wasn't provided alongside this task (it's already deployed).
+  // The normalizers below assume the same { success, data } envelope as
+  // backend/supabase/functions/marketplace/index.ts (this project's own
+  // mutation function) and read the miner display fields using the same
+  // names mapBackendInventoryItem() already uses elsewhere in this file
+  // (miner_name/miner_icon/miner_tier/miner_speed), but fall back
+  // defensively through a few other plausible names/envelope shapes so a
+  // schema difference degrades gracefully (a generic "Miner" label/icon)
+  // instead of throwing. Never assumed: ownership. Ownership is read ONLY
+  // from is_own_listing / is_own_offer / seller_user_id / buyer_user_id as
+  // returned by the backend — never compared against PLAYER_ID (a local
+  // Telegram-derived pseudo-id, not the Supabase auth UUID the backend
+  // actually authorizes against).
+
+  /** First defined/non-null value of `keys` on `row`, else `fallback`. Never throws on a missing/null row. */
+  function marketPickField(row, keys, fallback){
+    if(!row) return fallback;
+    for(let i=0;i<keys.length;i++){
+      const v = row[keys[i]];
+      if(v !== undefined && v !== null) return v;
+    }
+    return fallback;
+  }
+
+  /** Array of rows from a callMarketplaceReadBackend() response body, trying the { data:[...] } envelope first, then a few plausible fallback keys. Returns null if none matched (caller treats that as a failed/unexpected response, not an empty result). */
+  function marketExtractArray(resultData, fallbackKeys){
+    if(!resultData) return null;
+    if(Array.isArray(resultData.data)) return resultData.data;
+    for(let i=0;i<fallbackKeys.length;i++){
+      if(Array.isArray(resultData[fallbackKeys[i]])) return resultData[fallbackKeys[i]];
+    }
+    return null;
+  }
+
+  function normalizeMarketListingRow(row){
+    return {
+      listingId: marketPickField(row, ["listing_id","id"], null),
+      sellerUserId: marketPickField(row, ["seller_user_id"], null),
+      inventoryId: marketPickField(row, ["mining_inventory_id","inventory_id"], null),
+      price: Number(marketPickField(row, ["asking_price_mpxn"], 0)) || 0,
+      status: marketPickField(row, ["status"], "active"),
+      createdAt: marketPickField(row, ["created_at"], null),
+      isOwn: !!marketPickField(row, ["is_own_listing","is_own"], false),
+      sellerName: marketPickField(row, ["seller_name","seller_username"], "Seller"),
+      name: marketPickField(row, ["miner_name","item_name","name"], "Miner"),
+      icon: marketPickField(row, ["miner_icon","item_icon","icon"], null),
+      level: Number(marketPickField(row, ["miner_tier","miner_level","item_level","level"], 1)) || 1,
+      speed: Number(marketPickField(row, ["miner_speed","item_speed","speed"], 0)) || 0
+    };
+  }
+
+  function normalizeMarketOfferRow(row){
+    return {
+      offerId: marketPickField(row, ["offer_id","id"], null),
+      listingId: marketPickField(row, ["listing_id"], null),
+      buyerUserId: marketPickField(row, ["buyer_user_id"], null),
+      sellerUserId: marketPickField(row, ["seller_user_id"], null),
+      price: Number(marketPickField(row, ["offer_price_mpxn"], 0)) || 0,
+      status: marketPickField(row, ["status"], "open"),
+      createdAt: marketPickField(row, ["created_at"], null),
+      isOwnOffer: !!marketPickField(row, ["is_own_offer","is_own"], false),
+      buyerName: marketPickField(row, ["buyer_name","buyer_username"], "Buyer"),
+      name: marketPickField(row, ["miner_name","item_name","name"], "Miner"),
+      icon: marketPickField(row, ["miner_icon","item_icon","icon"], null),
+      level: Number(marketPickField(row, ["miner_tier","miner_level","item_level","level"], 1)) || 1
+    };
+  }
+
+  // In-memory only (never persisted to localStorage — this is a live
+  // mirror of backend state, same reasoning as maxLevelMiners/
+  // minerUpgradeCostsCache elsewhere in this file). Whatever was last
+  // successfully fetched stays on screen (rather than being blanked)
+  // if a later background refresh fails, so a transient network hiccup
+  // doesn't flash the Marketplace panes empty.
+  const marketReadCache = {
+    loaded: false,
+    loading: false,
+    listings: [],
+    myListings: [],
+    myOffers: [],
+    sellerOffers: [],
+    errors: { listings: null, myListings: null, myOffers: null, sellerOffers: null }
+  };
+  let marketReadFetchedAt = 0;
+  let marketReadFetchInFlight = null;
+  const MARKET_READ_STALE_MS = 10000;
+
+  /**
+   * Fetches all four Marketplace READ actions in parallel via
+   * callMarketplaceReadBackend() and populates marketReadCache. Same
+   * staleness-cache + shared-in-flight-promise pattern as
+   * getMinerUpgradeCosts() above, so renderMarket() (called every render()
+   * tick) triggering this every time it runs does NOT mean a network
+   * request every tick — only when the cache is missing/stale and no
+   * fetch is already in flight. Always resolves (never throws); a partial
+   * failure (e.g. one of the four actions erroring) leaves that section's
+   * previous cached data in place and records a safe message in
+   * marketReadCache.errors for renderMarket() to show only if there is no
+   * previous data to fall back to.
+   */
+  async function refreshMarketplaceReadData(forceRefresh){
+    const isStale = (Date.now() - marketReadFetchedAt) > MARKET_READ_STALE_MS;
+    if(!forceRefresh && marketReadCache.loaded && !isStale){
+      return marketReadCache;
+    }
+    if(marketReadFetchInFlight){
+      return marketReadFetchInFlight;
+    }
+
+    marketReadCache.loading = true;
+    renderMarket();
+
+    marketReadFetchInFlight = (async () => {
+      try{
+        if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+          const msg = "Backend unavailable — try again shortly";
+          marketReadCache.errors = { listings: msg, myListings: msg, myOffers: msg, sellerOffers: msg };
+          return marketReadCache;
+        }
+        const accessToken = await ProXAuth.getAccessToken();
+        if(!accessToken){
+          const msg = "Please reconnect your Telegram account.";
+          marketReadCache.errors = { listings: msg, myListings: msg, myOffers: msg, sellerOffers: msg };
+          return marketReadCache;
+        }
+
+        const [listRes, myListRes, myOffersRes, sellerOffersRes] = await Promise.all([
+          callMarketplaceReadBackend("list_active_listings", {}, accessToken),
+          callMarketplaceReadBackend("get_my_listings", {}, accessToken),
+          callMarketplaceReadBackend("get_my_offers", {}, accessToken),
+          callMarketplaceReadBackend("get_seller_offers", {}, accessToken)
+        ]);
+
+        if(listRes.ok && listRes.data && listRes.data.success){
+          const rows = marketExtractArray(listRes.data, ["listings","active_listings","rows"]);
+          if(rows){
+            marketReadCache.listings = rows.map(normalizeMarketListingRow);
+            marketReadCache.errors.listings = null;
+          } else {
+            marketReadCache.errors.listings = "Could not load Marketplace listings — try again.";
+            console.info("[Marketplace] list_active_listings returned an unexpected shape:", listRes.data);
+          }
+        } else {
+          marketReadCache.errors.listings = marketplaceErrorMessage(listRes);
+          console.info("[Marketplace] list_active_listings fetch not completed:", marketReadCache.errors.listings);
+        }
+
+        if(myListRes.ok && myListRes.data && myListRes.data.success){
+          const rows = marketExtractArray(myListRes.data, ["listings","my_listings","rows"]);
+          if(rows){
+            marketReadCache.myListings = rows.map(normalizeMarketListingRow);
+            marketReadCache.errors.myListings = null;
+          } else {
+            marketReadCache.errors.myListings = "Could not load your listings — try again.";
+            console.info("[Marketplace] get_my_listings returned an unexpected shape:", myListRes.data);
+          }
+        } else {
+          marketReadCache.errors.myListings = marketplaceErrorMessage(myListRes);
+          console.info("[Marketplace] get_my_listings fetch not completed:", marketReadCache.errors.myListings);
+        }
+
+        if(myOffersRes.ok && myOffersRes.data && myOffersRes.data.success){
+          const rows = marketExtractArray(myOffersRes.data, ["offers","my_offers","rows"]);
+          if(rows){
+            marketReadCache.myOffers = rows.map(normalizeMarketOfferRow);
+            marketReadCache.errors.myOffers = null;
+          } else {
+            marketReadCache.errors.myOffers = "Could not load your sent offers — try again.";
+            console.info("[Marketplace] get_my_offers returned an unexpected shape:", myOffersRes.data);
+          }
+        } else {
+          marketReadCache.errors.myOffers = marketplaceErrorMessage(myOffersRes);
+          console.info("[Marketplace] get_my_offers fetch not completed:", marketReadCache.errors.myOffers);
+        }
+
+        if(sellerOffersRes.ok && sellerOffersRes.data && sellerOffersRes.data.success){
+          const rows = marketExtractArray(sellerOffersRes.data, ["offers","seller_offers","rows"]);
+          if(rows){
+            marketReadCache.sellerOffers = rows.map(normalizeMarketOfferRow);
+            marketReadCache.errors.sellerOffers = null;
+          } else {
+            marketReadCache.errors.sellerOffers = "Could not load offers on your listings — try again.";
+            console.info("[Marketplace] get_seller_offers returned an unexpected shape:", sellerOffersRes.data);
+          }
+        } else {
+          marketReadCache.errors.sellerOffers = marketplaceErrorMessage(sellerOffersRes);
+          console.info("[Marketplace] get_seller_offers fetch not completed:", marketReadCache.errors.sellerOffers);
+        }
+
+        marketReadCache.loaded = true;
+        marketReadFetchedAt = Date.now();
+        return marketReadCache;
+      } finally {
+        marketReadCache.loading = false;
+        marketReadFetchInFlight = null;
+        renderMarket();
+      }
+    })();
+
+    return marketReadFetchInFlight;
+  }
+
+  // Exposed so the ProXAuth init block earlier in this page can trigger the
+  // initial load once a session is confirmed established — same load-order
+  // reasoning as window.__proxRefreshMinerCatalog/window.__proxSyncInventoryFromBackend.
+  window.__proxRefreshMarketplaceReadData = refreshMarketplaceReadData;
+
   function renderMarket(){
     const cfg = getMarketConfig();
 
@@ -3329,29 +3566,57 @@
       sel.appendChild(opt);
     });
 
-    // browse: other players' listings
+    // Kick off (or reuse, if already fresh/in-flight) a backend refresh —
+    // see refreshMarketplaceReadData()'s own staleness/in-flight guards
+    // above, so renderMarket() being called every render() tick does NOT
+    // mean a network request every tick. Fire-and-forget: the render below
+    // always paints whatever is currently in marketReadCache immediately,
+    // and refreshMarketplaceReadData() itself calls renderMarket() again
+    // once fresh data lands.
+    refreshMarketplaceReadData(false);
+
+    const showInitialLoading = marketReadCache.loading && !marketReadCache.loaded;
+
+    // browse: other players' active listings (list_active_listings).
+    // is_own_listing (when present) is the ONLY signal used to exclude the
+    // caller's own listings here — never a comparison against PLAYER_ID
+    // (see the section header comment above for why).
     const listingsWrap = document.getElementById("marketListings");
     listingsWrap.innerHTML = "";
-    const others = cfg.marketplace.listings.filter(l=>l.sellerId !== PLAYER_ID);
-    if(!others.length){
-      listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+    if(showInitialLoading){
+      listingsWrap.innerHTML = `<div class="empty-note">Loading Marketplace listings…</div>`;
+    } else if(marketReadCache.errors.listings && !marketReadCache.listings.length){
+      listingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.listings)}</div>`;
+    } else {
+      const others = marketReadCache.listings.filter(l=>!l.isOwn);
+      if(!others.length){
+        listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+      }
+      others.forEach(l=>{
+        // "Your offer already pending on this listing" comes from the
+        // separately-fetched get_my_offers list, matched by listing_id —
+        // list_active_listings itself is not assumed to carry the
+        // caller's own offers inline.
+        const myOffer = marketReadCache.myOffers.find(o=>o.listingId===l.listingId && o.status==="open");
+        const div = document.createElement("div");
+        div.className = "panel market-card";
+        div.innerHTML = `
+          <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
+          <div class="market-card-name">${escapeHtml(l.name)}</div>
+          <div class="market-card-sub">${l.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${escapeHtml(l.sellerName)}</div>
+          <div class="market-card-price">${fmt(l.price,0)} PXN</div>
+          <button class="btn" data-buy-listing="${l.listingId}">BUY NOW</button>
+          ${myOffer
+            ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.price,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.listingId}|${myOffer.offerId}">WITHDRAW</button></div>`
+            : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.listingId}"><button class="btn secondary" data-make-offer="${l.listingId}">OFFER</button></div>`}
+        `;
+        listingsWrap.appendChild(div);
+      });
     }
-    others.forEach(l=>{
-      const myOffer = (l.offers||[]).find(o=>o.buyerId===PLAYER_ID);
-      const div = document.createElement("div");
-      div.className = "panel market-card";
-      div.innerHTML = `
-        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
-        <div class="market-card-name">${l.item.name}</div>
-        <div class="market-card-sub">${l.item.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${l.sellerName}</div>
-        <div class="market-card-price">${fmt(l.price,0)} PXN</div>
-        <button class="btn" data-buy-listing="${l.id}">BUY NOW</button>
-        ${myOffer
-          ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.amount,0)} PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.id}|${myOffer.id}">WITHDRAW</button></div>`
-          : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (PXN)" id="offer-${l.id}"><button class="btn secondary" data-make-offer="${l.id}">OFFER</button></div>`}
-      `;
-      listingsWrap.appendChild(div);
-    });
+    // Unchanged mutation handlers (buyListing/makeOffer/cancelOffer) —
+    // still wired up as before; see the section header comment above for
+    // why these won't fully complete against a real backend listing_id
+    // until the mutation-handler migration stage.
     listingsWrap.querySelectorAll("[data-buy-listing]").forEach(btn=>{
       btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing));
     });
@@ -3369,36 +3634,47 @@
       });
     });
 
-    // my listings
-    const mine = cfg.marketplace.listings.filter(l=>l.sellerId === PLAYER_ID);
+    // my listings (get_my_listings), with Offers Received merged in from
+    // get_seller_offers by listing_id — matching the existing combined UI
+    // (a single "YOUR LISTINGS" pane that already showed each listing's
+    // own offers inline, rather than a separate Offers Received pane).
     const myListingsWrap = document.getElementById("myListings");
     myListingsWrap.innerHTML = "";
-    if(!mine.length){
-      myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
+    if(showInitialLoading){
+      myListingsWrap.innerHTML = `<div class="empty-note">Loading your listings…</div>`;
+    } else if(marketReadCache.errors.myListings && !marketReadCache.myListings.length){
+      myListingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.myListings)}</div>`;
+    } else {
+      const mine = marketReadCache.myListings;
+      if(!mine.length){
+        myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
+      }
+      mine.forEach(l=>{
+        const offersForListing = marketReadCache.sellerOffers.filter(o=>o.listingId===l.listingId && o.status==="open");
+        const offersHtml = offersForListing.length
+          ? `<div class="listing-offers">` + offersForListing.map(o=>`
+              <div class="listing-offer-row">
+                <span class="who">${escapeHtml(o.buyerName)}</span>
+                <span class="amt">${fmt(o.price,0)} PXN</span>
+                <div class="offer-actions">
+                  <button class="btn good" data-accept="${l.listingId}|${o.offerId}">ACCEPT</button>
+                  <button class="btn danger" data-decline="${l.listingId}|${o.offerId}">DECLINE</button>
+                </div>
+              </div>`).join("") + `</div>`
+          : "";
+        const div = document.createElement("div");
+        div.className = "panel market-card";
+        div.innerHTML = `
+          <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
+          <div class="market-card-name">${escapeHtml(l.name)}</div>
+          <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${offersForListing.length} offer(s)</div>
+          <button class="btn secondary" data-cancel-listing="${l.listingId}">CANCEL</button>
+          ${offersHtml}
+        `;
+        myListingsWrap.appendChild(div);
+      });
     }
-    mine.forEach(l=>{
-      const div = document.createElement("div");
-      div.className = "panel market-card";
-      const offersHtml = (l.offers||[]).length
-        ? `<div class="listing-offers">` + l.offers.map(o=>`
-            <div class="listing-offer-row">
-              <span class="who">${o.buyerName}</span>
-              <span class="amt">${fmt(o.amount,0)} PXN</span>
-              <div class="offer-actions">
-                <button class="btn good" data-accept="${l.id}|${o.id}">ACCEPT</button>
-                <button class="btn danger" data-decline="${l.id}|${o.id}">DECLINE</button>
-              </div>
-            </div>`).join("") + `</div>`
-        : "";
-      div.innerHTML = `
-        <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l.item)}<div class="level-badge">L${l.item.level}</div></div>
-        <div class="market-card-name">${l.item.name}</div>
-        <div class="market-card-sub">Asking ${fmt(l.price,0)} PXN · ${(l.offers||[]).length} offer(s)</div>
-        <button class="btn secondary" data-cancel-listing="${l.id}">CANCEL</button>
-        ${offersHtml}
-      `;
-      myListingsWrap.appendChild(div);
-    });
+    // Unchanged mutation handlers (cancelListing/acceptOffer/declineOffer).
     myListingsWrap.querySelectorAll("[data-cancel-listing]").forEach(btn=>{
       btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing));
     });
@@ -3409,29 +3685,33 @@
       btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid); });
     });
 
-    // my sent offers (across everyone's listings)
+    // my sent offers (get_my_offers) — across everyone's listings.
     const myOffersWrap = document.getElementById("myOffers");
     myOffersWrap.innerHTML = "";
-    const sentOffers = [];
-    cfg.marketplace.listings.forEach(l=>{
-      (l.offers||[]).forEach(o=>{ if(o.buyerId === PLAYER_ID) sentOffers.push({ listing:l, offer:o }); });
-    });
-    if(!sentOffers.length){
-      myOffersWrap.innerHTML = `<div class="empty-note">You haven't made any offers.</div>`;
+    if(showInitialLoading){
+      myOffersWrap.innerHTML = `<div class="empty-note">Loading your sent offers…</div>`;
+    } else if(marketReadCache.errors.myOffers && !marketReadCache.myOffers.length){
+      myOffersWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.myOffers)}</div>`;
+    } else {
+      const sentOffers = marketReadCache.myOffers.filter(o=>o.status==="open");
+      if(!sentOffers.length){
+        myOffersWrap.innerHTML = `<div class="empty-note">You haven't made any offers.</div>`;
+      }
+      sentOffers.forEach(o=>{
+        const div = document.createElement("div");
+        div.className = "panel card";
+        div.innerHTML = `
+          <div class="card-icon miner-icon-wrap small">${marketItemThumb(o)}</div>
+          <div class="card-body">
+            <div class="card-title">${escapeHtml(o.name)}</div>
+            <div class="card-sub">Your offer: ${fmt(o.price,0)} PXN</div>
+          </div>
+          <div class="card-cta"><button class="btn secondary" data-withdraw="${o.listingId}|${o.offerId}">WITHDRAW</button></div>
+        `;
+        myOffersWrap.appendChild(div);
+      });
     }
-    sentOffers.forEach(({listing,offer})=>{
-      const div = document.createElement("div");
-      div.className = "panel card";
-      div.innerHTML = `
-        <div class="card-icon miner-icon-wrap small">${marketItemThumb(listing.item)}</div>
-        <div class="card-body">
-          <div class="card-title">${listing.item.name}</div>
-          <div class="card-sub">Your offer: ${fmt(offer.amount,0)} PXN · seller ${listing.sellerName}</div>
-        </div>
-        <div class="card-cta"><button class="btn secondary" data-withdraw="${listing.id}|${offer.id}">WITHDRAW</button></div>
-      `;
-      myOffersWrap.appendChild(div);
-    });
+    // Unchanged mutation handler (cancelOffer).
     myOffersWrap.querySelectorAll("[data-withdraw]").forEach(btn=>{
       btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid); });
     });
@@ -3894,6 +4174,13 @@
       document.querySelectorAll(".market-pane").forEach(p=>p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById("mpane-" + btn.dataset.mtab).classList.add("active");
+      // Same "prefetch on open" pattern as the store-tab handler below
+      // (Inventory prefetching live upgrade costs) — forces a fresh
+      // Marketplace read on Browse/My Listings open rather than waiting
+      // for the next stale-cache window (see refreshMarketplaceReadData()).
+      if(btn.dataset.mtab === "browse" || btn.dataset.mtab === "mine"){
+        refreshMarketplaceReadData(true);
+      }
     });
   });
 
