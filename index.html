@@ -2702,11 +2702,12 @@
   // reason as those), reuses the existing window.PROX_CONFIG (FUNCTIONS_URL /
   // SUPABASE_ANON_KEY), no change to js/api-client.js. Always resolve (never
   // throw). These are ONLY thin transport helpers — they do not implement
-  // any Marketplace listing/offer/UI logic themselves, and are not wired
-  // into listMinerForSale()/cancelListing()/buyListing()/makeOffer()/
-  // cancelOffer()/acceptOffer()/declineOffer()/renderMarket() (all of which
-  // remain completely untouched, still driving the existing local/
-  // localStorage Marketplace).
+  // any Marketplace listing/offer/UI logic themselves. callMarketplaceBackend()
+  // is now wired into listMinerForSale()/cancelListing()/buyListing()/
+  // makeOffer()/cancelOffer()/acceptOffer()/declineOffer() (see the
+  // "marketplace MUTATIONS" section below) — the old local/localStorage
+  // Marketplace those functions used to drive is left in place but no
+  // longer read or written by them.
 
   /**
    * POSTs { action, ...body } to /functions/v1/marketplace (the mutation
@@ -3198,121 +3199,318 @@
     saveState();
   }
 
-  function listMinerForSale(uid, price){
+  // ---------- marketplace MUTATIONS (server-authoritative, via
+  // callMarketplaceBackend()) ----------
+  //
+  // create_listing / cancel_listing / buy_listing / make_offer /
+  // cancel_offer / accept_offer / reject_offer now go straight to the
+  // backend via callMarketplaceBackend() (defined above), always using the
+  // authenticated user from ProXAuth.getAccessToken() — never a
+  // frontend-supplied user id. The backend (public.marketplace_* RPCs) is
+  // the sole source of truth for m.PXN (mining_state.claimed_total)
+  // movement and listing/offer/inventory-custody state: none of the
+  // functions below ever adds/subtracts state.claimedTotal themselves
+  // except by copying a *_claimed_total value straight out of a
+  // successful response, and none of them locally transfers/settles
+  // inventory or PXN — see refreshInventoryAfterMarketplaceMutation()
+  // below for how a changed inventory custody is reflected (always a
+  // re-fetch from the backend, never a local guess).
+  //
+  // cfg.marketplace.listings/settlements (the old local/localStorage demo
+  // store), ensureMarketplaceDefaults()/getMarketConfig()/saveMarketConfig()/
+  // genId(), and processSettlements() above are left completely alone —
+  // nothing below reads or writes them anymore, but they are not deleted
+  // yet per the migration plan.
+
+  // Guards a single in-flight backend request per listing/offer/inventory
+  // id so a double-click can't fire the same mutation twice — same
+  // purpose as pendingMinerUpgrades elsewhere in this file, scoped here to
+  // Marketplace mutations.
+  const pendingMarketActions = new Set();
+
+  /** Copies a *_claimed_total field straight out of a successful Marketplace mutation response into state.claimedTotal (the authoritative m.PXN balance) — never computed locally. No-op if the field is missing/non-finite. */
+  function applyMarketplaceClaimedTotal(data, field){
+    const v = Number(data && data[field]);
+    if(Number.isFinite(v)) state.claimedTotal = v;
+  }
+
+  /**
+   * Re-syncs state.inventory from the backend's own get-mining-inventory
+   * endpoint — same call and per-item merge pattern as
+   * syncInventoryFromBackend() above, but not gated by that function's
+   * one-time backendInventorySynced flag, since this needs to re-run after
+   * every inventory-affecting Marketplace mutation (create_listing,
+   * cancel_listing, buy_listing). Any locally-held item the backend no
+   * longer returns for us is dropped (e.g. just listed or just sold) —
+   * this is the ONLY way an item's local listed/owned status changes;
+   * nothing here sets it from a frontend assumption. Best-effort and
+   * silent on failure, same fallback behavior as syncInventoryFromBackend()
+   * (existing local inventory is left as-is rather than erased).
+   */
+  async function refreshInventoryAfterMarketplaceMutation(accessToken){
+    if(!window.ProXBackend) return;
+    const result = await ProXBackend._callFunction("get-mining-inventory", {
+      method: "POST",
+      accessToken: accessToken
+    });
+    if(!result.ok || !result.data || result.data.success !== true || !Array.isArray(result.data.inventory)) return;
+    const backendIds = new Set(result.data.inventory.map(row => row.id));
+    state.inventory = state.inventory.filter(i => backendIds.has(i.id));
+    result.data.inventory.forEach(row => {
+      const mapped = mapBackendInventoryItem(row);
+      const existing = state.inventory.find(i => i.id === mapped.id);
+      if(existing){ Object.assign(existing, mapped); } else { state.inventory.push(mapped); }
+    });
+  }
+
+  /** Shared prelude for every Marketplace mutation handler below: resolves an access token via ProXAuth.getAccessToken(), surfacing the existing auth-error toast (and returning null) if one isn't available. */
+  async function getMarketplaceAccessToken(){
+    if(!window.ProXAuth || typeof window.ProXAuth.getAccessToken !== "function"){
+      toast("Backend unavailable — try again shortly");
+      return null;
+    }
+    const accessToken = await ProXAuth.getAccessToken();
+    if(!accessToken){
+      toast("Please reconnect your Telegram account.");
+      return null;
+    }
+    return accessToken;
+  }
+
+  function listMinerForSale(uid, price, btn){
     if(!(price > 0)){ toast("Enter a valid asking price"); return; }
-    const idx = state.inventory.findIndex(i=>i.uid===uid);
-    if(idx === -1){ toast("Miner not found"); return; }
-    const item = state.inventory.splice(idx,1)[0];
-    const cfg = getMarketConfig();
-    cfg.marketplace.listings.push({ id:genId("lst"), sellerId:PLAYER_ID, sellerName:PLAYER_NAME, item, price, offers:[], createdAt:Date.now() });
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
-    renderMarket();
-  }
+    if(pendingMarketActions.has(uid)) return;
+    const item = state.inventory.find(i=>i.uid===uid);
+    if(!item){ toast("Miner not found"); return; }
 
-  function buyListing(listingId){
-    const cfg = getMarketConfig();
-    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
-    if(idx === -1){ toast("Listing no longer available"); renderMarket(); return; }
-    const listing = cfg.marketplace.listings[idx];
-    if(listing.sellerId === PLAYER_ID){ toast("You can't buy your own listing"); return; }
-    if(state.pxnBalance < listing.price){ toast("Not enough PXN"); return; }
-    state.pxnBalance -= listing.price;
-    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
-    addPoints(50);
-    (listing.offers||[]).forEach(o=>{
-      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing sold to another buyer" });
-    });
-    cfg.marketplace.listings.splice(idx,1);
-    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:listing.sellerId, kind:"credit", amount:listing.price, ts:Date.now(), note:"Sold " + listing.item.name });
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Purchased " + listing.item.name + " for " + fmt(listing.price, 0) + " PXN");
-    renderMarket();
-  }
+    pendingMarketActions.add(uid);
+    if(btn){ btn.disabled = true; btn.textContent = "LISTING…"; }
 
-  function makeOffer(listingId, amount){
-    if(!(amount > 0)){ toast("Enter a valid offer amount"); return; }
-    const cfg = getMarketConfig();
-    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
-    if(!listing){ toast("Listing no longer available"); renderMarket(); return; }
-    if(listing.sellerId === PLAYER_ID){ toast("You can't offer on your own listing"); return; }
-    if(state.pxnBalance < amount){ toast("Not enough PXN to offer that"); return; }
-    state.pxnBalance -= amount;
-    listing.offers = listing.offers || [];
-    listing.offers.push({ id:genId("off"), buyerId:PLAYER_ID, buyerName:PLAYER_NAME, amount, ts:Date.now() });
-    saveMarketConfig(cfg);
-    saveState();
-    toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
-    renderMarket();
-  }
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
 
-  function cancelOffer(listingId, offerId){
-    const cfg = getMarketConfig();
-    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
-    if(!listing) return;
-    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId && o.buyerId===PLAYER_ID);
-    if(oi === -1) return;
-    const off = listing.offers.splice(oi,1)[0];
-    state.pxnBalance += off.amount;
-    saveMarketConfig(cfg);
-    saveState();
-    toast("Offer withdrawn — " + fmt(off.amount, 0) + " PXN refunded");
-    renderMarket();
-  }
+        const result = await callMarketplaceBackend("create_listing", {
+          inventory_id: uid,
+          asking_price_mpxn: price
+        }, accessToken);
 
-  function acceptOffer(listingId, offerId){
-    const cfg = getMarketConfig();
-    const lidx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
-    if(lidx === -1) return;
-    const listing = cfg.marketplace.listings[lidx];
-    if(listing.sellerId !== PLAYER_ID) return;
-    const accepted = (listing.offers||[]).find(o=>o.id===offerId);
-    if(!accepted) return;
-    state.pxnBalance += accepted.amount;
-    addPoints(50);
-    (listing.offers||[]).forEach(o=>{
-      if(o.id !== offerId){
-        cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Seller accepted a different offer" });
+        if(result.ok && result.data && result.data.success){
+          await refreshInventoryAfterMarketplaceMutation(accessToken);
+          saveState();
+          toast("Listed " + item.name + " for " + fmt(price, 0) + " PXN");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete(uid);
+        if(btn){ btn.disabled = false; btn.textContent = "LIST"; }
+        render(); renderMarket();
       }
-    });
-    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:accepted.buyerId, kind:"itemAdd", item:listing.item, ts:Date.now(), note:"Offer accepted on " + listing.item.name });
-    cfg.marketplace.listings.splice(lidx,1);
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Offer accepted — " + fmt(accepted.amount, 0) + " PXN added to your balance");
-    renderMarket();
+    })();
   }
 
-  function declineOffer(listingId, offerId){
-    const cfg = getMarketConfig();
-    const listing = cfg.marketplace.listings.find(l=>l.id===listingId);
-    if(!listing || listing.sellerId !== PLAYER_ID) return;
-    const oi = (listing.offers||[]).findIndex(o=>o.id===offerId);
-    if(oi === -1) return;
-    const off = listing.offers.splice(oi,1)[0];
-    cfg.marketplace.settlements.push({ id:genId("stl"), playerId:off.buyerId, kind:"refund", amount:off.amount, ts:Date.now(), note:"Seller declined your offer" });
-    saveMarketConfig(cfg);
-    toast("Offer declined — buyer refunded");
-    renderMarket();
+  function buyListing(listingId, btn){
+    if(pendingMarketActions.has("buy:" + listingId)) return;
+    pendingMarketActions.add("buy:" + listingId);
+    if(btn){ btn.disabled = true; btn.textContent = "BUYING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("buy_listing", {
+          listing_id: listingId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          await refreshInventoryAfterMarketplaceMutation(accessToken);
+          addPoints(50);
+          saveState();
+          toast("Purchase complete — " + fmt(result.data.data.asking_price_mpxn, 0) + " PXN");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("buy:" + listingId);
+        if(btn){ btn.disabled = false; btn.textContent = "BUY NOW"; }
+        render(); renderMarket();
+      }
+    })();
   }
 
-  function cancelListing(listingId){
-    const cfg = getMarketConfig();
-    const idx = cfg.marketplace.listings.findIndex(l=>l.id===listingId);
-    if(idx === -1) return;
-    const listing = cfg.marketplace.listings[idx];
-    if(listing.sellerId !== PLAYER_ID) return;
-    (listing.offers||[]).forEach(o=>{
-      cfg.marketplace.settlements.push({ id:genId("stl"), playerId:o.buyerId, kind:"refund", amount:o.amount, ts:Date.now(), note:"Listing cancelled by seller" });
-    });
-    cfg.marketplace.listings.splice(idx,1);
-    state.inventory.push(Object.assign({}, listing.item, {applied:false}));
-    saveMarketConfig(cfg);
-    saveState(); render();
-    toast("Listing cancelled — miner returned to your inventory");
-    renderMarket();
+  function makeOffer(listingId, amount, btn){
+    if(!(amount > 0)){ toast("Enter a valid offer amount"); return; }
+    if(pendingMarketActions.has("offer:" + listingId)) return;
+    pendingMarketActions.add("offer:" + listingId);
+    if(btn){ btn.disabled = true; btn.textContent = "SENDING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("make_offer", {
+          listing_id: listingId,
+          offer_price_mpxn: amount
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          saveState();
+          toast("Offer of " + fmt(amount, 0) + " PXN sent — held in escrow");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("offer:" + listingId);
+        if(btn){ btn.disabled = false; btn.textContent = "OFFER"; }
+        render(); renderMarket();
+      }
+    })();
+  }
+
+  function cancelOffer(listingId, offerId, btn){
+    if(pendingMarketActions.has("canceloffer:" + offerId)) return;
+    pendingMarketActions.add("canceloffer:" + offerId);
+    if(btn){ btn.disabled = true; btn.textContent = "WITHDRAWING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("cancel_offer", {
+          offer_id: offerId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          saveState();
+          toast("Offer withdrawn" + (Number.isFinite(Number(result.data.data.refund_amount_mpxn)) ? " — " + fmt(result.data.data.refund_amount_mpxn, 0) + " PXN refunded" : ""));
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("canceloffer:" + offerId);
+        if(btn){ btn.disabled = false; btn.textContent = "WITHDRAW"; }
+        render(); renderMarket();
+      }
+    })();
+  }
+
+  function acceptOffer(listingId, offerId, btn){
+    if(pendingMarketActions.has("accept:" + offerId)) return;
+    pendingMarketActions.add("accept:" + offerId);
+    if(btn){ btn.disabled = true; btn.textContent = "ACCEPTING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("accept_offer", {
+          offer_id: offerId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          applyMarketplaceClaimedTotal(result.data.data, "seller_claimed_total");
+          addPoints(50);
+          saveState();
+          toast("Offer accepted" + (Number.isFinite(Number(result.data.data.seller_proceeds_mpxn)) ? " — " + fmt(result.data.data.seller_proceeds_mpxn, 0) + " PXN added to your balance" : ""));
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("accept:" + offerId);
+        if(btn){ btn.disabled = false; btn.textContent = "ACCEPT"; }
+        render(); renderMarket();
+      }
+    })();
+  }
+
+  function declineOffer(listingId, offerId, btn){
+    if(pendingMarketActions.has("reject:" + offerId)) return;
+    pendingMarketActions.add("reject:" + offerId);
+    if(btn){ btn.disabled = true; btn.textContent = "DECLINING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        // reject_offer only refunds the buyer (reflected the next time the
+        // buyer's own session reads their balance) — the seller's own
+        // state.claimedTotal never changes here, so nothing is applied
+        // locally from this response.
+        const result = await callMarketplaceBackend("reject_offer", {
+          offer_id: offerId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          toast("Offer declined — buyer refunded");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("reject:" + offerId);
+        if(btn){ btn.disabled = false; btn.textContent = "DECLINE"; }
+        renderMarket();
+      }
+    })();
+  }
+
+  function cancelListing(listingId, btn){
+    if(pendingMarketActions.has("cancellisting:" + listingId)) return;
+    pendingMarketActions.add("cancellisting:" + listingId);
+    if(btn){ btn.disabled = true; btn.textContent = "CANCELLING…"; }
+
+    (async () => {
+      try{
+        const accessToken = await getMarketplaceAccessToken();
+        if(!accessToken) return;
+
+        const result = await callMarketplaceBackend("cancel_listing", {
+          listing_id: listingId
+        }, accessToken);
+
+        if(result.ok && result.data && result.data.success){
+          await refreshInventoryAfterMarketplaceMutation(accessToken);
+          saveState();
+          toast("Listing cancelled — miner returned to your inventory");
+          await refreshMarketplaceReadData(true);
+        } else {
+          toast(marketplaceErrorMessage(result));
+        }
+      } catch(e){
+        toast("Network error — try again");
+      } finally {
+        pendingMarketActions.delete("cancellisting:" + listingId);
+        if(btn){ btn.disabled = false; btn.textContent = "CANCEL"; }
+        render(); renderMarket();
+      }
+    })();
   }
 
   function marketItemThumb(item){
@@ -3330,20 +3528,15 @@
   // ---------- marketplace READ migration (list_active_listings / get_my_listings /
   // get_my_offers / get_seller_offers via callMarketplaceReadBackend) ----------
   //
-  // This section replaces ONLY the READ/display source for Browse, My
+  // This section supplies the READ/display source for Browse, My
   // Listings, and My Sent Offers (Offers Received is merged into My
-  // Listings below, matching the existing combined UI). It does NOT touch
+  // Listings below, matching the existing combined UI). The BUY NOW /
+  // OFFER / CANCEL / ACCEPT / DECLINE buttons below call
   // listMinerForSale()/cancelListing()/buyListing()/makeOffer()/
-  // cancelOffer()/acceptOffer()/declineOffer() — those mutation handlers,
-  // and the underlying cfg.marketplace.listings/settlements localStorage
-  // data they still read/write above, are left completely alone and are
-  // migrated in a later stage. Because those handlers are unchanged, the
-  // BUY NOW / OFFER / CANCEL / ACCEPT / DECLINE buttons below still call
-  // them with a real backend listing_id/offer_id — until the mutation
-  // stage lands, those calls will not find a matching row in the old
-  // local cfg.marketplace.listings and will surface the existing "Listing
-  // no longer available" toast rather than actually completing. That is
-  // expected for this stage.
+  // cancelOffer()/acceptOffer()/declineOffer() with the real backend
+  // listing_id/offer_id these rows carry — those mutation handlers now go
+  // straight to callMarketplaceBackend() (see the "marketplace MUTATIONS"
+  // section) rather than the old local cfg.marketplace.listings.
   //
   // Field-name note: the marketplace-read Edge Function's exact response
   // shape wasn't provided alongside this task (it's already deployed).
@@ -3374,6 +3567,11 @@
   function marketExtractArray(resultData, fallbackKeys){
     if(!resultData) return null;
     if(Array.isArray(resultData.data)) return resultData.data;
+    if(resultData.data && typeof resultData.data === "object"){
+      for(let i=0;i<fallbackKeys.length;i++){
+        if(Array.isArray(resultData.data[fallbackKeys[i]])) return resultData.data[fallbackKeys[i]];
+      }
+    }
     for(let i=0;i<fallbackKeys.length;i++){
       if(Array.isArray(resultData[fallbackKeys[i]])) return resultData[fallbackKeys[i]];
     }
@@ -3566,14 +3764,12 @@
       sel.appendChild(opt);
     });
 
-    // Kick off (or reuse, if already fresh/in-flight) a backend refresh —
-    // see refreshMarketplaceReadData()'s own staleness/in-flight guards
-    // above, so renderMarket() being called every render() tick does NOT
-    // mean a network request every tick. Fire-and-forget: the render below
-    // always paints whatever is currently in marketReadCache immediately,
-    // and refreshMarketplaceReadData() itself calls renderMarket() again
-    // once fresh data lands.
-    refreshMarketplaceReadData(false);
+    // Marketplace READ data is refreshed only via the explicit
+    // initial-load (window.__proxRefreshMarketplaceReadData), Marketplace
+    // tab-click (refreshMarketplaceReadData(true)), and post-mutation
+    // (refreshMarketplaceReadData(true)) paths elsewhere in this file —
+    // NOT from here. renderMarket() below simply paints whatever is
+    // currently in marketReadCache.
 
     const showInitialLoading = marketReadCache.loading && !marketReadCache.loaded;
 
@@ -3613,24 +3809,23 @@
         listingsWrap.appendChild(div);
       });
     }
-    // Unchanged mutation handlers (buyListing/makeOffer/cancelOffer) —
-    // still wired up as before; see the section header comment above for
-    // why these won't fully complete against a real backend listing_id
-    // until the mutation-handler migration stage.
+    // Mutation handlers (buyListing/makeOffer/cancelOffer) — wired up as
+    // before, now backed by callMarketplaceBackend() against the real
+    // backend listing_id/offer_id these rows carry.
     listingsWrap.querySelectorAll("[data-buy-listing]").forEach(btn=>{
-      btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing));
+      btn.addEventListener("click", ()=> buyListing(btn.dataset.buyListing, btn));
     });
     listingsWrap.querySelectorAll("[data-make-offer]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const lid = btn.dataset.makeOffer;
         const val = parseFloat(document.getElementById("offer-" + lid).value);
-        makeOffer(lid, val);
+        makeOffer(lid, val, btn);
       });
     });
     listingsWrap.querySelectorAll("[data-withdraw-offer]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         const [lid, oid] = btn.dataset.withdrawOffer.split("|");
-        cancelOffer(lid, oid);
+        cancelOffer(lid, oid, btn);
       });
     });
 
@@ -3674,15 +3869,15 @@
         myListingsWrap.appendChild(div);
       });
     }
-    // Unchanged mutation handlers (cancelListing/acceptOffer/declineOffer).
+    // Mutation handlers (cancelListing/acceptOffer/declineOffer), backed by callMarketplaceBackend().
     myListingsWrap.querySelectorAll("[data-cancel-listing]").forEach(btn=>{
-      btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing));
+      btn.addEventListener("click", ()=> cancelListing(btn.dataset.cancelListing, btn));
     });
     myListingsWrap.querySelectorAll("[data-accept]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.accept.split("|"); acceptOffer(lid,oid); });
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.accept.split("|"); acceptOffer(lid,oid,btn); });
     });
     myListingsWrap.querySelectorAll("[data-decline]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid); });
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.decline.split("|"); declineOffer(lid,oid,btn); });
     });
 
     // my sent offers (get_my_offers) — across everyone's listings.
@@ -3711,9 +3906,9 @@
         myOffersWrap.appendChild(div);
       });
     }
-    // Unchanged mutation handler (cancelOffer).
+    // Mutation handler (cancelOffer), backed by callMarketplaceBackend().
     myOffersWrap.querySelectorAll("[data-withdraw]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid); });
+      btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid,btn); });
     });
 
     // leaderboard
@@ -4204,7 +4399,7 @@
     const uid = document.getElementById("sellMinerSelect").value;
     const price = parseFloat(document.getElementById("sellPriceInput").value);
     if(!uid){ toast("No miner selected"); return; }
-    listMinerForSale(uid, price);
+    listMinerForSale(uid, price, document.getElementById("listMinerBtn"));
     document.getElementById("sellPriceInput").value = "";
   });
   document.getElementById("roadmapBtn").addEventListener("click", ()=> toast("Roadmap coming soon!"));
@@ -4221,14 +4416,14 @@
     const access = checkAccessStatus();
     if(access.blocked){ showBlockOverlay(access.reason); return; }
     hideBlockOverlay();
-    accrue(); saveState(); processSettlements(); render(); syncPlayerRecord();
+    accrue(); saveState(); /* processSettlements(); — disabled: obsolete localStorage Marketplace settlement processor, see processSettlements() definition above */ render(); syncPlayerRecord();
   }, 1000);
 
   const initialAccess = checkAccessStatus();
   if(initialAccess.blocked){
     showBlockOverlay(initialAccess.reason);
   } else {
-    accrue(); processSettlements(); render(); syncPlayerRecord();
+    accrue(); /* processSettlements(); — disabled: obsolete localStorage Marketplace settlement processor, see processSettlements() definition above */ render(); syncPlayerRecord();
   }
 })();
 </script>
