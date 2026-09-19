@@ -1023,6 +1023,7 @@
       <h2>EARN TASKS</h2>
       <span class="eyebrow" id="tasksProgress">0 / 0 DONE</span>
     </div>
+    <div class="store-catalog-status" id="taskCatalogStatus"></div>
     <div id="taskList"></div>
   </div>
 
@@ -1307,6 +1308,18 @@
         // guards), so this is purely a "have it ready sooner" prefetch.
         if (typeof window.__proxRefreshMarketplaceReadData === "function") {
           window.__proxRefreshMarketplaceReadData(false);
+        }
+
+        // One-time initial load of the Tasks screen's live task catalog
+        // (public.task_catalog — the player-side task READ migration).
+        // Defined inside the game IIFE further down this page and exposed
+        // as window.__proxRefreshTaskCatalog — same load-order reasoning
+        // as the calls above. switchToScreen("tasks") also triggers a
+        // fresh refresh each time the Tasks screen is opened (see below),
+        // so an admin task-catalog edit is reflected next time the player
+        // visits Tasks, without ever polling on a timer.
+        if (typeof window.__proxRefreshTaskCatalog === "function") {
+          window.__proxRefreshTaskCatalog();
         }
       });
     } else {
@@ -1834,6 +1847,138 @@
   // initial load once a session is confirmed established — same load-order
   // reasoning as window.__proxSyncInventoryFromBackend above.
   window.__proxRefreshMinerCatalog = refreshMinerCatalog;
+
+  // ---------- Tasks screen task catalog (public.task_catalog) — READ ONLY ----------
+  // Player-side task READ migration. Loads the ACTIVE task_catalog rows
+  // (id, title, subtitle, icon, action_url, verification_type, reward_mpxn,
+  // sort_order, is_active) using the existing authenticated supabase-js
+  // client from js/auth-client.js (ProXAuth.getSupabaseClient()) — the same
+  // client instance already used to hold the player's session, and the same
+  // pattern already used above for public.miner_catalog. No new auth logic,
+  // no new client, and no anon-only fallback: with no session yet, this
+  // fetch simply reports an error and the Tasks screen keeps showing
+  // whatever it already had (TASKS, i.e. adminConfig.rewards.tasksList /
+  // DEFAULT_TASKS) — see loadActiveTaskCatalog()/refreshTaskCatalog() below.
+  //
+  // This is purely a READ/display-side change: it does NOT implement task
+  // claiming/rewards, does NOT create or touch public.task_claims (which
+  // doesn't exist yet), does NOT add verification logic, and does NOT touch
+  // Storage. The existing CLAIM button / state.tasksDone / reward-on-claim
+  // logic in renderTasks() below is completely untouched — it keeps working
+  // exactly as before, just against whichever list TASKS currently holds.
+  //
+  // Fetched once on load (triggered from the ProXAuth init block above once
+  // a session is confirmed, same pattern as refreshMinerCatalog) and again
+  // each time the Tasks screen is opened (see switchToScreen below) — never
+  // on the 1s render()/setInterval loop, so this never polls.
+  const taskCatalogCache = { loaded:false, loading:false, error:null };
+
+  /** Maps one public.task_catalog row to the existing Tasks UI's task shape. */
+  function mapTaskCatalogRow(row){
+    return {
+      id: row.id,
+      title: row.title,
+      sub: row.subtitle,
+      reward: Number(row.reward_mpxn),
+      icon: row.icon || null,
+      action_url: row.action_url || null,
+      verification_type: row.verification_type,
+    };
+  }
+
+  /**
+   * loadActiveTaskCatalog()
+   *
+   * Fetches active public.task_catalog rows, sorted by sort_order ascending,
+   * via the existing authenticated supabase-js client, and maps each row to
+   * the existing Tasks UI shape ({id, title, sub, reward, icon, action_url,
+   * verification_type}). Always resolves (never throws) with
+   * { ok, tasks, error }, same defensive shape used by fetchMinerCatalogRows()
+   * above. Read-only: never inserts/updates/deletes anything.
+   */
+  async function loadActiveTaskCatalog(){
+    const auth = window.ProXAuth;
+    const client = auth && typeof auth.getSupabaseClient === "function" ? auth.getSupabaseClient() : null;
+    if(!client){
+      return { ok:false, tasks:null, error:"Backend not connected yet." };
+    }
+    try{
+      const { data, error } = await client
+        .from("task_catalog")
+        .select("id,title,subtitle,icon,action_url,verification_type,reward_mpxn,sort_order,is_active")
+        .eq("is_active", true)
+        .order("sort_order", { ascending:true });
+
+      if(error){
+        return { ok:false, tasks:null, error: error.message || "Could not load task catalog." };
+      }
+      const tasks = (Array.isArray(data) ? data : []).map(mapTaskCatalogRow);
+      return { ok:true, tasks:tasks, error:null };
+    }catch(err){
+      return { ok:false, tasks:null, error: (err && err.message) || "Network error loading task catalog." };
+    }
+  }
+
+  function updateTaskCatalogStatus(){
+    const el = document.getElementById("taskCatalogStatus");
+    if(!el) return;
+    if(taskCatalogCache.error){
+      el.textContent = taskCatalogCache.loaded
+        ? "Showing last-known tasks — couldn't refresh from server."
+        : "Showing saved tasks — couldn't load latest from server.";
+      el.classList.add("show");
+    } else {
+      el.classList.remove("show");
+    }
+  }
+
+  /**
+   * Refreshes TASKS (the Tasks screen's authoritative list) from the live
+   * task_catalog and re-renders. Guarded against overlapping calls
+   * (taskCatalogCache.loading) — safe to call from multiple triggers
+   * (initial load + every Tasks screen open) without ever stacking
+   * concurrent requests or polling continuously.
+   *
+   * On success, TASKS is replaced in place with the (possibly empty) active
+   * task list from the database — this is the point where the Tasks screen
+   * stops trusting adminConfig.rewards.tasksList/DEFAULT_TASKS as the
+   * authoritative source. An empty result is a legitimate state (no active
+   * tasks right now) and is left as an empty TASKS list; renderTasks()
+   * below shows a dedicated empty-state message for it.
+   *
+   * On failure, TASKS is left completely untouched — whatever it already
+   * held (the local adminConfig/DEFAULT_TASKS fallback on first load, or
+   * the last successfully-loaded catalog on a later failed refresh) keeps
+   * being shown, and only a small non-blocking status line changes. The
+   * Tasks screen itself never breaks or goes blank because of a failed
+   * fetch — same failure-handling shape as refreshMinerCatalog() above.
+   */
+  async function refreshTaskCatalog(){
+    if(taskCatalogCache.loading) return;
+    taskCatalogCache.loading = true;
+
+    const result = await loadActiveTaskCatalog();
+    taskCatalogCache.loading = false;
+
+    if(result.ok){
+      TASKS.length = 0;
+      result.tasks.forEach(t=> TASKS.push(t));
+      taskCatalogCache.loaded = true;
+      taskCatalogCache.error = null;
+      console.log("[TaskCatalog] loaded", TASKS.length, "active task(s)");
+    } else {
+      taskCatalogCache.error = result.error || "Could not load task catalog.";
+      console.info("[TaskCatalog] fetch failed:", taskCatalogCache.error);
+    }
+
+    updateTaskCatalogStatus();
+    renderTasks();
+  }
+
+  // Exposed so the ProXAuth init block earlier in this page can trigger the
+  // initial load once a session is confirmed established — same load-order
+  // reasoning as window.__proxRefreshMinerCatalog above.
+  window.__proxRefreshTaskCatalog = refreshTaskCatalog;
 
   // ---------- server-authoritative Store purchase (purchase-miner) ----------
   // Replaces the BUY button's previous LOCAL-ONLY balance deduction /
@@ -4094,6 +4239,17 @@
   function renderTasks(){
     const list = document.getElementById("taskList");
     list.innerHTML = "";
+
+    // Empty active-task state: only reachable once the live task_catalog
+    // has been loaded successfully and genuinely contains zero active
+    // rows (see refreshTaskCatalog() above) — never shown for a failed
+    // fetch, which leaves TASKS untouched instead.
+    if(TASKS.length === 0){
+      list.innerHTML = '<div class="panel note" style="text-align:center;">No active tasks right now — check back soon.</div>';
+      document.getElementById("tasksProgress").textContent = "0 / 0 DONE";
+      return;
+    }
+
     let done = 0;
     TASKS.forEach(t=>{
       const isDone = !!state.tasksDone[t.id];
@@ -4470,6 +4626,14 @@
     // next time the player visits the Store without needing a full reload.
     if(name === "upgrade"){
       refreshMinerCatalog();
+    }
+
+    // Re-sync the Tasks screen's task catalog every time the Tasks screen
+    // opens (per-open refresh, not a timer), so an admin task-catalog edit
+    // shows up the next time the player visits Tasks without needing a
+    // full reload. Same guarded/no-overlap pattern as refreshMinerCatalog().
+    if(name === "tasks"){
+      refreshTaskCatalog();
     }
   }
 
