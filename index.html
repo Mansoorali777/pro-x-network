@@ -4242,17 +4242,24 @@
   // with nothing server-side ever verifying completion or preventing a
   // double claim) with a real call to the existing claim-task Edge
   // Function. That function — via public.claim_task
-  // (0037_task_claims.sql, 0039_claim_task_requirement_verification.sql)
-  // — is the single source of truth for whether a task is actually
-  // verified (manual_claim always requires real verification and is
-  // never auto-approved; referral_count/miner_level/claim_count are
-  // checked against the caller's live mining_state) and for the reward
-  // amount and resulting m.PXN balance. Nothing here re-implements any of
-  // that verification — this is purely "call it, then reflect exactly
-  // what it returns". Auth is untouched: the access token comes only
-  // from the existing window.ProXAuth.getAccessToken(). Only the CLAIM
-  // click handler inside renderTasks() below changes; task rendering
-  // (the markup built per task above) is unchanged.
+  // (0037_task_claims.sql, 0039_claim_task_requirement_verification.sql,
+  // 0040_claim_task_manual_claim_award.sql) — is the single source of
+  // truth for whether a task is actually granted (referral_count/
+  // miner_level/claim_count are checked against the caller's live
+  // mining_state; manual_claim is intentionally unverified — completing
+  // the external action_url can't be proven server-side, so it is
+  // granted on trust once the other basic checks — task exists, is
+  // active, not already claimed — pass) and for the reward amount and
+  // resulting m.PXN balance. Nothing here re-implements any of that
+  // verification (or lack of it) — this is purely "call it, then reflect
+  // exactly what it returns". For a manual_claim task, this file's ONLY
+  // extra behavior is opening task_catalog.action_url in a new tab as a
+  // convenience when CLAIM is clicked (see the click handler below) — it
+  // does not, and cannot, confirm anything happened there. Auth is
+  // untouched: the access token comes only from the existing
+  // window.ProXAuth.getAccessToken(). Only the CLAIM click handler
+  // inside renderTasks() below changes; task rendering (the markup built
+  // per task above) is unchanged.
 
   // Guards against a double-click firing two overlapping claim requests
   // for the same task while the first is still in flight — same role as
@@ -4313,10 +4320,10 @@
    * present. The code-keyed fallback below uses ONLY the actual
    * application error codes defined in claim-task/index.ts's ERR object
    * — no new/invented codes. TASK_VERIFICATION_REQUIRED is expected and
-   * routine here (manual_claim tasks always land here; referral_count/
-   * miner_level/claim_count tasks land here until their live mining_state
-   * counter reaches the task's requirement) — it is not treated as a
-   * server error.
+   * routine for referral_count/miner_level/claim_count tasks until their
+   * live mining_state counter reaches the task's requirement — it is not
+   * treated as a server error. (manual_claim no longer returns this code
+   * — see 0040_claim_task_manual_claim_award.sql.)
    */
   function claimTaskErrorMessage(result){
     const err = result && result.data && result.data.error;
@@ -4388,6 +4395,23 @@
         if(pendingTaskClaims.has(id)) return;
         const t = TASKS.find(x=>x.id===id);
         if(!t) return;
+
+        // manual_claim tasks: open the task's external action_url as a
+        // direct, synchronous result of this click (before any await
+        // below), so browsers/Telegram don't treat it as a blocked popup.
+        // This is a convenience to send the player to the action — it is
+        // NOT verification of anything: the backend (public.claim_task)
+        // never learns whether this tab was opened, let alone what
+        // happened in it. Whether the reward is actually granted still
+        // depends entirely on the claim-task call below, exactly as for
+        // every other verification_type.
+        if(t.verification_type === "manual_claim" && t.action_url){
+          if(tg && typeof tg.openLink === "function"){
+            tg.openLink(t.action_url);
+          } else {
+            window.open(t.action_url, "_blank", "noopener,noreferrer");
+          }
+        }
 
         pendingTaskClaims.add(id);
         btn.disabled = true;
