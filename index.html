@@ -1035,7 +1035,7 @@
       <div class="card-sub" style="margin-top:6px;" id="friendsSpeedBonusText">Each friend boosts your mining speed by +0.05 m.PXN/sec</div>
     </div>
     <div class="link-row">
-      <div class="panel link-box" id="refLink">t.me/ProXNetworkBot?start=ref_000000</div>
+      <div class="panel link-box" id="refLink">t.me/ProXNetworkAppBot?startapp=… (loading your referral link)</div>
       <button class="btn" id="copyBtn">COPY</button>
     </div>
     <div class="section-head">
@@ -2340,6 +2340,24 @@
   // below (accrue()) — this only affects what the "MINING RATE" UI displays.
   let serverMiningRate = null;
 
+  // ---------- backend referral-count sync (real referral display) ----------
+  // public.mining_state.referral_count (incremented ONLY by the server-side
+  // qualify_referral() RPC — see 0046_qualify_and_flag_referral.sql — never
+  // by this file) is the ONLY authoritative "friends invited" count.
+  // accrue-mining's response already includes the full, current
+  // mining_state row (see accrue-mining/index.ts, which SELECTs "*"), so
+  // the exact same call already made below for the mining rate/PXN balance
+  // also carries the real referral_count — no extra network call, no new
+  // endpoint. Starts null (no successful sync yet) so
+  // effectiveReferralCount() below can fall back to the local
+  // state.referrals for the very first paint or if the backend is briefly
+  // unreachable; the moment a real response arrives, that number wins for
+  // display. Does NOT change how referral_count is computed or incremented
+  // (exclusively qualify_referral()'s job) and does NOT feed into
+  // currentSpeed()'s local formula above, which this display fix does not
+  // touch.
+  let serverReferralCount = null;
+
   // ---------- backend PXN balance sync (balance display fix) ----------
   // public.mining_state.pxn_balance (adjusted only by purchase-miner /
   // adjust_pxn_balance / accrue-mining server-side — never by this file) is
@@ -2361,6 +2379,50 @@
     return (typeof serverMiningRate === "number" && isFinite(serverMiningRate))
       ? serverMiningRate
       : currentSpeed();
+  }
+
+  // What the UI should actually show for "TOTAL FRIENDS INVITED". Prefers
+  // the authoritative backend value (see serverReferralCount above); falls
+  // back to the local state.referrals only when no backend value has been
+  // received yet (very first paint, or offline/outside Telegram).
+  function effectiveReferralCount(){
+    return (typeof serverReferralCount === "number" && isFinite(serverReferralCount))
+      ? serverReferralCount
+      : state.referrals;
+  }
+
+  // ---------- real referral link (Telegram-user-ID-based, server-verified) ----------
+  // Per the locked referral design, the code a referral link carries IS the
+  // referrer's own Telegram telegram_user_id (see
+  // 0045_record_pending_referral.sql) — there is no separate/random
+  // referral code. The id used here comes ONLY from ProXAuth.getUser(), the
+  // cached, non-secret display object js/auth-client.js stores after
+  // auth-telegram (backend/supabase/functions/auth-telegram/index.ts) has
+  // already verified this session's Telegram initData server-side — never
+  // from Telegram.WebApp.initDataUnsafe directly, so the server-verified
+  // Telegram user id remains the one and only source for this link, exactly
+  // as it already is for every other authenticated backend call on this
+  // page. If no verified session exists yet, both helpers return null and
+  // the UI shows a loading placeholder instead of a link that would not
+  // actually resolve to anything.
+  //
+  // Link format: this is a Telegram MINI APP referral flow, not a classic
+  // bot-chat deep link, so it uses `?startapp=<value>` (which launches the
+  // Mini App directly and surfaces <value> as `start_param` inside
+  // `initData` — exactly the field `_shared/telegram.ts` already extracts
+  // and `record_pending_referral()` already expects), NOT `?start=<value>`
+  // (which would instead open a chat with the bot and send it a `/start`
+  // command, never populating the Mini App's `start_param` at all). The bot
+  // username is ProXNetworkAppBot.
+  function currentReferralTelegramUserId(){
+    try{
+      const cachedUser = (window.ProXAuth && typeof ProXAuth.getUser === "function") ? ProXAuth.getUser() : null;
+      return (cachedUser && typeof cachedUser.telegramUserId === "number") ? cachedUser.telegramUserId : null;
+    }catch(e){ return null; }
+  }
+  function currentReferralLink(){
+    const tgId = currentReferralTelegramUserId();
+    return (tgId !== null) ? ("t.me/ProXNetworkAppBot?startapp=" + tgId) : null;
   }
 
   let miningRateSyncInFlight = false;
@@ -2411,6 +2473,18 @@
           if(Number.isFinite(backendBalance) && backendBalance !== state.pxnBalance){
             state.pxnBalance = backendBalance;
             saveState();
+          }
+        }
+        // Referral-count display sync (see serverReferralCount/
+        // effectiveReferralCount() above): unlike claimedTotal/pendingClaim
+        // below, this is refreshed on EVERY successful sync (not just once),
+        // exactly like serverMiningRate itself, since referral_count can
+        // legitimately keep changing during a session as the
+        // referral-qualification-sweep cron job qualifies new referrals.
+        if(backendState && typeof backendState.referral_count !== "undefined"){
+          const backendReferralCount = Number(backendState.referral_count);
+          if(Number.isFinite(backendReferralCount)){
+            serverReferralCount = backendReferralCount;
           }
         }
         if(!claimStateHydratedFromBackend && backendState){
@@ -4287,8 +4361,17 @@
   }
 
   function renderFriends(){
-    document.getElementById("friendsBig").textContent = state.referrals;
-    document.getElementById("refLink").textContent = "t.me/ProXNetworkBot?start=" + state.refCode;
+    // TOTAL FRIENDS INVITED: server-authoritative mining_state.referral_count
+    // whenever it's known (see effectiveReferralCount()/serverReferralCount
+    // above); falls back to the local state.referrals only before the first
+    // successful backend sync.
+    document.getElementById("friendsBig").textContent = effectiveReferralCount();
+    // Referral link: the server-verified Telegram user id (see
+    // currentReferralLink() above) is the ONLY code this link ever carries —
+    // no random/local refCode. Shown as a loading placeholder until a
+    // verified session (ProXAuth.getUser()) is available.
+    const refLinkText = currentReferralLink();
+    document.getElementById("refLink").textContent = refLinkText || "t.me/ProXNetworkAppBot?startapp=… (loading your referral link)";
     document.getElementById("friendsSpeedBonusText").textContent = "Each friend boosts your mining speed by +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec";
   }
 
@@ -4484,21 +4567,25 @@
   });
 
   document.getElementById("copyBtn").addEventListener("click", ()=>{
-    const text = "t.me/ProXNetworkBot?start=" + state.refCode;
+    const text = currentReferralLink();
+    if(!text){
+      toast("Your referral link isn't ready yet — please try again in a moment.");
+      return;
+    }
     if(navigator.clipboard){ navigator.clipboard.writeText(text).catch(()=>{}); }
     toast("Referral link copied");
   });
 
-  // demo helper: tapping the friends "big" number simulates an invite (for testing without real backend)
-  document.getElementById("friendsBig").addEventListener("click", ()=>{
-    state.referrals += 1;
-    state.minedBalance += REWARDS_CONFIG.referralInstant;
-    if(state.claimedTotal === undefined) state.claimedTotal = 0;
-    state.claimedTotal += REWARDS_CONFIG.referralInstant;
-    if(state.referrals >= 1) state.tasksDone["t3"] = true;
-    saveState(); render();
-    toast("Friend joined — +" + REWARDS_CONFIG.referralInstant + " " + TOKEN_SYMBOL + ", +" + REWARDS_CONFIG.referralSpeedBonus.toFixed(2) + " " + TOKEN_SYMBOL + "/sec");
-  });
+  // NOTE: the previous "demo helper" here (tapping the friends "big" number
+  // fabricated a fake invite: local state.referrals++ plus an instant,
+  // purely client-side m.PXN credit) has been removed. Real referral
+  // qualification now comes exclusively from the server — qualify_referral(),
+  // run every 5 minutes by the referral-qualification-sweep cron job (see
+  // 0046_qualify_and_flag_referral.sql and
+  // 0048_schedule_referral_qualification_sweep.sql) — and TOTAL FRIENDS
+  // INVITED (renderFriends() above) now reflects that real, server-side
+  // count instead. Tapping the number no longer does anything; sharing the
+  // link via the COPY button above is how a player actually invites someone.
 
   // ---------- device identity ----------
   // Telegram gives each real account a phone-verified, hard-to-fake user ID —
