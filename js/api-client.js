@@ -132,6 +132,13 @@
   // never holds tokens.
   let lastAccrueMiningResult = null;
 
+  // Non-secret cache of the last get-current-leaderboard call's
+  // response (the `leaderboard` jsonb object from
+  // public.get_current_leaderboard()), so a caller can inspect it
+  // afterwards without re-hitting the network. Same caching pattern
+  // as lastAccrueMiningResult above — never holds tokens.
+  let lastLeaderboardResult = null;
+
   /**
    * Calls the authenticated `me` Edge Function using the current
    * Supabase session (obtained from ProXAuth — never re-implemented
@@ -283,6 +290,59 @@
     return { ok: false, data: result.data, error: message };
   }
 
+  /**
+   * Calls the authenticated `get-current-leaderboard` Edge Function
+   * using the current Supabase session (via ProXAuth.getAccessToken(),
+   * same pattern as fetchMe()/fetchAccrueMining()/fetchClaimMining()
+   * above — never re-implemented here).
+   *
+   * This is a read-only call: it exposes the existing
+   * public.get_current_leaderboard() RPC
+   * (0049_monthly_leaderboard_foundation.sql) and does not write
+   * anything. On success, `data.leaderboard` is exactly the jsonb
+   * object that RPC returns: { period, status, prizes, top100, self }.
+   * Does NOT touch localStorage and does NOT modify any existing
+   * mining/claim/task/marketplace state — index.html decides what, if
+   * anything, to do with the response.
+   *
+   * Always resolves (never throws) with { ok, data, error }, same
+   * shape as every other ProXBackend call.
+   */
+  async function fetchCurrentLeaderboard() {
+    console.log("[ProXBackend] fetching current leaderboard");
+
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      console.warn("[ProXBackend] leaderboard fetch failed");
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      console.warn("[ProXBackend] leaderboard fetch failed");
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("get-current-leaderboard", {
+      method: "POST",
+      body: {},
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      lastLeaderboardResult = result.data.leaderboard;
+      console.log("[ProXBackend] leaderboard loaded");
+      return { ok: true, data: { leaderboard: lastLeaderboardResult }, error: null };
+    }
+
+    console.warn("[ProXBackend] leaderboard fetch failed");
+    const message =
+      (result.data && (result.data.message || result.data.error)) ||
+      result.error ||
+      "Could not load leaderboard.";
+    return { ok: false, data: null, error: message };
+  }
+
   const ProXBackend = {
     /** Returns true once real Supabase project values are configured. */
     isConfigured: isConfigured,
@@ -328,6 +388,20 @@
      * server-side. See fetchClaimMining() above for the full contract.
      */
     fetchClaimMining: fetchClaimMining,
+
+    /**
+     * Calls POST /get-current-leaderboard using the current Supabase
+     * session, exposing the existing
+     * public.get_current_leaderboard() RPC
+     * (0049_monthly_leaderboard_foundation.sql). Read-only. See
+     * fetchCurrentLeaderboard() above for the full contract.
+     */
+    fetchCurrentLeaderboard: fetchCurrentLeaderboard,
+
+    /** Last get-current-leaderboard response's `leaderboard` object, or null. */
+    getLastLeaderboardResult: function () {
+      return lastLeaderboardResult;
+    },
 
     // Internal — exposed so later migration steps (and this module's
     // own tests) can call other functions without duplicating the
