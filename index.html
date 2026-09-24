@@ -3966,6 +3966,7 @@
   let marketReadFetchedAt = 0;
   let marketReadFetchInFlight = null;
   const MARKET_READ_STALE_MS = 10000;
+  let marketBrowseRenderSig = "";
 
   /**
    * Fetches all four Marketplace READ actions in parallel via
@@ -4140,36 +4141,56 @@
     // caller's own listings here — never a comparison against PLAYER_ID
     // (see the section header comment above for why).
     const listingsWrap = document.getElementById("marketListings");
-    listingsWrap.innerHTML = "";
-    if(showInitialLoading){
-      listingsWrap.innerHTML = `<div class="empty-note">Loading Marketplace listings…</div>`;
-    } else if(marketReadCache.errors.listings && !marketReadCache.listings.length){
-      listingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.listings)}</div>`;
-    } else {
-      const others = marketReadCache.listings.filter(l=>!l.isOwn);
-      if(!others.length){
-        listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+    const others = marketReadCache.listings.filter(l=>!l.isOwn);
+    const browseSig = JSON.stringify({
+      loading: showInitialLoading,
+      error: marketReadCache.errors.listings || null,
+      listings: others.map(l=>({
+        id:l.listingId,
+        price:l.price,
+        name:l.name,
+        level:l.level,
+        speed:l.speed,
+        seller:l.sellerName,
+        myOffer:(marketReadCache.myOffers.find(o=>o.listingId===l.listingId && o.status==="open") || null)
+          ? (()=>{ const o=marketReadCache.myOffers.find(o=>o.listingId===l.listingId && o.status==="open"); return {id:o.offerId,price:o.price,status:o.status}; })()
+          : null
+      }))
+    });
+
+    // render() runs every second. Do not rebuild the Browse DOM when the
+    // marketplace data itself has not changed, otherwise the focused
+    // "Your offer (m.PXN)" input is destroyed and recreated every tick,
+    // which prevents normal typing. Event listeners stay attached to the
+    // existing buttons until the listing/offer signature actually changes.
+    if(marketBrowseRenderSig !== browseSig){
+      marketBrowseRenderSig = browseSig;
+      listingsWrap.innerHTML = "";
+      if(showInitialLoading){
+        listingsWrap.innerHTML = `<div class="empty-note">Loading Marketplace listings…</div>`;
+      } else if(marketReadCache.errors.listings && !others.length){
+        listingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.listings)}</div>`;
+      } else {
+        if(!others.length){
+          listingsWrap.innerHTML = `<div class="empty-note">No listings from other players yet.</div>`;
+        }
+        others.forEach(l=>{
+          const myOffer = marketReadCache.myOffers.find(o=>o.listingId===l.listingId && o.status==="open");
+          const div = document.createElement("div");
+          div.className = "panel market-card";
+          div.innerHTML = `
+            <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
+            <div class="market-card-name">${escapeHtml(l.name)}</div>
+            <div class="market-card-sub">${l.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${escapeHtml(l.sellerName)}</div>
+            <div class="market-card-price">${fmt(l.price,0)} m.PXN</div>
+            <button class="btn" data-buy-listing="${l.listingId}">BUY NOW</button>
+            ${myOffer
+              ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.price,0)} m.PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.listingId}|${myOffer.offerId}">WITHDRAW</button></div>`
+              : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (m.PXN)" id="offer-${l.listingId}"><button class="btn secondary" data-make-offer="${l.listingId}">OFFER</button></div>`}
+          `;
+          listingsWrap.appendChild(div);
+        });
       }
-      others.forEach(l=>{
-        // "Your offer already pending on this listing" comes from the
-        // separately-fetched get_my_offers list, matched by listing_id —
-        // list_active_listings itself is not assumed to carry the
-        // caller's own offers inline.
-        const myOffer = marketReadCache.myOffers.find(o=>o.listingId===l.listingId && o.status==="open");
-        const div = document.createElement("div");
-        div.className = "panel market-card";
-        div.innerHTML = `
-          <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
-          <div class="market-card-name">${escapeHtml(l.name)}</div>
-          <div class="market-card-sub">${l.speed.toFixed(2)} ${TOKEN_SYMBOL}/sec · seller ${escapeHtml(l.sellerName)}</div>
-          <div class="market-card-price">${fmt(l.price,0)} m.PXN</div>
-          <button class="btn" data-buy-listing="${l.listingId}">BUY NOW</button>
-          ${myOffer
-            ? `<div class="make-offer-row"><span class="empty-note" style="margin:0;">Your offer: ${fmt(myOffer.price,0)} m.PXN (pending)</span><button class="btn secondary" data-withdraw-offer="${l.listingId}|${myOffer.offerId}">WITHDRAW</button></div>`
-            : `<div class="make-offer-row"><input class="mnum" type="number" min="1" step="1" placeholder="Your offer (m.PXN)" id="offer-${l.listingId}"><button class="btn secondary" data-make-offer="${l.listingId}">OFFER</button></div>`}
-        `;
-        listingsWrap.appendChild(div);
-      });
     }
     // Mutation handlers (buyListing/makeOffer/cancelOffer) — wired up as
     // before, now backed by callMarketplaceBackend() against the real
@@ -4202,7 +4223,7 @@
     } else if(marketReadCache.errors.myListings && !marketReadCache.myListings.length){
       myListingsWrap.innerHTML = `<div class="empty-note">${escapeHtml(marketReadCache.errors.myListings)}</div>`;
     } else {
-      const mine = marketReadCache.myListings;
+      const mine = marketReadCache.myListings.filter(l => l.status === "active");
       if(!mine.length){
         myListingsWrap.innerHTML = `<div class="empty-note">You have no active listings.</div>`;
       }
