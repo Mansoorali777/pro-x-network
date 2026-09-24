@@ -4225,7 +4225,9 @@
           <div class="market-card-icon miner-icon-wrap">${marketItemThumb(l)}<div class="level-badge">L${l.level}</div></div>
           <div class="market-card-name">${escapeHtml(l.name)}</div>
           <div class="market-card-sub">Asking ${fmt(l.price,0)} m.PXN · ${offersForListing.length} offer(s)</div>
-          <button class="btn secondary" data-cancel-listing="${l.listingId}">CANCEL</button>
+          ${l.status === "active"
+            ? `<button class="btn secondary" data-cancel-listing="${l.listingId}">CANCEL</button>`
+            : `<div class="card-sub">Status: ${escapeHtml(String(l.status).toUpperCase())}</div>`}
           ${offersHtml}
         `;
         myListingsWrap.appendChild(div);
