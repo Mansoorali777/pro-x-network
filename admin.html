@@ -316,6 +316,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         Earn Tasks
       </button>
+      <button class="side-btn" data-page="withdrawals">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+        Withdrawals
+      </button>
       <button class="side-btn" data-page="marketplace">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9Z"/><path d="M9 13a3 3 0 0 0 6 0"/></svg>
         Marketplace
@@ -510,18 +514,63 @@
     <!-- REWARDS -->
     <div class="page" id="page-rewards">
       <div class="page-head"><h2>Reward Economy</h2><div class="sub">Referral bonuses and boost values. Task rewards live on the Tasks page.</div></div>
+
+      <!-- LIVE MINING ECONOMY — real backend, public.mining_config. Loads
+           from and saves to the actual mining_config table via the
+           admin-get-mining-config (read) and admin-set-mining-config
+           (write) Edge Functions, which verify this admin's session
+           server-side before touching anything. These seven values are
+           NEVER read from or written to cfg.rewards/localStorage — the
+           legacy panel below is a separate, non-authoritative set of
+           demo fields. -->
+      <div class="page-head" style="margin-top:0;">
+        <h2 style="font-size:16px;">Live Mining Economy <span class="tag active" style="margin-left:8px;">LIVE — SERVER CONTROLLED</span></h2>
+        <div class="sub">SERVER CONTROL — These values are loaded from and saved to the server-side mining economy (public.mining_config), the same row accrue-mining and level-up-mining read to compute every player's actual mining rate and level-up cost. Changes here take effect immediately for all players.</div>
+      </div>
+      <div class="panel form-grid">
+        <div class="field"><label>BASE MINING SPEED (m.PXN/sec)</label><input type="number" step="0.00000001" min="0" max="1000000" id="liveBaseSpeed"></div>
+        <div class="field"><label>REFERRAL SPEED BONUS (m.PXN/sec)</label><input type="number" step="0.00000001" min="0" max="1000000" id="liveReferralSpeedBonus"></div>
+        <div class="field"><label>DAILY BOOST MULTIPLIER</label><input type="number" step="0.01" min="0.00000001" max="1000" id="liveBoostMultiplier"></div>
+        <div class="field"><label>AD BOOST MULTIPLIER</label><input type="number" step="0.01" min="0.00000001" max="1000" id="liveAdBoostMultiplier"></div>
+        <div class="field">
+          <label>LEVEL BOOST PER LEVEL</label>
+          <input type="number" step="0.01" min="0" max="10" id="liveLevelBoostPercent">
+          <div class="sub" style="margin-top:4px;">Fraction per level: 0.05 = +5%</div>
+        </div>
+        <div class="field"><label>LEVEL UP COST (m.PXN)</label><input type="number" step="1" min="0" max="100000000" id="liveLevelUpCostPxn"></div>
+        <div class="field">
+          <label>MAX OFFLINE ACCRUAL (sec)</label>
+          <input type="number" step="1" min="60" max="2592000" id="liveMaxOfflineAccrualSec">
+          <div class="sub" style="margin-top:4px;">Maximum offline mining time allowed by the server.</div>
+          <div class="sub" id="liveMaxOfflineAccrualHuman" style="margin-top:2px;"></div>
+        </div>
+      </div>
+      <div class="panel note">LEVEL BOOST PER LEVEL uses a fraction, not a whole percent: 0.05 = +5% mining speed per level, 0.10 = +10% per level. MAX OFFLINE ACCRUAL is stored and sent to the server in seconds — the line under that field is just a human-readable equivalent and isn't itself saved.</div>
+      <div class="btn-row">
+        <button class="btn" id="liveConfigRefreshBtn">REFRESH LIVE CONFIG</button>
+        <button class="btn amber" id="liveConfigSaveBtn">SAVE LIVE CONFIG</button>
+      </div>
+      <div class="note" id="liveConfigMsg" style="display:none; padding:10px 16px;"></div>
+
+      <!-- LEGACY / LOCAL DEMO REWARD SETTINGS — unchanged behavior, still
+           saved to localStorage only via saveRewardsBtn below. Not
+           authoritative for server-side mining payouts; kept only for the
+           local-demo player list on the Players page. The five fields
+           that used to live in this panel and overlapped with the real
+           server-side mining_config (referral speed bonus, daily/ad boost
+           multiplier, level-up cost, level boost %) now live exclusively
+           in the LIVE MINING ECONOMY panel above — cfg.rewards still
+           carries those five keys internally (untouched, so nothing else
+           in this file that might reference them breaks), but no input
+           here writes or reads them anymore. -->
+      <div class="page-head" style="margin-top:28px;"><h2 style="font-size:16px;">Legacy / Local Demo Reward Settings</h2><div class="sub">These legacy settings are not authoritative for server-side mining payouts. Stored only in this browser's localStorage.</div></div>
       <div class="panel form-grid">
         <div class="field"><label>REFERRAL INSTANT REWARD</label><input type="number" step="1" id="rewardReferralInstant"></div>
-        <div class="field"><label>REFERRAL SPEED BONUS (m.PXN/sec)</label><input type="number" step="0.01" id="rewardReferralSpeed"></div>
-        <div class="field"><label>DAILY BOOST MULTIPLIER</label><input type="number" step="0.5" id="rewardBoostMultiplier"></div>
         <div class="field"><label>DAILY BOOST DURATION (min)</label><input type="number" step="1" id="rewardBoostDuration"></div>
         <div class="field"><label>TAP BOOST MULTIPLIER</label><input type="number" step="0.5" id="rewardTapMultiplier"></div>
         <div class="field"><label>TAP BOOST DURATION (sec)</label><input type="number" step="1" id="rewardTapDuration"></div>
         <div class="field"><label>ADS REQUIRED FOR BOOST</label><input type="number" step="1" min="1" id="rewardAdsRequired"></div>
-        <div class="field"><label>AD BOOST MULTIPLIER</label><input type="number" step="0.5" id="rewardAdBoostMultiplier"></div>
         <div class="field"><label>AD BOOST DURATION (hours)</label><input type="number" step="1" id="rewardAdBoostHours"></div>
-        <div class="field"><label>LEVEL UP COST (PXN)</label><input type="number" step="1" min="0" id="rewardLevelUpCost"></div>
-        <div class="field"><label>LEVEL UP BOOST (% mining speed)</label><input type="number" step="0.01" min="0" id="rewardLevelBoostPercent"></div>
       </div>
       <div class="panel note">"Watch Ads" plays a short simulated ad in the app right now — there's no real ad network wired up, since that needs a publisher account with a rewarded-ad provider (common choices for Telegram Mini Apps: Adsgram, Monetag). The reward logic here is ready to connect to one once you have that.</div>
       <div class="btn-row"><button class="btn" id="saveRewardsBtn">SAVE REWARD CONFIG</button></div>
@@ -583,6 +632,37 @@
       </div>
       <div class="note" id="etEmptyNote" style="display:none;">No earn tasks yet — add one above.</div>
       <div class="note" id="etListMsg" style="display:none; padding:10px 16px;"></div>
+    </div>
+
+    <!-- WITHDRAWALS (backend-authoritative, public.withdrawals /
+         withdrawal_config, 0052_player_wallet_and_withdrawals.sql). Every
+         list/approve/reject/complete action here goes through the
+         admin-withdrawals Edge Function, which re-verifies this admin's
+         session server-side (is_current_user_admin()) before touching
+         anything — the browser is never trusted for admin status,
+         withdrawal amount, or withdrawal status. This page lists PENDING
+         and APPROVED withdrawals (admin_list_active_withdrawals, 0055)
+         — a pending row still shows APPROVE/REJECT, an approved row
+         shows only COMPLETE (rejecting an already-approved withdrawal
+         isn't a backend-supported transition). Rejected/completed rows
+         are terminal and drop off the list once actioned, same as the
+         backend RPC's own scope. -->
+    <div class="page" id="page-withdrawals">
+      <div class="page-head">
+        <h2>Withdrawals</h2>
+        <div class="sub">Pending and approved PXN withdrawal requests. The backend remains authoritative for every field and every transition — this page never computes a balance, a conversion rate, or an approval decision locally.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn ghost" id="wdRefreshBtn">REFRESH LIST</button>
+      </div>
+      <div class="note" id="wdListMsg" style="display:none; padding:10px 16px;"></div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>PLAYER</th><th>WALLET ADDRESS</th><th>AMOUNT (m.PXN)</th><th>AMOUNT (PXN)</th><th>STATUS</th><th>REQUESTED</th><th>ACTIONS</th></tr></thead>
+          <tbody id="wdTableBody"></tbody>
+        </table>
+      </div>
+      <div class="note" id="wdEmptyNote" style="display:none;">No pending or approved withdrawals.</div>
     </div>
 
     <!-- MARKETPLACE -->
@@ -2461,6 +2541,197 @@
   const etNavBtn = document.querySelector('.side-btn[data-page="earnTasks"]');
   if(etNavBtn) etNavBtn.addEventListener("click", fetchEarnTasksList);
 
+  // ---------- withdrawals (admin-withdrawals Edge Function,
+  // 0052_player_wallet_and_withdrawals.sql) ----------
+  //
+  // Same auth/error-handling shape as callAdminTaskCatalog() above:
+  // getAdminSupabaseClient() attaches this admin's own session, and the
+  // backend independently re-verifies admin status server-side
+  // (is_current_user_admin()) before any RPC runs — this file never
+  // asserts admin status itself and never holds a service-role key.
+  let wdList = [];
+  let wdPending = false;
+
+  function setWdListMsg(text, isError){
+    const el = document.getElementById("wdListMsg");
+    if(!text){ el.style.display = "none"; return; }
+    el.style.display = "block";
+    el.style.color = isError ? "var(--bad,#e05a5a)" : "inherit";
+    el.textContent = text;
+  }
+
+  async function wdErrorMessage(error){
+    let status = null;
+    let serverMessage = null;
+    if(error && error.context){
+      try{
+        if(typeof error.context.status === "number") status = error.context.status;
+        if(typeof error.context.json === "function"){
+          const parsed = await error.context.json();
+          if(parsed && parsed.error && typeof parsed.error.message === "string") serverMessage = parsed.error.message;
+        }
+      }catch(e){ /* keep defaults below */ }
+    }
+    switch(status){
+      case 400: return serverMessage || "That request wasn't valid — check the fields and try again.";
+      case 401: return "Session expired — please log in again.";
+      case 403: return "Admin access denied.";
+      case 404: return "That withdrawal no longer exists — refreshing the list.";
+      case 409: return serverMessage || "This withdrawal is no longer in the expected state — refreshing the list.";
+      default: return serverMessage || "Server error — please try again.";
+    }
+  }
+
+  async function callAdminWithdrawals(body){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      return { data: null, message: "Backend not configured — edit config/frontend-config.js." };
+    }
+    const { data, error } = await client.functions.invoke("admin-withdrawals", { body });
+    if(error){
+      return { data: null, message: await wdErrorMessage(error) };
+    }
+    if(!data || data.success !== true){
+      return { data: null, message: (data && data.error && data.error.message) || "Request failed" };
+    }
+    return { data: data.data, message: null };
+  }
+
+  function wdStatusTagClass(status){
+    if(status === "approved") return "active";
+    return "inactive";
+  }
+
+  function renderWithdrawalsTable(){
+    const body = document.getElementById("wdTableBody");
+    body.innerHTML = "";
+    document.getElementById("wdEmptyNote").style.display = wdList.length ? "none" : "block";
+    wdList.forEach(w=>{
+      const tr = document.createElement("tr");
+      const displayName = (w.display_name || "Player").replace(/</g,"&lt;");
+      const address = (w.wallet_address || "").replace(/</g,"&lt;");
+      const requested = w.created_at ? new Date(w.created_at).toLocaleString() : "";
+      const isApproved = w.status === "approved";
+      tr.innerHTML = `
+        <td>${displayName}</td>
+        <td style="word-break:break-all; max-width:220px;">${address}</td>
+        <td>${Number(w.amount_mpxn || 0).toLocaleString("en-US",{maximumFractionDigits:8})}</td>
+        <td>${Number(w.amount_pxn || 0).toLocaleString("en-US",{maximumFractionDigits:8})}</td>
+        <td><span class="tag ${wdStatusTagClass(w.status)}">${(w.status || "").toUpperCase()}</span></td>
+        <td>${requested}</td>
+        <td>
+          <div class="row-actions">
+            ${isApproved
+              ? `<button class="btn good" data-wd-complete="${w.id}">COMPLETE</button>`
+              : `<button class="btn good" data-wd-approve="${w.id}">APPROVE</button>
+                 <button class="btn danger" data-wd-reject="${w.id}">REJECT</button>`}
+          </div>
+        </td>`;
+      body.appendChild(tr);
+    });
+
+    body.querySelectorAll("[data-wd-approve]").forEach(btn=>{
+      btn.addEventListener("click", ()=> wdApprove(btn.dataset.wdApprove));
+    });
+    body.querySelectorAll("[data-wd-reject]").forEach(btn=>{
+      btn.addEventListener("click", ()=> wdReject(btn.dataset.wdReject));
+    });
+    body.querySelectorAll("[data-wd-complete]").forEach(btn=>{
+      btn.addEventListener("click", ()=> wdComplete(btn.dataset.wdComplete));
+    });
+  }
+
+  async function fetchWithdrawalsList(){
+    if(wdPending) return;
+    wdPending = true;
+    setWdListMsg("", false);
+    // list_active (0055) returns BOTH pending and approved rows, so an
+    // approved withdrawal stays visible here until it's completed —
+    // list_pending alone made COMPLETE unreachable, since the row
+    // vanished from the only list this page could fetch the instant it
+    // was approved. Rejected/completed withdrawals are terminal and are
+    // intentionally not returned by either action.
+    const { data, message } = await callAdminWithdrawals({ action: "list_active" });
+    wdPending = false;
+    if(!data){
+      setWdListMsg(message, true);
+      return;
+    }
+    // Backend already returns rows ordered oldest-first (created_at asc)
+    // — kept as-is rather than re-sorting client-side.
+    wdList = Array.isArray(data) ? data : [];
+    renderWithdrawalsTable();
+  }
+
+  async function wdApprove(id){
+    const confirmed = window.confirm("Approve this withdrawal? The player's requested amount has already been debited from their balance.");
+    if(!confirmed) return;
+    setWdListMsg("", false);
+    const { data, message } = await callAdminWithdrawals({ action: "approve", withdrawal_id: id });
+    if(!data){
+      setWdListMsg(message, true);
+      if(message && message.indexOf("no longer") !== -1) fetchWithdrawalsList();
+      return;
+    }
+    logAction("WITHDRAWAL APPROVED", id);
+    toast("Withdrawal approved");
+    fetchWithdrawalsList();
+  }
+
+  async function wdReject(id){
+    // A rejection reason is required by the backend (PXN92) — collected
+    // here via a plain prompt, same lightweight-dialog approach already
+    // used elsewhere in this admin panel (window.confirm above). Backend
+    // refunds the debited amount automatically on reject; this page does
+    // not touch the player's balance itself.
+    const reason = window.prompt("Reason for rejecting this withdrawal (shown to the player):");
+    if(reason === null) return; // cancelled
+    if(!reason.trim()){
+      setWdListMsg("A rejection reason is required.", true);
+      return;
+    }
+    setWdListMsg("", false);
+    const { data, message } = await callAdminWithdrawals({ action: "reject", withdrawal_id: id, reason: reason.trim() });
+    if(!data){
+      setWdListMsg(message, true);
+      if(message && message.indexOf("no longer") !== -1) fetchWithdrawalsList();
+      return;
+    }
+    logAction("WITHDRAWAL REJECTED", id + " — " + reason.trim());
+    toast("Withdrawal rejected — player refunded");
+    fetchWithdrawalsList();
+  }
+
+  async function wdComplete(id){
+    // tx_hash is required by the backend (VALIDATION_ERROR otherwise).
+    // This page never invents or auto-fills a transaction hash — the
+    // admin must supply the real on-chain tx hash after actually
+    // sending the funds.
+    const txHash = window.prompt("Blockchain transaction hash for this completed withdrawal:");
+    if(txHash === null) return; // cancelled
+    if(!txHash.trim()){
+      setWdListMsg("A transaction hash is required to mark this complete.", true);
+      return;
+    }
+    setWdListMsg("", false);
+    const { data, message } = await callAdminWithdrawals({ action: "complete", withdrawal_id: id, tx_hash: txHash.trim() });
+    if(!data){
+      setWdListMsg(message, true);
+      if(message && message.indexOf("no longer") !== -1) fetchWithdrawalsList();
+      return;
+    }
+    logAction("WITHDRAWAL COMPLETED", id + " — tx:" + txHash.trim());
+    toast("Withdrawal marked complete");
+    fetchWithdrawalsList();
+  }
+
+  document.getElementById("wdRefreshBtn").addEventListener("click", fetchWithdrawalsList);
+
+  // Load the pending list automatically the moment this section is
+  // opened — same one-nav-button-listener pattern as etNavBtn above.
+  const wdNavBtn = document.querySelector('.side-btn[data-page="withdrawals"]');
+  if(wdNavBtn) wdNavBtn.addEventListener("click", fetchWithdrawalsList);
+
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -2640,35 +2911,224 @@
   // ---------- rewards ----------
   function renderRewards(){
     document.getElementById("rewardReferralInstant").value = cfg.rewards.referralInstant;
-    document.getElementById("rewardReferralSpeed").value = cfg.rewards.referralSpeedBonus;
-    document.getElementById("rewardBoostMultiplier").value = cfg.rewards.boostMultiplier;
     document.getElementById("rewardBoostDuration").value = cfg.rewards.boostDurationMin;
     document.getElementById("rewardTapMultiplier").value = cfg.rewards.tapBoostMultiplier;
     document.getElementById("rewardTapDuration").value = cfg.rewards.tapBoostDurationSec;
     document.getElementById("rewardAdsRequired").value = cfg.rewards.adsRequiredForBoost;
-    document.getElementById("rewardAdBoostMultiplier").value = cfg.rewards.adBoostMultiplier;
     document.getElementById("rewardAdBoostHours").value = cfg.rewards.adBoostDurationHours;
-    document.getElementById("rewardLevelUpCost").value = cfg.rewards.levelUpCostPxn;
-    document.getElementById("rewardLevelBoostPercent").value = cfg.rewards.levelBoostPercent;
   }
   document.getElementById("saveRewardsBtn").addEventListener("click", ()=>{
     cfg.rewards.referralInstant = parseFloat(document.getElementById("rewardReferralInstant").value) || 0;
-    cfg.rewards.referralSpeedBonus = parseFloat(document.getElementById("rewardReferralSpeed").value) || 0;
-    cfg.rewards.boostMultiplier = parseFloat(document.getElementById("rewardBoostMultiplier").value) || 1;
     cfg.rewards.boostDurationMin = parseFloat(document.getElementById("rewardBoostDuration").value) || 1;
     cfg.rewards.tapBoostMultiplier = parseFloat(document.getElementById("rewardTapMultiplier").value) || 1;
     cfg.rewards.tapBoostDurationSec = parseFloat(document.getElementById("rewardTapDuration").value) || 1;
     cfg.rewards.adsRequiredForBoost = parseInt(document.getElementById("rewardAdsRequired").value, 10) || 1;
-    cfg.rewards.adBoostMultiplier = parseFloat(document.getElementById("rewardAdBoostMultiplier").value) || 1;
     cfg.rewards.adBoostDurationHours = parseFloat(document.getElementById("rewardAdBoostHours").value) || 1;
-    cfg.rewards.levelUpCostPxn = parseFloat(document.getElementById("rewardLevelUpCost").value);
-    if(!(cfg.rewards.levelUpCostPxn >= 0)) cfg.rewards.levelUpCostPxn = 100;
-    cfg.rewards.levelBoostPercent = parseFloat(document.getElementById("rewardLevelBoostPercent").value);
-    if(!(cfg.rewards.levelBoostPercent >= 0)) cfg.rewards.levelBoostPercent = 0.05;
     saveConfig();
-    logAction("REWARD CONFIG SAVED", "Referral + boost values updated");
+    logAction("REWARD CONFIG SAVED", "Legacy demo referral + boost values updated");
     toast("Reward configuration saved");
   });
+
+  // ---------- LIVE MINING ECONOMY (real backend, public.mining_config) ----------
+  // Talks to admin-get-mining-config / admin-set-mining-config, NOT the
+  // local-demo cfg/localStorage data above. Reuses the same signed-in
+  // supabase-js client/session from the login gate via
+  // getAdminSupabaseClient() — never a separate client, never a manually
+  // attached token, never the service_role key (which this file never has
+  // access to at all). client.functions.invoke() attaches the current
+  // session's Authorization bearer token automatically. These seven
+  // fields are ALWAYS populated from the server response — never from
+  // cfg.rewards/localStorage — and are never written into cfg/saveConfig().
+  let liveConfigPending = false;
+
+  const LIVE_FIELD_IDS = {
+    base_speed: "liveBaseSpeed",
+    referral_speed_bonus: "liveReferralSpeedBonus",
+    boost_multiplier: "liveBoostMultiplier",
+    ad_boost_multiplier: "liveAdBoostMultiplier",
+    level_boost_percent: "liveLevelBoostPercent",
+    level_up_cost_pxn: "liveLevelUpCostPxn",
+    max_offline_accrual_sec: "liveMaxOfflineAccrualSec",
+  };
+
+  function setLiveConfigMsg(text, isError){
+    const el = document.getElementById("liveConfigMsg");
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+  }
+
+  function humanizeOfflineSeconds(sec){
+    const n = Number(sec);
+    if(!Number.isFinite(n) || n <= 0) return "";
+    const hours = n / 3600;
+    if(hours >= 24) return "≈ " + (hours/24).toFixed(1) + " days";
+    return "≈ " + hours.toFixed(1) + " hours";
+  }
+
+  function renderLiveConfig(serverConfig){
+    Object.keys(LIVE_FIELD_IDS).forEach(function(key){
+      const el = document.getElementById(LIVE_FIELD_IDS[key]);
+      if(el) el.value = serverConfig[key];
+    });
+    document.getElementById("liveMaxOfflineAccrualHuman").textContent =
+      humanizeOfflineSeconds(serverConfig.max_offline_accrual_sec);
+  }
+
+  // Reads a small non-2xx Edge Function error response (our own
+  // { success:false, message } JSON) into a display-safe string,
+  // falling back to a generic message — same pattern as
+  // callAdminSetMiningSpeed above. Never surfaces a raw database error.
+  async function liveConfigErrorMessage(error){
+    let message = (error && error.message) || "Request failed";
+    try{
+      if(error && error.context && typeof error.context.json === "function"){
+        const parsed = await error.context.json();
+        if(parsed && parsed.message) message = parsed.message;
+      }
+    }catch(e){ /* keep default message */ }
+    return message;
+  }
+
+  // Reads the current server-side mining_config via admin-get-mining-config
+  // and populates the seven LIVE fields from data.config. Never touches
+  // cfg.rewards/localStorage.
+  async function loadLiveMiningConfig(){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      setLiveConfigMsg("Backend not configured — edit config/frontend-config.js.", true);
+      return;
+    }
+    setLiveConfigMsg("", false);
+
+    const { data, error } = await client.functions.invoke("admin-get-mining-config", { body: {} });
+
+    if(error){
+      setLiveConfigMsg(await liveConfigErrorMessage(error), true);
+      return;
+    }
+    if(!data || data.success !== true || !data.config){
+      setLiveConfigMsg((data && data.message) || "Could not load live mining config.", true);
+      return;
+    }
+
+    renderLiveConfig(data.config);
+    setLiveConfigMsg("Live config loaded.", false);
+  }
+
+  document.getElementById("liveConfigRefreshBtn").addEventListener("click", ()=>{
+    if(liveConfigPending) return;
+    loadLiveMiningConfig();
+  });
+
+  // Refresh the live config automatically the moment the Rewards page is
+  // opened, so the admin always sees the current server value — a
+  // separate listener on just this one nav button, same pattern used for
+  // Earn Tasks/Miner Management below. The shared side-nav show/hide loop
+  // is left completely untouched.
+  const rewardsNavBtn = document.querySelector('.side-btn[data-page="rewards"]');
+  if(rewardsNavBtn) rewardsNavBtn.addEventListener("click", loadLiveMiningConfig);
+
+  // Reads the seven LIVE fields, validates them, and saves via
+  // admin-set-mining-config. Never writes into cfg.rewards or calls
+  // saveConfig() for these values.
+  async function saveLiveMiningConfig(){
+    if(liveConfigPending) return;
+    setLiveConfigMsg("", false);
+
+    const baseSpeed = parseFloat(document.getElementById("liveBaseSpeed").value);
+    const referralSpeedBonus = parseFloat(document.getElementById("liveReferralSpeedBonus").value);
+    const boostMultiplier = parseFloat(document.getElementById("liveBoostMultiplier").value);
+    const adBoostMultiplier = parseFloat(document.getElementById("liveAdBoostMultiplier").value);
+    const levelBoostPercent = parseFloat(document.getElementById("liveLevelBoostPercent").value);
+    const levelUpCostPxn = parseFloat(document.getElementById("liveLevelUpCostPxn").value);
+    const maxOfflineAccrualSec = parseInt(document.getElementById("liveMaxOfflineAccrualSec").value, 10);
+
+    // Validate strictly against the exact ranges admin-set-mining-config
+    // itself enforces — never invent different ranges here.
+    if(!Number.isFinite(baseSpeed) || baseSpeed < 0 || baseSpeed > 1000000){
+      setLiveConfigMsg("Base Mining Speed must be a number from 0 to 1000000.", true); return;
+    }
+    if(!Number.isFinite(referralSpeedBonus) || referralSpeedBonus < 0 || referralSpeedBonus > 1000000){
+      setLiveConfigMsg("Referral Speed Bonus must be a number from 0 to 1000000.", true); return;
+    }
+    if(!Number.isFinite(boostMultiplier) || boostMultiplier <= 0 || boostMultiplier > 1000){
+      setLiveConfigMsg("Daily Boost Multiplier must be a number greater than 0, up to 1000.", true); return;
+    }
+    if(!Number.isFinite(adBoostMultiplier) || adBoostMultiplier <= 0 || adBoostMultiplier > 1000){
+      setLiveConfigMsg("Ad Boost Multiplier must be a number greater than 0, up to 1000.", true); return;
+    }
+    if(!Number.isFinite(levelBoostPercent) || levelBoostPercent < 0 || levelBoostPercent > 10){
+      setLiveConfigMsg("Level Boost Per Level must be a number from 0 to 10 (0.05 = +5%).", true); return;
+    }
+    if(!Number.isFinite(levelUpCostPxn) || levelUpCostPxn < 0 || levelUpCostPxn > 100000000){
+      setLiveConfigMsg("Level Up Cost must be a number from 0 to 100000000.", true); return;
+    }
+    if(!Number.isInteger(maxOfflineAccrualSec) || maxOfflineAccrualSec < 60 || maxOfflineAccrualSec > 2592000){
+      setLiveConfigMsg("Max Offline Accrual must be a whole number of seconds from 60 to 2592000.", true); return;
+    }
+
+    const client = getAdminSupabaseClient();
+    if(!client){
+      setLiveConfigMsg("Backend not configured — edit config/frontend-config.js.", true);
+      return;
+    }
+
+    liveConfigPending = true;
+    const btn = document.getElementById("liveConfigSaveBtn");
+    btn.disabled = true;
+    try{
+      const { data, error } = await client.functions.invoke("admin-set-mining-config", {
+        body: {
+          baseSpeed: baseSpeed,
+          referralSpeedBonus: referralSpeedBonus,
+          boostMultiplier: boostMultiplier,
+          adBoostMultiplier: adBoostMultiplier,
+          levelBoostPercent: levelBoostPercent,
+          levelUpCostPxn: levelUpCostPxn,
+          maxOfflineAccrualSec: maxOfflineAccrualSec,
+        }
+      });
+
+      if(error){
+        setLiveConfigMsg(await liveConfigErrorMessage(error), true);
+        return;
+      }
+      if(!data || data.success !== true || !data.config){
+        setLiveConfigMsg((data && data.message) || "Could not save live mining config.", true);
+        return;
+      }
+
+      // admin-set-mining-config returns the full row in camelCase — map
+      // it back into the same snake_case shape renderLiveConfig expects
+      // (the shape admin-get-mining-config returns), so both load and
+      // save repopulate the fields through one shared function and the
+      // fields always reflect exactly what the server just confirmed.
+      renderLiveConfig({
+        base_speed: data.config.baseSpeed,
+        referral_speed_bonus: data.config.referralSpeedBonus,
+        boost_multiplier: data.config.boostMultiplier,
+        ad_boost_multiplier: data.config.adBoostMultiplier,
+        level_boost_percent: data.config.levelBoostPercent,
+        level_up_cost_pxn: data.config.levelUpCostPxn,
+        max_offline_accrual_sec: data.config.maxOfflineAccrualSec,
+      });
+      setLiveConfigMsg("Live mining config saved.", false);
+      logAction("LIVE MINING CONFIG SAVED", "base=" + data.config.baseSpeed +
+        " referralBonus=" + data.config.referralSpeedBonus +
+        " boost=" + data.config.boostMultiplier +
+        " adBoost=" + data.config.adBoostMultiplier +
+        " levelBoost=" + data.config.levelBoostPercent +
+        " levelUpCost=" + data.config.levelUpCostPxn +
+        " maxOffline=" + data.config.maxOfflineAccrualSec);
+      toast("Live mining config saved");
+    } finally {
+      liveConfigPending = false;
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById("liveConfigSaveBtn").addEventListener("click", saveLiveMiningConfig);
 
   // ---------- tasks ----------
   function taskPreviewMarkup(t){
@@ -2951,6 +3411,10 @@
     renderAudit();
     renderMarketplaceAdmin();
     renderLeaderboardAdmin();
+    // Authenticated init is complete — load the real server-side mining
+    // economy values (never from cfg/localStorage) so they're already
+    // current even before the admin opens the Rewards page.
+    loadLiveMiningConfig();
   }
 
   function renderAnticheat(){
