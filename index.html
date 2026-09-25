@@ -836,470 +836,6 @@
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
   ::-webkit-scrollbar{ display:none; }
-
-  /* =========================================================
-     PRO-X PREMIUM MINING UI — visual-only theme overrides
-     Existing markup, event handlers and backend calls unchanged.
-     ========================================================= */
-  :root{
-    --void:#070a12;
-    --panel:#101522;
-    --panel-2:#151d2d;
-    --line:rgba(159,178,209,.13);
-    --cyan:#8b7cff;
-    --cyan-dim:#5145a8;
-    --amber:#f6c86b;
-    --amber-dim:#82643b;
-    --steel:#8994aa;
-    --steel-soft:#465168;
-    --text:#f2f4fb;
-    --good:#8cf4c2;
-    --danger:#ff7187;
-  }
-  html,body{
-    min-height:100%;
-    background:#070a12;
-    color:var(--text);
-    font-family:'Inter',sans-serif;
-  }
-  body{
-    background:
-      radial-gradient(ellipse at 50% -12%,rgba(96,79,200,.19),transparent 44%),
-      radial-gradient(ellipse at 100% 55%,rgba(39,154,137,.07),transparent 38%),
-      #070a12;
-  }
-  #app{
-    max-width:480px;
-    min-height:100vh;
-    overflow:hidden;
-    background:
-      radial-gradient(ellipse at 50% 0%,rgba(106,83,222,.105),transparent 32%),
-      linear-gradient(180deg,#0b0e18 0%,#090c14 58%,#080b12 100%);
-    box-shadow:0 0 100px rgba(0,0,0,.52);
-  }
-  .panel{
-    background:linear-gradient(145deg,rgba(22,29,45,.96),rgba(14,19,31,.98));
-    border:1px solid var(--line);
-    border-radius:20px;
-    clip-path:none;
-    box-shadow:0 12px 30px rgba(0,0,0,.17),inset 0 1px rgba(255,255,255,.025);
-  }
-  .panel::before{display:none}
-  .eyebrow{
-    color:#929db4;
-    font-family:'Inter',sans-serif;
-    font-size:10px;
-    font-weight:700;
-    letter-spacing:.13em;
-  }
-  .statusbar{
-    padding:16px 18px 13px;
-    min-height:76px;
-    position:relative;
-    z-index:2;
-  }
-  .brand{gap:10px}
-  .brand-mark{
-    width:36px;height:36px;
-    clip-path:none;
-    border-radius:12px;
-    background:linear-gradient(140deg,#b6aaff,#7162ea 60%,#47d9bc);
-    color:#0c1020;
-    font-size:16px;
-    box-shadow:0 5px 18px rgba(126,105,250,.33),inset 0 1px rgba(255,255,255,.5);
-  }
-  .brand-name{
-    font-family:'Inter',sans-serif;
-    font-size:13px;
-    font-weight:800;
-    letter-spacing:.075em;
-  }
-  .brand-name span{color:#a99bff}
-  .balance-chip{
-    padding:8px 11px;
-    border:1px solid rgba(160,145,255,.16);
-    border-radius:14px;
-    background:rgba(125,105,245,.075);
-  }
-  .balance-num{font-size:16px;color:#b6aaff}
-  .balance-label{font-size:8px;letter-spacing:.12em}
-  .balance-usd{font-size:10px}
-  .ticker{
-    background:rgba(155,136,255,.055);
-    border-color:rgba(155,136,255,.105);
-    padding:7px 0;
-  }
-  .ticker-track span{
-    font-family:'Inter',sans-serif;
-    color:#d5caff;
-    font-size:10px;
-    letter-spacing:.025em;
-  }
-  .screen{padding-bottom:104px}
-  .mine-backdrop{height:510px;opacity:.62}
-  .mine-backdrop img{
-    opacity:.27;
-    filter:blur(5px) saturate(.75);
-  }
-  .mine-backdrop::after{
-    background:
-      radial-gradient(ellipse at 50% 36%,rgba(114,91,237,.15),transparent 42%),
-      linear-gradient(180deg,rgba(7,10,18,.32),rgba(7,10,18,.63) 54%,#090c14 96%);
-  }
-  .mine-header{padding:15px 18px 0}
-  .mine-avatar{
-    width:40px;height:40px;
-    border:1px solid rgba(179,164,255,.29);
-    background:linear-gradient(145deg,#34305c,#172c39);
-    box-shadow:0 0 20px rgba(121,101,237,.14);
-  }
-  .mine-greet-sub{font-size:10px;color:#929bb0}
-  .mine-greet-name{font-family:'Inter',sans-serif;font-size:14px;font-weight:700}
-  .pill-btn{
-    padding:8px 12px;
-    border-radius:12px;
-    border:1px solid var(--line);
-    background:rgba(20,25,40,.82);
-    font-family:'Inter',sans-serif;
-    font-size:10px;
-  }
-  .blob-wrap{
-    padding:33px 0 18px;
-    isolation:isolate;
-  }
-  .blob-wrap::before{
-    content:"";
-    position:absolute;
-    width:270px;height:270px;
-    top:50%;left:50%;
-    transform:translate(-50%,-49%);
-    border-radius:50%;
-    background:radial-gradient(circle,rgba(124,102,255,.16),rgba(77,212,189,.055) 43%,transparent 70%);
-    filter:blur(8px);
-    pointer-events:none;
-    z-index:-1;
-  }
-  .blob{
-    width:210px;height:210px;
-    flex:none;
-    overflow:visible;
-    border-radius:50%;
-    background:
-      radial-gradient(circle at 36% 26%,rgba(255,255,255,.17),transparent 24%),
-      radial-gradient(circle at 50% 42%,#30315d 0%,#171b36 43%,#101a28 72%,#111522 100%);
-    border:1px solid rgba(190,178,255,.49);
-    box-shadow:
-      0 0 0 7px rgba(131,112,255,.055),
-      0 0 0 1px rgba(164,149,255,.18),
-      0 0 37px rgba(113,92,251,.38),
-      0 0 92px rgba(75,197,182,.12),
-      inset 0 0 38px rgba(145,125,255,.18),
-      inset 0 1px rgba(255,255,255,.24);
-    animation:coreBreathe 3.4s ease-in-out infinite;
-    transition:transform .18s ease,filter .18s ease,box-shadow .25s ease;
-  }
-  .blob::before{
-    content:"";
-    position:absolute;
-    inset:-13px;
-    border-radius:50%;
-    background:conic-gradient(from 15deg,transparent 0 8%,#8b7cff 17%,#8cf4c2 29%,transparent 39% 56%,#8b7cff 68%,#b5aaff 79%,transparent 89% 100%);
-    -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));
-    mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));
-    opacity:.92;
-    filter:drop-shadow(0 0 6px rgba(143,125,255,.72));
-    animation:coreOrbit 8s linear infinite;
-    pointer-events:none;
-  }
-  .blob::after{
-    content:"";
-    position:absolute;
-    inset:12px;
-    border:1px solid rgba(199,188,255,.31);
-    border-radius:50%;
-    box-shadow:0 0 18px rgba(137,121,255,.13),inset 0 0 22px rgba(116,101,236,.08);
-    pointer-events:none;
-  }
-  .blob:active{
-    transform:scale(.94);
-    filter:brightness(1.2);
-  }
-  .blob-inner{z-index:2}
-  .blob-label{
-    font-family:'Inter',sans-serif;
-    font-size:15px;
-    letter-spacing:.1em;
-    color:#f5f2ff;
-    text-shadow:0 0 18px rgba(172,157,255,.8);
-  }
-  .blob-sub{
-    color:#b9bfd1;
-    font-size:10px;
-    letter-spacing:.04em;
-    margin-top:6px;
-  }
-  .blob.locked{
-    border-color:rgba(140,244,194,.42);
-    box-shadow:0 0 0 7px rgba(140,244,194,.045),0 0 45px rgba(77,218,167,.31),inset 0 0 36px rgba(77,218,167,.16);
-  }
-  .blob.locked::before{filter:drop-shadow(0 0 7px rgba(140,244,194,.8))}
-  .blob.boosted{
-    background:
-      radial-gradient(circle at 36% 26%,rgba(255,255,255,.2),transparent 24%),
-      radial-gradient(circle at 50% 42%,#344b69 0%,#182941 47%,#101a28 100%);
-    border-color:rgba(140,244,194,.7);
-  }
-  .blob.boosted .blob-label{text-shadow:0 0 16px rgba(140,244,194,.8)}
-  @keyframes coreOrbit{to{transform:rotate(360deg)}}
-  @keyframes coreBreathe{
-    0%,100%{box-shadow:0 0 0 7px rgba(131,112,255,.055),0 0 37px rgba(113,92,251,.34),0 0 82px rgba(75,197,182,.1),inset 0 0 38px rgba(145,125,255,.17),inset 0 1px rgba(255,255,255,.24)}
-    50%{box-shadow:0 0 0 9px rgba(131,112,255,.07),0 0 49px rgba(129,104,255,.48),0 0 100px rgba(75,197,182,.17),inset 0 0 46px rgba(145,125,255,.24),inset 0 1px rgba(255,255,255,.3)}
-  }
-  .action-pills-row{gap:10px;margin:12px 16px 0}
-  .action-pill{
-    min-height:63px;
-    padding:11px 12px;
-    border-radius:16px;
-    clip-path:none;
-    background:linear-gradient(145deg,rgba(24,31,48,.97),rgba(15,20,32,.98));
-    border:1px solid rgba(159,178,209,.12);
-    box-shadow:0 8px 20px rgba(0,0,0,.14),inset 0 1px rgba(255,255,255,.025);
-    transition:transform .18s ease,border-color .18s ease;
-  }
-  .action-pill:active{transform:scale(.98);border-color:rgba(169,151,255,.3)}
-  .action-pill svg{color:#b1a3ff}
-  .action-pill-title{font-family:'Inter',sans-serif;font-size:11.5px;font-weight:700}
-  .action-pill-sub{font-size:9px;color:#909bb0;margin-top:3px}
-  .ads-caption{font-size:9.5px;color:#919bb0;margin:10px 18px 0}
-  .ads-caption span{color:var(--good)}
-  .earned-card{
-    margin:18px 16px 0;
-    padding:18px 17px 16px;
-    border-color:rgba(159,178,209,.13);
-    background:
-      radial-gradient(ellipse at 50% -20%,rgba(129,109,255,.13),transparent 55%),
-      linear-gradient(145deg,rgba(22,29,45,.98),rgba(13,18,29,.99));
-  }
-  .earned-big{font-size:31px;letter-spacing:-.035em;margin-top:8px}
-  .earned-big span{font-size:14px;color:#a99aff}
-  .earned-underline{
-    height:1px;width:70%;
-    background:linear-gradient(90deg,transparent,#9a88ff,rgba(140,244,194,.8),transparent);
-    opacity:.8;
-  }
-  .earned-claim-row{margin-top:15px;padding-top:14px}
-  .earned-claim-info .eyebrow{font-size:9px}
-  .earned-claim-info .val{font-size:14px}
-  .claim-usd{font-size:10px}
-  .stats-grid-2{gap:9px;margin:11px 16px 0}
-  .stat2-box{
-    padding:13px 13px;
-    min-height:73px;
-    border-radius:16px;
-    background:linear-gradient(145deg,rgba(22,29,45,.95),rgba(14,19,30,.98));
-  }
-  .stat2-box .eyebrow{font-size:8px;margin-bottom:8px}
-  .stat2-box .stat-val{font-size:13px}
-  .stat-miner-icon .miner-icon-wrap{width:24px;height:24px}
-  .daily-banner{
-    margin:12px 16px 18px;
-    padding:13px;
-    gap:11px;
-    border-radius:18px;
-    background:linear-gradient(120deg,rgba(31,33,59,.96),rgba(15,24,35,.98));
-  }
-  .daily-banner-icon{
-    width:39px;height:39px;
-    border-radius:13px;
-    clip-path:none;
-    background:rgba(132,113,255,.11);
-    border-color:rgba(165,150,255,.19);
-  }
-  .daily-banner-title{font-family:'Inter',sans-serif;font-size:12px}
-  .daily-banner-sub{font-size:9px}
-  .tap-badge{border-radius:20px;background:var(--good);padding:3px 7px}
-  .btn{
-    font-family:'Inter',sans-serif;
-    font-size:11px;
-    font-weight:800;
-    letter-spacing:.07em;
-    padding:11px 16px;
-    color:#111122;
-    background:linear-gradient(135deg,#b9aeff,#8978ff 60%,#6fcebd);
-    border-radius:12px;
-    clip-path:none;
-    box-shadow:0 6px 18px rgba(125,103,255,.22),inset 0 1px rgba(255,255,255,.37);
-    transition:transform .16s ease,filter .16s ease;
-  }
-  .btn:active{transform:translateY(1px) scale(.98);filter:brightness(1.08)}
-  .btn:disabled{background:#353d51;color:#8791a6;box-shadow:none}
-  .btn.secondary{
-    border:1px solid rgba(154,137,255,.34);
-    color:#b8adff;
-    background:rgba(125,105,245,.08);
-    box-shadow:none;
-  }
-  .btn.good{background:linear-gradient(135deg,#a8f7d0,#57d8a4);color:#08251c}
-  .btn.danger{background:#fb7185;color:#310b14}
-  .section-head{margin:22px 18px 12px}
-  .section-head h2{
-    font-family:'Inter',sans-serif;
-    font-size:13px;
-    font-weight:800;
-    letter-spacing:.065em;
-  }
-  .section-head .eyebrow{font-size:9px}
-  .card{
-    margin:0 16px 10px;
-    padding:14px;
-    border-radius:17px;
-    background:linear-gradient(145deg,rgba(21,28,43,.97),rgba(13,18,29,.99));
-  }
-  .card-icon{
-    border-radius:12px;
-    clip-path:none;
-    background:rgba(138,120,255,.09);
-    border-color:rgba(155,139,255,.13);
-  }
-  .card-title{font-size:12.5px}
-  .card-sub{font-size:10.5px;line-height:1.5}
-  .store-tabs,.market-tabs{gap:7px;margin:0 16px 13px}
-  .store-tab,.market-tab{
-    padding:10px 6px;
-    border-radius:12px;
-    background:rgba(21,27,42,.93);
-    border:1px solid rgba(159,178,209,.12);
-    color:#909bb0;
-    font-family:'Inter',sans-serif;
-    font-size:9px;
-    font-weight:800;
-    letter-spacing:.045em;
-  }
-  .store-tab.active,.market-tab.active{
-    color:#c5bbff;
-    border-color:rgba(157,139,255,.43);
-    background:linear-gradient(135deg,rgba(129,108,255,.16),rgba(89,214,185,.07));
-    box-shadow:inset 0 0 18px rgba(143,124,255,.055);
-  }
-  .store-grid,.inventory-grid,.market-grid{gap:10px;margin-left:16px;margin-right:16px}
-  .store-card,.inv-card,.market-card{
-    border-radius:18px;
-    border-color:rgba(159,178,209,.13);
-    background:linear-gradient(150deg,rgba(23,30,47,.97),rgba(13,18,29,.99));
-    box-shadow:0 10px 23px rgba(0,0,0,.16);
-  }
-  .store-card-icon,.inv-card-icon,.market-card-icon{
-    border-radius:15px;
-    clip-path:none;
-    border-color:rgba(165,149,255,.15);
-    background:
-      radial-gradient(circle at 50% 55%,rgba(130,108,255,.14),transparent 66%),
-      rgba(12,17,28,.75);
-  }
-  .store-card-name,.inv-card-name,.market-card-name{font-size:11px}
-  .store-card-cost,.market-card-price{color:#b4a8ff}
-  .store-card-owned{color:#8cf4c2}
-  .store-card-boost,.inv-card-boost,.market-card-sub{font-size:9px}
-  .store-card .btn,.inv-card .btn,.market-card .btn{border-radius:10px}
-  .store-catalog-status{font-size:10px}
-  .inv-slots-banner{margin:0 16px 12px;border-radius:15px}
-  .inv-slots-banner .slots-count{color:#b4a8ff}
-  .miner-hero{border-radius:20px}
-  .miner-hero .level{color:#f6c86b}
-  .miner-detail-balance,.miner-detail-max-level{
-    border-radius:12px;
-    background:#151c2a;
-  }
-  .miner-detail-balance-val{color:#b4a8ff}
-  .stat-box{border-radius:16px}
-  .bar-track{height:7px;border-radius:99px;border:0}
-  .bar-fill{border-radius:99px;background:linear-gradient(90deg,#8371ff,#8cf4c2)}
-  .invite-panel{
-    margin:16px 16px 0;
-    padding:23px 18px;
-    border-radius:21px;
-    background:
-      radial-gradient(ellipse at 50% 0%,rgba(138,117,255,.2),transparent 65%),
-      linear-gradient(145deg,#171c30,#101722);
-  }
-  .invite-panel .big{font-size:34px;color:#b4a8ff;margin-top:7px}
-  .link-row{margin:14px 16px 0}
-  .link-box{border-radius:13px}
-  .msel,.mnum,.captcha-input{
-    border-radius:12px;
-    background:#0c111c;
-    border-color:rgba(159,178,209,.16);
-    color:var(--text);
-  }
-  .msel:focus,.mnum:focus,.captcha-input:focus{border-color:#8170ee}
-  .market-card{
-    border-color:rgba(159,178,209,.13);
-    box-shadow:0 10px 23px rgba(0,0,0,.16);
-  }
-  .market-card:active{
-    border-color:rgba(157,139,255,.43);
-    box-shadow:0 10px 28px rgba(95,77,204,.15);
-  }
-  .lb-row{
-    margin:0 16px 9px;
-    padding:12px 14px;
-    border:1px solid var(--line);
-    border-radius:14px;
-    background:rgba(18,24,37,.88);
-  }
-  .lb-amt{color:#b4a8ff}
-  .navbar{
-    max-width:480px;
-    padding:9px 8px calc(9px + env(safe-area-inset-bottom));
-    background:rgba(11,15,25,.91);
-    border-top:1px solid rgba(159,178,209,.13);
-    box-shadow:0 -12px 30px rgba(0,0,0,.2);
-    backdrop-filter:blur(20px);
-  }
-  .navbtn{
-    gap:5px;
-    padding:6px 2px;
-    font-family:'Inter',sans-serif;
-    font-size:8px;
-    font-weight:700;
-    letter-spacing:.035em;
-    transition:color .18s ease,transform .18s ease;
-  }
-  .navbtn svg{width:19px;height:19px}
-  .navbtn.active{color:#b6aaff;transform:translateY(-1px)}
-  .toast{
-    background:rgba(24,30,46,.97);
-    border:1px solid rgba(157,139,255,.25);
-    border-radius:13px;
-    box-shadow:0 12px 30px rgba(0,0,0,.32);
-  }
-  .modal-overlay{
-    background:rgba(5,7,13,.78);
-    backdrop-filter:blur(12px);
-  }
-  .modal-box{
-    border-radius:22px;
-    border:1px solid rgba(159,178,209,.17);
-    background:linear-gradient(145deg,#1a2031,#101522);
-    box-shadow:0 25px 75px rgba(0,0,0,.45);
-  }
-  .modal-title{font-family:'Inter',sans-serif}
-  .captcha-question{color:#b4a8ff}
-  .ad-progress-track{border-radius:99px;border:0}
-  .ad-progress-fill{border-radius:99px;background:linear-gradient(90deg,#8170ee,#8cf4c2)}
-  .captcha-input{user-select:text}
-  @media(max-width:360px){
-    .blob{width:190px;height:190px}
-    .blob-wrap{padding-top:29px}
-    .action-pills-row{gap:8px;margin-left:12px;margin-right:12px}
-    .action-pill{padding:10px 9px;gap:7px}
-    .action-pill-title{font-size:10.5px}
-    .statusbar{padding-left:13px;padding-right:13px}
-    .brand-name{font-size:11px}
-  }
-  @media(prefers-reduced-motion:reduce){
-    .blob,.blob::before,.ticker-track,.navbtn{animation:none!important;transition:none!important}
-  }
 </style>
 </head>
 <body>
@@ -1566,32 +1102,55 @@
       <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
     </div>
 
-    <!-- 4. TON WALLET CARD — COMING SOON, kept disabled. -->
+    <!-- 4. TON WALLET CARD — wired to player-profile Edge Function
+         (0052_player_wallet_and_withdrawals.sql). Backend-authoritative:
+         this card only ever displays what the backend reports and only
+         ever sends the pasted address to ProXBackend.connectWallet();
+         it never writes a "connected" state locally. -->
     <div class="section-head">
       <h2>CONNECT TON WALLET</h2>
-      <span class="eyebrow">NOT CONNECTED</span>
+      <span class="eyebrow" id="walletStatusEyebrow">NOT CONNECTED</span>
     </div>
-    <div class="panel card">
+    <div class="panel card" id="walletCardDisconnected">
       <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="#7c8896" stroke="none"/></svg></div>
       <div class="card-body">
         <div class="card-title">Connect TON Wallet</div>
-        <div class="card-sub">Connect your TON wallet when withdrawals become available.</div>
+        <div class="card-sub">Paste your TON wallet address. This is saved to your account and used for future PXN withdrawals.</div>
       </div>
-      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+      <div class="card-cta"><button class="btn secondary" id="openConnectWalletBtn">CONNECT</button></div>
+    </div>
+    <div class="panel card" id="walletCardConnected" style="display:none; flex-direction:column; align-items:stretch; gap:8px;">
+      <div class="card-sub" style="margin:0;">Connected address</div>
+      <div class="stat-val" id="walletAddressDisplay" style="font-size:13px; word-break:break-all;"></div>
+    </div>
+    <div class="panel card" id="walletConnectForm" style="display:none; flex-direction:column; align-items:stretch; gap:10px;">
+      <input type="text" id="walletAddressInput" placeholder="TON wallet address (raw or user-friendly)" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--border,#333); background:var(--panel-bg,#181c22); color:inherit; font-size:13px;">
+      <div id="walletConnectError" class="card-sub" style="display:none; color:var(--bad,#e05a5a); margin:0;"></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn secondary" id="cancelConnectWalletBtn" style="flex:1;">CANCEL</button>
+        <button class="btn" id="submitConnectWalletBtn" style="flex:1;">SAVE WALLET</button>
+      </div>
     </div>
 
-    <!-- 5. WITHDRAW CARD — COMING SOON, kept disabled. -->
+    <!-- 5. WITHDRAW CARD — wired to withdrawals Edge Function
+         (0052_player_wallet_and_withdrawals.sql). The backend decides
+         whether withdrawals are currently paused, the minimum amount,
+         and the m.PXN->PXN conversion — this card never computes or
+         assumes any of that locally. -->
     <div class="section-head">
       <h2>WITHDRAW PXN</h2>
     </div>
-    <div class="panel card" style="margin-bottom:6px;">
-      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg></div>
-      <div class="card-body">
+    <div class="panel card" style="margin-bottom:6px; flex-direction:column; align-items:stretch; gap:10px;">
+      <div class="card-body" style="padding:0;">
         <div class="card-title">Withdraw PXN</div>
-        <div class="card-sub">PXN withdrawals will become available after the official launch and eligibility rules are announced.</div>
+        <div class="card-sub" id="withdrawHint">Connect a wallet to request a withdrawal.</div>
       </div>
-      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+      <div id="withdrawFormRow" style="display:none; gap:8px;">
+        <input type="number" id="withdrawAmountInput" placeholder="Amount (m.PXN)" min="0" step="0.00000001" style="flex:1; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--border,#333); background:var(--panel-bg,#181c22); color:inherit; font-size:13px;">
+        <button class="btn" id="submitWithdrawBtn">REQUEST</button>
+      </div>
     </div>
+    <div id="withdrawHistoryList"></div>
 
     <!-- 6. INFO CARD -->
     <div class="panel card" style="margin:0 14px 16px; opacity:0.85;">
@@ -1614,6 +1173,31 @@
       <input class="captcha-input" type="number" inputmode="numeric" id="captchaInput" placeholder="Your answer">
       <div class="captcha-error" id="captchaError">Incorrect — try again</div>
       <button class="btn full" id="captchaSubmit">VERIFY</button>
+    </div>
+  </div>
+
+  <!-- ============ MANDATORY WALLET-CONNECT GATE ============
+       Shown after successful auth whenever the authenticated player has
+       no wallet on file (player_wallets, via player-profile's
+       fetchWalletStatus()). This is an application-flow gate, not just a
+       hidden nav item: see enforceWalletGate()/switchToScreen() below,
+       which refuse to activate ANY other screen while
+       walletGateActive === true, so the gate cannot be bypassed by
+       clicking nav, changing location.hash, or refreshing (the same
+       check re-runs on every boot). It disappears permanently for this
+       device/session the moment ProXBackend.connectWallet() succeeds,
+       and stays gone on future visits because the backend now reports a
+       wallet on the very next fetchWalletStatus() call. Reuses the
+       existing player-profile Edge Function / ProXBackend.connectWallet()
+       — no second authentication or wallet system. -->
+  <div class="modal-overlay" id="walletGateOverlay" style="z-index:55; background:rgba(6,8,12,0.94);">
+    <div class="panel modal-box" style="flex-direction:column; align-items:stretch; gap:12px;">
+      <div class="eyebrow">GET STARTED</div>
+      <div class="modal-title">Connect Your Wallet</div>
+      <div class="modal-sub">You need to connect a TON wallet address before you can use Pro-X Network. This is required once, and takes a few seconds.</div>
+      <input type="text" id="walletGateAddressInput" placeholder="TON wallet address (raw or user-friendly)" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--border,#333); background:var(--panel-bg,#181c22); color:inherit; font-size:13px;">
+      <div id="walletGateError" class="card-sub" style="display:none; color:var(--bad,#e05a5a); margin:0;"></div>
+      <button class="btn" id="walletGateSubmitBtn" style="width:100%;">CONNECT WALLET</button>
     </div>
   </div>
 
@@ -1709,6 +1293,20 @@
   ProXAuth.authenticate().then(function (result) {
     if (result.ok) {
       console.log("[ProXAuth] session established", result.data.user);
+
+      // Mandatory wallet-connect gate (see enforceWalletGate() further
+      // down this page, exposed as window.__proxEnforceWalletGate).
+      // Runs independently of the /me profile fetch below — it only
+      // needs the session ProXAuth just established — so a slow or
+      // failed profile load never delays or skips this check. A
+      // failure inside enforceWalletGate() itself (network issue) is
+      // only logged there and never shows the gate on a guess.
+      if (typeof window.__proxEnforceWalletGate === "function") {
+        window.__proxEnforceWalletGate();
+      } else {
+        console.info("[ProXAuth] wallet gate hook not ready yet");
+      }
+
       // Load the authenticated backend profile (POST /me) using the
       // session ProXAuth just established. ProXBackend.getCurrentUser()
       // can be read anywhere afterwards to reuse it in the existing UI.
@@ -1784,6 +1382,15 @@
         // visits Tasks, without ever polling on a timer.
         if (typeof window.__proxRefreshTaskCatalog === "function") {
           window.__proxRefreshTaskCatalog();
+        }
+
+        // One-time initial load of the backend-authoritative leaderboard
+        // (get-current-leaderboard). Same load-order reasoning as the
+        // calls above; the Leaderboard tab also refreshes on open (see
+        // the market-tab click handler), so this is purely a "have it
+        // ready sooner" prefetch.
+        if (typeof window.__proxRefreshLeaderboard === "function") {
+          window.__proxRefreshLeaderboard();
         }
       });
     } else {
@@ -4760,68 +4367,122 @@
       btn.addEventListener("click", ()=>{ const [lid,oid] = btn.dataset.withdraw.split("|"); cancelOffer(lid,oid,btn); });
     });
 
-    // leaderboard
-    renderLeaderboard(cfg);
+    // leaderboard — backend-authoritative (see refreshLeaderboard() below).
+    // cfg.players is no longer read here; renderMarket() no longer computes
+    // or passes leaderboard data itself.
+    refreshLeaderboard();
   }
 
-  function renderLeaderboard(cfg){
-    cfg = cfg || getMarketConfig();
-    const monthKey = currentMonthKey();
-    const now = new Date();
-    document.getElementById("leaderboardMonthLabel").textContent = now.toLocaleString("en-US",{month:"long"}).toUpperCase() + " LEADERBOARD";
+  // ---------- leaderboard (backend-authoritative, get-current-leaderboard) ----------
+  //
+  // ProXBackend.fetchCurrentLeaderboard() -> backend get-current-leaderboard
+  // -> public.get_current_leaderboard() RPC -> this renderer. cfg.players /
+  // local PLAYER_NAME are never used as the leaderboard source or to
+  // overwrite the backend's display_name; rank/points/prizes/top100/self
+  // all come from the RPC response exactly as returned. No ranking is
+  // computed in the browser.
+  let leaderboardLoading = false;
 
-    const prizes = cfg.leaderboard.prizes || [];
-    const firstPrize = prizes.find(p=>p.rank===1) || prizes[0];
+  function renderLeaderboardPrizeBanner(prizes){
     const banner = document.getElementById("leaderboardPrizeBanner");
+    const firstPrize = (prizes || []).find(p=>p.rank===1) || (prizes || [])[0];
     if(firstPrize){
-      // Prizes are admin-configured as a free-form {rank, name, logo} entry
-      // (see admin.html's leaderboard prize editor) with no dedicated
-      // "this prize is a miner" flag today. If a prize is ever set up to
-      // reference a miner tier (firstPrize.minerTier), the live catalog
-      // image for that tier is shown; otherwise this falls back to the
-      // prize's own configured logo exactly as before, just rendered safely.
-      const fallbackLogo = firstPrize.logo ? renderIconValueSafely(firstPrize.logo, firstPrize.name) : '';
-      let prizeIconHtml = getMinerCatalogIcon(firstPrize.minerTier, fallbackLogo, firstPrize.name);
+      // Backend prize rows (leaderboard_prizes, 0049) use reward_name /
+      // reward_icon / miner_tier — same visual treatment as the old
+      // cfg.leaderboard.prizes.{name,logo,minerTier} fields, just renamed.
+      const fallbackLogo = firstPrize.reward_icon ? renderIconValueSafely(firstPrize.reward_icon, firstPrize.reward_name) : '';
+      let prizeIconHtml = getMinerCatalogIcon(firstPrize.miner_tier, fallbackLogo, firstPrize.reward_name);
       if(prizeIconHtml.indexOf('<img ') === 0){
         prizeIconHtml = prizeIconHtml.replace('<img ', '<img class="prize-logo" ');
       }
       banner.innerHTML = `
         ${prizeIconHtml}
         <div class="eyebrow">TOP MINER OF THE MONTH WINS</div>
-        <div class="prize-name">${escapeHtml(firstPrize.name)}</div>
+        <div class="prize-name">${escapeHtml(firstPrize.reward_name || '')}</div>
         <div class="prize-sub">Winner announced at the start of next month</div>
       `;
     } else {
       banner.innerHTML = `<div class="empty-note">No prize configured yet.</div>`;
     }
+  }
 
-    const players = (cfg.players || []).filter(p => p.monthlyPeriodKey === monthKey && (p.monthlyPoints||0) > 0);
-    // include self, in case our own record hasn't synced into cfg.players yet this tick
-    const selfEntry = { id: PLAYER_ID, username: PLAYER_NAME, monthlyPoints: state.monthlyPoints, monthlyPeriodKey: monthKey };
-    const byId = {};
-    players.forEach(p=> byId[p.id] = p);
-    byId[PLAYER_ID] = selfEntry;
-    const ranked = Object.values(byId).sort((a,b)=> (b.monthlyPoints||0) - (a.monthlyPoints||0)).slice(0,20);
+  function renderLeaderboardFromBackend(leaderboard){
+    const period = leaderboard.period;
+    const monthLabel = period && period.start_at
+      ? new Date(period.start_at).toLocaleString("en-US",{month:"long"}).toUpperCase()
+      : new Date().toLocaleString("en-US",{month:"long"}).toUpperCase();
+    const statusSuffix = (leaderboard.status && leaderboard.status !== "live") ? " (" + String(leaderboard.status).toUpperCase() + ")" : "";
+    document.getElementById("leaderboardMonthLabel").textContent = monthLabel + " LEADERBOARD" + statusSuffix;
+
+    renderLeaderboardPrizeBanner(leaderboard.prizes);
+
+    const currentUser = (window.ProXBackend && typeof ProXBackend.getCurrentUser === "function") ? ProXBackend.getCurrentUser() : null;
+    const myUserId = currentUser && currentUser.id;
+    const top100 = Array.isArray(leaderboard.top100) ? leaderboard.top100 : [];
+    const self = leaderboard.self || { rank: null, points: 0 };
 
     const list = document.getElementById("leaderboardList");
     list.innerHTML = "";
-    if(!ranked.length){
+
+    if(!top100.length && !self.rank){
       list.innerHTML = `<div class="empty-note">No activity recorded yet this month.</div>`;
       return;
     }
-    ranked.forEach((p,i)=>{
-      const rankNum = i+1;
+
+    top100.forEach(p=>{
+      const rankNum = p.rank;
       const rankClass = rankNum===1 ? "gold" : rankNum===2 ? "silver" : rankNum===3 ? "bronze" : "";
+      const isSelf = myUserId && p.user_id === myUserId;
       const div = document.createElement("div");
       div.className = "panel lb-row";
       div.innerHTML = `
         <div class="lb-rank ${rankClass}">#${rankNum}</div>
-        <div class="lb-name">${p.username}${p.id===PLAYER_ID ? ' (you)' : ''}</div>
-        <div class="lb-amt">${fmt(p.monthlyPoints||0,1)} PTS</div>
+        <div class="lb-name">${escapeHtml(p.display_name || p.username || "Player")}${isSelf ? ' (you)' : ''}</div>
+        <div class="lb-amt">${fmt(p.points||0,1)} PTS</div>
       `;
       list.appendChild(div);
     });
+
+    // Self is only rendered as a SEPARATE row when outside the top 100
+    // (the backend already places self inside top100, matched by
+    // user_id, whenever self.rank <= 100) — this never re-ranks anything
+    // client-side, it only decides whether to show one extra row.
+    if(self.rank && self.rank > top100.length){
+      // Backend-authoritative name for the caller's own row — same
+      // fallback chain get_current_leaderboard() already uses for every
+      // top100 row (0055_admin_active_withdrawals_and_leaderboard_self_name.sql
+      // extends `self` with the same display_name/username fields).
+      // Local PLAYER_NAME is never used here: it's a client-only value
+      // (Telegram webapp data) and isn't backend-authoritative.
+      const selfName = self.display_name || self.username || "Player";
+      const div = document.createElement("div");
+      div.className = "panel lb-row";
+      div.innerHTML = `
+        <div class="lb-rank"># ${self.rank}</div>
+        <div class="lb-name">${escapeHtml(selfName)} (you)</div>
+        <div class="lb-amt">${fmt(self.points||0,1)} PTS</div>
+      `;
+      list.appendChild(div);
+    }
   }
+
+  async function refreshLeaderboard(){
+    if(leaderboardLoading) return;
+    if(!window.ProXBackend || typeof ProXBackend.fetchCurrentLeaderboard !== "function") return;
+    leaderboardLoading = true;
+    try {
+      const result = await ProXBackend.fetchCurrentLeaderboard();
+      if(result.ok && result.data && result.data.leaderboard){
+        renderLeaderboardFromBackend(result.data.leaderboard);
+      } else {
+        const list = document.getElementById("leaderboardList");
+        if(list) list.innerHTML = `<div class="empty-note">${escapeHtml(result.error || "Could not load leaderboard.")}</div>`;
+      }
+    } finally {
+      leaderboardLoading = false;
+    }
+  }
+  window.__proxRefreshLeaderboard = refreshLeaderboard;
 
   function renderTasks(){
     const list = document.getElementById("taskList");
@@ -5213,8 +4874,247 @@
     document.getElementById("rigImg").src = adminConfig.background;
   }
 
+  // ---------- wallet + withdrawals screen (0052_player_wallet_and_withdrawals.sql) ----------
+  //
+  // Backend-authoritative: this section never invents a "connected"
+  // state or a withdrawal status locally — every render below reflects
+  // exactly what ProXBackend.fetchWalletStatus()/fetchWithdrawals()
+  // returned from the server. It does not touch localStorage and does
+  // not modify state.pxnBalance/claimedTotal or any other existing
+  // mining/marketplace/leaderboard state.
+  let walletScreenLoading = false;
+
+  function escapeWalletHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];
+    });
+  }
+
+  function renderWithdrawHistory(list){
+    const wrap = document.getElementById("withdrawHistoryList");
+    if(!wrap) return;
+    if(!Array.isArray(list) || list.length === 0){
+      wrap.innerHTML = "";
+      return;
+    }
+    wrap.innerHTML = list.map(function(w){
+      const statusColor = w.status === "completed" ? "var(--good)"
+        : w.status === "rejected" ? "var(--bad,#e05a5a)"
+        : w.status === "approved" ? "var(--cyan,#4ad4de)"
+        : "var(--amber,#f5a524)";
+      const reasonLine = (w.status === "rejected" && w.rejection_reason)
+        ? '<div class="card-sub" style="margin-top:4px;">Reason: ' + escapeWalletHtml(w.rejection_reason) + '</div>'
+        : "";
+      const txLine = (w.status === "completed" && w.tx_hash)
+        ? '<div class="card-sub" style="margin-top:4px; word-break:break-all;">Tx: ' + escapeWalletHtml(w.tx_hash) + '</div>'
+        : "";
+      return '<div class="panel card" style="flex-direction:column; align-items:stretch; gap:2px; margin-bottom:8px;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center;">'
+        + '<div class="card-title" style="margin:0;">' + fmt(Number(w.amount_mpxn) || 0, 4) + ' m.PXN</div>'
+        + '<div style="color:' + statusColor + '; font-size:12px; font-weight:700; text-transform:uppercase;">' + escapeWalletHtml(w.status) + '</div>'
+        + '</div>'
+        + '<div class="card-sub" style="margin:0;">' + new Date(w.created_at).toLocaleString() + '</div>'
+        + reasonLine + txLine
+        + '</div>';
+    }).join("");
+  }
+
+  async function refreshWalletScreen(){
+    if(walletScreenLoading) return;
+    if(!window.ProXBackend || typeof ProXBackend.fetchWalletStatus !== "function") return;
+    walletScreenLoading = true;
+    try {
+      const walletResult = await ProXBackend.fetchWalletStatus();
+      const eyebrow = document.getElementById("walletStatusEyebrow");
+      const disconnectedCard = document.getElementById("walletCardDisconnected");
+      const connectedCard = document.getElementById("walletCardConnected");
+      const addressDisplay = document.getElementById("walletAddressDisplay");
+      const withdrawHint = document.getElementById("withdrawHint");
+      const withdrawFormRow = document.getElementById("withdrawFormRow");
+
+      const wallet = (walletResult.ok && walletResult.data) ? walletResult.data.wallet : null;
+
+      if(wallet && wallet.wallet_address){
+        if(eyebrow){ eyebrow.textContent = "CONNECTED"; }
+        if(disconnectedCard) disconnectedCard.style.display = "none";
+        if(connectedCard) connectedCard.style.display = "flex";
+        if(addressDisplay) addressDisplay.textContent = wallet.wallet_address;
+        if(withdrawHint) withdrawHint.textContent = "Enter an amount of m.PXN to request a withdrawal.";
+        if(withdrawFormRow) withdrawFormRow.style.display = "flex";
+      } else {
+        if(eyebrow){ eyebrow.textContent = "NOT CONNECTED"; }
+        if(disconnectedCard) disconnectedCard.style.display = "flex";
+        if(connectedCard) connectedCard.style.display = "none";
+        if(withdrawHint) withdrawHint.textContent = "Connect a wallet to request a withdrawal.";
+        if(withdrawFormRow) withdrawFormRow.style.display = "none";
+      }
+
+      const historyResult = await ProXBackend.fetchWithdrawals();
+      if(historyResult.ok && historyResult.data){
+        renderWithdrawHistory(historyResult.data.withdrawals);
+      }
+    } finally {
+      walletScreenLoading = false;
+    }
+  }
+
+  const connectWalletBtn = document.getElementById("openConnectWalletBtn");
+  const cancelConnectWalletBtn = document.getElementById("cancelConnectWalletBtn");
+  const submitConnectWalletBtn = document.getElementById("submitConnectWalletBtn");
+  const walletConnectForm = document.getElementById("walletConnectForm");
+  const walletConnectError = document.getElementById("walletConnectError");
+  const walletAddressInput = document.getElementById("walletAddressInput");
+
+  if(connectWalletBtn && walletConnectForm){
+    connectWalletBtn.addEventListener("click", function(){
+      walletConnectForm.style.display = "flex";
+      if(walletConnectError) walletConnectError.style.display = "none";
+    });
+  }
+  if(cancelConnectWalletBtn && walletConnectForm){
+    cancelConnectWalletBtn.addEventListener("click", function(){
+      walletConnectForm.style.display = "none";
+      if(walletConnectError) walletConnectError.style.display = "none";
+    });
+  }
+  if(submitConnectWalletBtn){
+    submitConnectWalletBtn.addEventListener("click", async function(){
+      if(!walletAddressInput) return;
+      const address = walletAddressInput.value.trim();
+      if(!address){
+        if(walletConnectError){ walletConnectError.textContent = "Enter a wallet address."; walletConnectError.style.display = "block"; }
+        return;
+      }
+      submitConnectWalletBtn.disabled = true;
+      const result = await ProXBackend.connectWallet(address, "ton");
+      submitConnectWalletBtn.disabled = false;
+      if(result.ok){
+        if(walletConnectForm) walletConnectForm.style.display = "none";
+        walletAddressInput.value = "";
+        toast("Wallet connected");
+        refreshWalletScreen();
+      } else {
+        if(walletConnectError){ walletConnectError.textContent = result.error || "Could not connect wallet."; walletConnectError.style.display = "block"; }
+      }
+    });
+  }
+
+  const submitWithdrawBtn = document.getElementById("submitWithdrawBtn");
+  if(submitWithdrawBtn){
+    submitWithdrawBtn.addEventListener("click", async function(){
+      const input = document.getElementById("withdrawAmountInput");
+      if(!input) return;
+      const amount = Number(input.value);
+      if(!Number.isFinite(amount) || amount <= 0){
+        toast("Enter a valid amount");
+        return;
+      }
+      submitWithdrawBtn.disabled = true;
+      const result = await ProXBackend.createWithdrawal(amount);
+      submitWithdrawBtn.disabled = false;
+      if(result.ok){
+        input.value = "";
+        toast("Withdrawal request submitted");
+        refreshWalletScreen();
+      } else {
+        toast(result.error || "Could not submit withdrawal request");
+      }
+    });
+  }
+
   // nav
+  //
+  // ---------- mandatory wallet-connect gate ----------
+  // walletGateActive starts `false` (never blocks by default — e.g. a
+  // dev/local session where auth never resolves keeps existing
+  // behavior, per "do not block authentication itself"). It is only
+  // ever set `true` by enforceWalletGate() below, after a real
+  // fetchWalletStatus() call confirms the authenticated player has no
+  // wallet on file. switchToScreen() is the single choke point every
+  // nav click / goFriendsBtn / market-tab / any future caller already
+  // goes through — refusing to switch while the gate is active is what
+  // makes this an application-flow gate rather than a hidden nav item,
+  // and it also covers a location.hash change (see the hashchange
+  // listener further below), since nothing in this app can show a
+  // screen except by calling this function.
+  let walletGateActive = false;
+
+  function showWalletGate(){
+    walletGateActive = true;
+    document.getElementById("walletGateOverlay").classList.add("show");
+  }
+
+  function hideWalletGateAndEnter(){
+    walletGateActive = false;
+    document.getElementById("walletGateOverlay").classList.remove("show");
+    switchToScreen("mine");
+  }
+
+  // Calls player-profile ({action:"get"}) via ProXBackend.fetchWalletStatus()
+  // and shows/hides the gate based on the REAL backend answer — never
+  // inferred from local state. Called once after auth+profile load on
+  // boot (see the ProXAuth.authenticate().then(...) chain below) so a
+  // refresh always re-checks rather than trusting a cached "connected"
+  // flag. A failed/errored check (network issue, no session yet) does
+  // NOT show the gate — it only ever gates on a CONFIRMED "no wallet"
+  // response, so it can never falsely lock a player out because of a
+  // transient error.
+  async function enforceWalletGate(){
+    if(!window.ProXBackend || typeof ProXBackend.fetchWalletStatus !== "function") return;
+    const result = await ProXBackend.fetchWalletStatus();
+    if(result.ok && result.data && !result.data.wallet){
+      showWalletGate();
+    } else if(result.ok && result.data && result.data.wallet){
+      walletGateActive = false;
+      document.getElementById("walletGateOverlay").classList.remove("show");
+    }
+  }
+  window.__proxEnforceWalletGate = enforceWalletGate;
+
+  const walletGateSubmitBtn = document.getElementById("walletGateSubmitBtn");
+  const walletGateAddressInput = document.getElementById("walletGateAddressInput");
+  const walletGateError = document.getElementById("walletGateError");
+  if(walletGateSubmitBtn){
+    walletGateSubmitBtn.addEventListener("click", async function(){
+      if(!walletGateAddressInput) return;
+      const address = walletGateAddressInput.value.trim();
+      if(!address){
+        if(walletGateError){ walletGateError.textContent = "Enter a wallet address."; walletGateError.style.display = "block"; }
+        return;
+      }
+      walletGateSubmitBtn.disabled = true;
+      const result = await ProXBackend.connectWallet(address, "ton");
+      walletGateSubmitBtn.disabled = false;
+      if(result.ok){
+        if(walletGateError) walletGateError.style.display = "none";
+        walletGateAddressInput.value = "";
+        toast("Wallet connected");
+        hideWalletGateAndEnter();
+        // The Wallet screen (if visited later) should reflect this
+        // connection immediately rather than re-fetching from scratch.
+        if(typeof refreshWalletScreen === "function") refreshWalletScreen();
+      } else {
+        if(walletGateError){ walletGateError.textContent = result.error || "Could not connect wallet."; walletGateError.style.display = "block"; }
+      }
+    });
+  }
+
+  // Defensive belt-and-braces: this app has no hash router today (nav is
+  // pure switchToScreen() calls), but if anything ever sets
+  // location.hash while the gate is active, snap it back rather than
+  // letting a future change introduce a bypass.
+  window.addEventListener("hashchange", function(){
+    if(walletGateActive){
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+  });
+
   function switchToScreen(name){
+    // The gate always wins: no screen other than the current one may
+    // become active while an authenticated player has no wallet on
+    // file. This blocks nav-button clicks, goFriendsBtn, and every
+    // other switchToScreen() caller in this file uniformly.
+    if(walletGateActive) return;
     document.querySelectorAll(".navbtn").forEach(b=>b.classList.remove("active"));
     document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
     const navBtn = document.querySelector('.navbtn[data-screen="' + name + '"]');
@@ -5234,6 +5134,13 @@
     // full reload. Same guarded/no-overlap pattern as refreshMinerCatalog().
     if(name === "tasks"){
       refreshTaskCatalog();
+    }
+
+    // Re-sync the Wallet screen's connection status + withdrawal
+    // history every time it opens (per-open refresh, not a timer),
+    // same pattern as refreshMinerCatalog()/refreshTaskCatalog() above.
+    if(name === "wallet"){
+      refreshWalletScreen();
     }
   }
 
@@ -5256,6 +5163,9 @@
       // for the next stale-cache window (see refreshMarketplaceReadData()).
       if(btn.dataset.mtab === "browse" || btn.dataset.mtab === "mine"){
         refreshMarketplaceReadData(true);
+      }
+      if(btn.dataset.mtab === "leaderboard"){
+        refreshLeaderboard();
       }
     });
   });
