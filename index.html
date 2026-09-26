@@ -907,7 +907,7 @@
       <div class="ads-caption" id="adsCardSub">+2x mining speed for 8 hours after your 5th ad today</div>
 
       <div class="panel earned-card">
-        <div class="eyebrow">YOU HAVE EARNED</div>
+        <div class="eyebrow">CLAIMED m.PXN</div>
         <div class="earned-big" id="earnedBig">0.0000 <span>m.PXN</span></div>
         <div class="earned-underline"></div>
         <div class="earned-claim-row">
@@ -922,7 +922,7 @@
 
       <div class="stats-grid-2">
         <div class="panel stat2-box">
-          <div class="eyebrow">MINER LEVEL</div>
+          <div class="eyebrow">LEVEL</div>
           <div class="stat-miner-icon">
             <div class="miner-icon-wrap small" id="statMinerIcon"></div>
             <div class="stat-val amber" id="statLevel">Lv. 1</div>
@@ -2676,7 +2676,7 @@
     document.getElementById("topBalance").textContent = fmt(state.minedBalance);
     document.getElementById("balanceLabelText").textContent = TOKEN_SYMBOL + " MINED";
     document.getElementById("topBalanceUsd").textContent = fmtUsd(state.minedBalance);
-    document.getElementById("earnedBig").innerHTML = fmt(state.minedBalance) + ' <span>' + TOKEN_SYMBOL + '</span>';
+    document.getElementById("earnedBig").innerHTML = fmt(state.claimedTotal) + ' <span>' + TOKEN_SYMBOL + '</span>';
     document.getElementById("mineGreetName").textContent = PLAYER_NAME;
     document.getElementById("mineAvatar").textContent = PLAYER_NAME.replace("@","").charAt(0).toUpperCase() || "P";
     const speed = effectiveDisplayRate();
