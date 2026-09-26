@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
   :root{
     --void:#090c11;
@@ -1533,7 +1532,7 @@
     boostDurationMin: 30,
     tapBoostMultiplier: 2,
     tapBoostDurationSec: 10,
-    adsRequiredForBoost: 10,
+    adsRequiredForBoost: 5,
     adBoostMultiplier: 2,
     adBoostDurationHours: 8,
     adSimSeconds: 5, // length of the simulated ad — see note near watchAdBtn
@@ -2515,22 +2514,25 @@
   // (that stays exclusively in admin-set-mining-speed / purchase-miner /
   // accrue-mining's own server-side logic).
   //
-  // m.PXN hydration (one-time only): accrue-mining's own response already
-  // includes the full, current mining_state row — including claimed_total
-  // and pending_claim (see accrue-mining/index.ts, which SELECTs "*").
-  // The VERY FIRST time this function successfully resolves after
-  // load/login, it uses those two fields to correct state.claimedTotal and
-  // state.pendingClaim against the real database values, so a stale/
-  // inflated localStorage claimedTotal (e.g. accumulated by a
-  // previously-fake local CLAIM flow) is never trusted as authoritative
-  // going forward. This reuses the existing accrue-mining call already
-  // made at init/every 20s — no new endpoint or network request is added.
-  // It intentionally runs only ONCE (guarded by claimStateHydratedFromBackend):
-  // after this initial correction, state.pendingClaim continues to be
-  // driven by the existing local accrue() ticker between claims (unchanged
-  // mining-accrual behavior), and state.claimedTotal continues to be
-  // corrected in real time by claim-mining/purchase-miner/upgrade-miner's
-  // own success responses, exactly as before.
+  // m.PXN hydration: accrue-mining's own response already includes the
+  // full, current mining_state row — including claimed_total and
+  // pending_claim (see accrue-mining/index.ts, which SELECTs "*").
+  //
+  // claimed_total is re-synced from this field on EVERY successful call
+  // (every 20s, plus the immediate post-marketplace-mutation calls added
+  // alongside this comment) — see the inline comment right above that
+  // check, further down this function, for why.
+  //
+  // pending_claim is still corrected only the VERY FIRST time this
+  // function successfully resolves after load/login (guarded by
+  // claimStateHydratedFromBackend), so a stale/inflated localStorage
+  // pendingClaim is never trusted as authoritative going forward, but
+  // every call after that leaves it alone: state.pendingClaim continues
+  // to be driven by the existing local accrue() ticker between claims
+  // (unchanged mining-accrual behavior) — see the inline comment beside
+  // that check for why re-syncing it on every call would fight the
+  // ticker. This reuses the existing accrue-mining call already made at
+  // init/every 20s — no new endpoint or network request is added.
   async function syncMiningRateFromBackend(){
     if(miningRateSyncInFlight) return;
     if(!window.ProXBackend) return;
@@ -2559,14 +2561,39 @@
             serverReferralCount = backendReferralCount;
           }
         }
-        if(!claimStateHydratedFromBackend && backendState){
+        // m.PXN claimed_total sync: re-synced from the backend on EVERY
+        // successful call (not just once). This is what makes marketplace
+        // escrow/credit (adjust_claimed_total() inside marketplace_make_offer/
+        // marketplace_accept_offer/etc.) show up in the UI promptly — those
+        // RPCs write straight to mining_state.claimed_total in the DB, and
+        // this periodic (20s) call is what pulls that authoritative value
+        // back into state.claimedTotal. Re-checking it every time (rather
+        // than once) means any drift — from a marketplace mutation whose
+        // response fields were missed, a stale local cache, or literally
+        // anything else — self-corrects within one sync cycle instead of
+        // requiring a manual reload.
+        //
+        // pending_claim stays one-time-only (claimStateHydratedFromBackend):
+        // between syncs, the local accrue() ticker keeps adding to
+        // state.pendingClaim every second as unclaimed mining accrues, and
+        // this function has no way to distinguish "backend is behind the
+        // ticker because 20s haven't elapsed yet" from "the ticker drifted"
+        // — so overwriting pending_claim on every call would fight the
+        // ticker and make the pending-claim display jump backwards
+        // repeatedly. claimed_total has no such local ticker (it only ever
+        // changes via an explicit claim/purchase/upgrade/marketplace
+        // mutation, each of which already applies its own authoritative
+        // response), so it's always safe to re-sync.
+        if(backendState){
           const backendClaimedTotal = Number(backendState.claimed_total);
+          if(Number.isFinite(backendClaimedTotal) && backendClaimedTotal !== state.claimedTotal){
+            state.claimedTotal = backendClaimedTotal;
+            saveState();
+          }
+        }
+        if(!claimStateHydratedFromBackend && backendState){
           const backendPendingClaim = Number(backendState.pending_claim);
           let hydrated = false;
-          if(Number.isFinite(backendClaimedTotal)){
-            state.claimedTotal = backendClaimedTotal;
-            hydrated = true;
-          }
           if(Number.isFinite(backendPendingClaim)){
             state.pendingClaim = backendPendingClaim;
             hydrated = true;
@@ -2707,6 +2734,7 @@
     }
 
     // watch-ads boost
+    checkAdsWindowReset();
     const adsTimerEl = document.getElementById("adsTimer");
     const adsCardSub = document.getElementById("adsCardSub");
     const watchAdBtn = document.getElementById("watchAdBtn");
@@ -3705,6 +3733,11 @@
 
         if(result.ok && result.data && result.data.success){
           await refreshInventoryAfterMarketplaceMutation(accessToken);
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           saveState();
           toast("Listed " + item.name + " for " + fmt(price, 0) + " m.PXN");
           await refreshMarketplaceReadData(true);
@@ -3737,6 +3770,11 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           await refreshInventoryAfterMarketplaceMutation(accessToken);
           addPoints(50);
           saveState();
@@ -3773,6 +3811,11 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           saveState();
           toast("Offer of " + fmt(amount, 0) + " m.PXN sent — held in escrow");
           await refreshMarketplaceReadData(true);
@@ -3805,6 +3848,11 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           saveState();
           toast("Offer withdrawn" + (Number.isFinite(Number(result.data.data.refund_amount_mpxn)) ? " — " + fmt(result.data.data.refund_amount_mpxn, 0) + " m.PXN refunded" : ""));
           await refreshMarketplaceReadData(true);
@@ -3837,12 +3885,28 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "seller_claimed_total");
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           addPoints(50);
           saveState();
           toast("Offer accepted" + (Number.isFinite(Number(result.data.data.seller_proceeds_mpxn)) ? " — " + fmt(result.data.data.seller_proceeds_mpxn, 0) + " m.PXN added to your balance" : ""));
           await refreshMarketplaceReadData(true);
         } else {
           toast(marketplaceErrorMessage(result));
+          // Edge case: the offer that was highest when this screen last
+          // rendered is no longer the highest (another offer overtook it,
+          // or it was cancelled/rejected) by the time ACCEPT was pressed.
+          // The backend already rejected the mutation (PXN47 /
+          // NOT_HIGHEST_OFFER) — no balance/inventory moved — so this
+          // just re-fetches so the seller immediately sees the current
+          // HIGHEST/OUTBID state instead of the stale one they acted on.
+          const errCode = result && result.data && result.data.error && result.data.error.code;
+          if(errCode === "NOT_HIGHEST_OFFER"){
+            await refreshMarketplaceReadData(true);
+          }
         }
       } catch(e){
         toast("Network error — try again");
@@ -3873,6 +3937,11 @@
         }, accessToken);
 
         if(result.ok && result.data && result.data.success){
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           toast("Offer declined — buyer refunded");
           await refreshMarketplaceReadData(true);
         } else {
@@ -3904,6 +3973,11 @@
 
         if(result.ok && result.data && result.data.success){
           await refreshInventoryAfterMarketplaceMutation(accessToken);
+          // Fire-and-forget: refreshes state.claimedTotal from the
+          // authoritative backend value right away, instead of waiting up
+          // to 20s for the next periodic syncMiningRateFromBackend() call.
+          // Not awaited — the UI here doesn't depend on its result.
+          syncMiningRateFromBackend();
           saveState();
           toast("Listing cancelled — miner returned to your inventory");
           await refreshMarketplaceReadData(true);
@@ -4300,16 +4374,33 @@
       }
       mine.forEach(l=>{
         const offersForListing = marketReadCache.sellerOffers.filter(o=>o.listingId===l.listingId && o.status==="open");
+        // Only the highest open offer can be accepted
+        // (marketplace_accept_offer, PXN47 otherwise — 0056). Sort by
+        // price desc, then createdAt asc as the tie-break (earliest of
+        // equal-price offers is "the highest"). This mirrors the
+        // backend's own tie-break exactly; it is display-only — the
+        // backend re-derives and re-enforces this at accept time
+        // regardless of what the client last rendered.
+        const sortedOffers = offersForListing.slice().sort((a, b) => {
+          if (b.price !== a.price) return b.price - a.price;
+          return new Date(a.createdAt) - new Date(b.createdAt);
+        });
+        const highestOfferId = sortedOffers.length ? sortedOffers[0].offerId : null;
         const offersHtml = offersForListing.length
-          ? `<div class="listing-offers">` + offersForListing.map(o=>`
+          ? `<div class="listing-offers">` + offersForListing.map(o=>{
+              const isHighest = o.offerId === highestOfferId;
+              return `
               <div class="listing-offer-row">
-                <span class="who">${escapeHtml(o.buyerName)}</span>
+                <span class="who">${escapeHtml(o.buyerName)}${isHighest ? ' <span style="display:inline-block; padding:1px 6px; border-radius:999px; background:var(--good,#4ade80); color:#0a0a0a; font-size:10px; font-weight:700; letter-spacing:0.03em; vertical-align:middle;">HIGHEST</span>' : ''}</span>
                 <span class="amt">${fmt(o.price,0)} m.PXN</span>
                 <div class="offer-actions">
-                  <button class="btn good" data-accept="${l.listingId}|${o.offerId}">ACCEPT</button>
+                  ${isHighest
+                    ? `<button class="btn good" data-accept="${l.listingId}|${o.offerId}">ACCEPT</button>`
+                    : `<button class="btn secondary" disabled title="A higher offer exists on this listing">OUTBID</button>`}
                   <button class="btn danger" data-decline="${l.listingId}|${o.offerId}">DECLINE</button>
                 </div>
-              </div>`).join("") + `</div>`
+              </div>`;
+            }).join("") + `</div>`
           : "";
         const div = document.createElement("div");
         div.className = "panel market-card";
@@ -4722,173 +4813,22 @@
     }, 1000);
   }
 
-  // ---------- watch ads for a big boost (AdsGram rewarded video) ----------
-  // Real AdsGram rewarded video (Block ID 50007, "ProX Ads" block on the
-  // "ProX Mining" platform). Flow:
-  //   1. Player taps "Watch Ad".
-  //   2. AdsGram's SDK plays a real rewarded video in the Telegram Mini App.
-  //   3. On completion, its onReward callback fires and we call our own
-  //      adsgram-reward Edge Function (JWT-authenticated).
-  //   4. That function atomically accrues elapsed mining, rolls the 24h ad
-  //      window, increments the ad count, and activates the 8-hour 2x boost
-  //      on the 10th ad — all server-side. state.adsWatchedToday and
-  //      state.adBoostUntil are MIRRORS of that server-side truth, never
-  //      the source of truth themselves.
-  //
-  // The old simulated-ad path (playSimulatedAd) is left in the file as
-  // dead code but no longer called — kept so a developer can quickly swap
-  // back if AdsGram ever needs to be temporarily disabled.
-  const ADSGRAM_BLOCK_ID = "50007";
-
-  // Cached AdsGram controller — init() is not free, so keep one instance
-  // for the lifetime of the page rather than re-initializing on every click.
-  let adsgramController = null;
-  function getAdsgramController(){
-    if(adsgramController) return adsgramController;
-    if(typeof window.Adsgram === "undefined") return null;
-    try{
-      adsgramController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
-      return adsgramController;
-    } catch(e){
-      console.warn("[AdsGram] init failed:", e);
-      return null;
-    }
-  }
-
-  /**
-   * POSTs /functions/v1/adsgram-reward — same self-contained pattern as
-   * callPurchaseMinerBackend()/callUpgradeMinerBackend() above (status-
-   * code-aware, reuses window.PROX_CONFIG, no change to js/api-client.js).
-   * Always resolves (never throws). The only body field is a client-
-   * generated request_id, which the backend uses as an idempotency key —
-   * a retried call for the same request_id replays the original result
-   * instead of double-crediting.
-   */
-  async function callAdsgramRewardBackend(requestId, accessToken){
-    const cfg = window.PROX_CONFIG;
-    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
-      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
-    }
-    try{
-      const res = await fetch(cfg.FUNCTIONS_URL + "/adsgram-reward", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + accessToken,
-          "apikey": cfg.SUPABASE_ANON_KEY
-        },
-        body: JSON.stringify({ request_id: requestId })
-      });
-      let json = null;
-      try{ json = await res.json(); }catch(parseErr){ /* non-JSON body */ }
-      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
-    }catch(err){
-      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
-    }
-  }
-
-  function adsgramRewardErrorMessage(result){
-    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
-      return result.data.message;
-    }
-    switch(result.status){
-      case 401: return "Session expired — please reopen the app.";
-      case 404: return "Mining profile not ready — try again in a moment.";
-      case 429: return "Daily ad limit reached — your 24h window will reset automatically.";
-      case 500: return "Server error — please try again.";
-      default: return result.error || "Could not process ad reward — try again.";
-    }
-  }
-
-  document.getElementById("watchAdBtn").addEventListener("click", async ()=>{
+  document.getElementById("watchAdBtn").addEventListener("click", ()=>{
     if(captchaActive) return;
-
-    // No AdsGram controller: SDK didn't load (opened outside Telegram, CDN
-    // unreachable, etc.). Surface a clear message rather than silently fail.
-    const controller = getAdsgramController();
-    if(!controller){
-      toast("Ads aren't available right now — try again in a moment.");
-      return;
-    }
-
-    const watchAdBtn = document.getElementById("watchAdBtn");
-    watchAdBtn.style.pointerEvents = "none";
-    watchAdBtn.style.opacity = "0.6";
-
-    // One idempotency key per fresh "watch ad" click, generated BEFORE the
-    // ad plays — so if the reward POST is retried, the backend recognizes
-    // the retry and replays the original credit rather than issuing another.
-    const requestId = (window.crypto && typeof window.crypto.randomUUID === "function")
-      ? window.crypto.randomUUID()
-      : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-
-    try{
-      // Show the ad. Resolves on completion (reward earned), rejects when
-      // the player closes early / no ad available / network failed — all
-      // "no reward" cases handled by the catch below.
-      await controller.show();
-
-      // Ad watched. Now claim the reward from OUR backend — this is the
-      // ONLY place the ad count, boost, and mining accrual get updated.
-      const accessToken = (window.ProXAuth && typeof window.ProXAuth.getAccessToken === "function")
-        ? await window.ProXAuth.getAccessToken()
-        : null;
-
-      if(!accessToken){
-        toast("Please reconnect your Telegram account.");
-        return;
-      }
-
-      const result = await callAdsgramRewardBackend(requestId, accessToken);
-
-      if(result.ok && result.data && result.data.success){
-        // Mirror the backend's authoritative counters into local state so
-        // the UI reflects the new count/boost immediately without waiting
-        // for the next 20s mining-rate sync. These fields are now display
-        // caches only — the server is the sole source of truth.
-        if(typeof result.data.ads_watched === "number"){
-          state.adsWatchedToday = result.data.ads_watched;
-        }
-        if(typeof result.data.ad_boost_until === "string" && result.data.ad_boost_until){
-          const untilMs = new Date(result.data.ad_boost_until).getTime();
-          if(Number.isFinite(untilMs)) state.adBoostUntil = untilMs;
-        }
-
-        // Same local leaderboard-point bump the old simulated flow did — a
-        // purely local monthly counter, kept for parity (the real,
-        // backend-authoritative leaderboard is awarded server-side).
-        addPoints(1);
-
-        saveState();
-        render();
-
-        if(result.data.boost_activated){
-          toast(REWARDS_CONFIG.adBoostMultiplier + "x mining speed activated for " + REWARDS_CONFIG.adBoostDurationHours + " hours!");
-        } else {
-          const watched = Number.isFinite(Number(result.data.ads_watched))
-            ? result.data.ads_watched
-            : state.adsWatchedToday;
-          toast("Ad credited — " + watched + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today");
-        }
-
-        // Pull the freshly accrued balance / new mining rate straight from
-        // the backend so the top-bar and MINING RATE display match what the
-        // RPC just committed.
-        if(typeof window.__proxSyncMiningRateFromBackend === "function"){
-          window.__proxSyncMiningRateFromBackend();
-        }
+    checkAdsWindowReset();
+    playSimulatedAd(()=>{
+      state.adsWatchedToday += 1;
+      addPoints(1);
+      if(state.adsWatchedToday >= REWARDS_CONFIG.adsRequiredForBoost){
+        state.adsWatchedToday = 0;
+        state.adsWindowStart = Date.now();
+        state.adBoostUntil = Date.now() + REWARDS_CONFIG.adBoostDurationHours*3600*1000;
+        toast(REWARDS_CONFIG.adBoostMultiplier + "x mining speed activated for " + REWARDS_CONFIG.adBoostDurationHours + " hours!");
       } else {
-        toast(adsgramRewardErrorMessage(result));
+        toast("Ad credited — " + state.adsWatchedToday + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today");
       }
-    } catch(adErr){
-      // AdsGram SDK rejected: user closed early, no ad fill, etc. Not a
-      // server-side error — treat as "no reward" with a neutral message.
-      console.info("[AdsGram] ad not completed:", adErr);
-      toast("Ad not completed — no reward this time.");
-    } finally {
-      watchAdBtn.style.pointerEvents = "auto";
-      watchAdBtn.style.opacity = captchaActive ? "0.5" : "1";
-    }
+      saveState(); render();
+    });
   });
 
   document.getElementById("copyBtn").addEventListener("click", ()=>{
