@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
   :root{
     --void:#090c11;
@@ -2706,7 +2707,6 @@
     }
 
     // watch-ads boost
-    checkAdsWindowReset();
     const adsTimerEl = document.getElementById("adsTimer");
     const adsCardSub = document.getElementById("adsCardSub");
     const watchAdBtn = document.getElementById("watchAdBtn");
@@ -4722,22 +4722,173 @@
     }, 1000);
   }
 
-  document.getElementById("watchAdBtn").addEventListener("click", ()=>{
+  // ---------- watch ads for a big boost (AdsGram rewarded video) ----------
+  // Real AdsGram rewarded video (Block ID 50007, "ProX Ads" block on the
+  // "ProX Mining" platform). Flow:
+  //   1. Player taps "Watch Ad".
+  //   2. AdsGram's SDK plays a real rewarded video in the Telegram Mini App.
+  //   3. On completion, its onReward callback fires and we call our own
+  //      adsgram-reward Edge Function (JWT-authenticated).
+  //   4. That function atomically accrues elapsed mining, rolls the 24h ad
+  //      window, increments the ad count, and activates the 8-hour 2x boost
+  //      on the 10th ad — all server-side. state.adsWatchedToday and
+  //      state.adBoostUntil are MIRRORS of that server-side truth, never
+  //      the source of truth themselves.
+  //
+  // The old simulated-ad path (playSimulatedAd) is left in the file as
+  // dead code but no longer called — kept so a developer can quickly swap
+  // back if AdsGram ever needs to be temporarily disabled.
+  const ADSGRAM_BLOCK_ID = "50007";
+
+  // Cached AdsGram controller — init() is not free, so keep one instance
+  // for the lifetime of the page rather than re-initializing on every click.
+  let adsgramController = null;
+  function getAdsgramController(){
+    if(adsgramController) return adsgramController;
+    if(typeof window.Adsgram === "undefined") return null;
+    try{
+      adsgramController = window.Adsgram.init({ blockId: ADSGRAM_BLOCK_ID });
+      return adsgramController;
+    } catch(e){
+      console.warn("[AdsGram] init failed:", e);
+      return null;
+    }
+  }
+
+  /**
+   * POSTs /functions/v1/adsgram-reward — same self-contained pattern as
+   * callPurchaseMinerBackend()/callUpgradeMinerBackend() above (status-
+   * code-aware, reuses window.PROX_CONFIG, no change to js/api-client.js).
+   * Always resolves (never throws). The only body field is a client-
+   * generated request_id, which the backend uses as an idempotency key —
+   * a retried call for the same request_id replays the original result
+   * instead of double-crediting.
+   */
+  async function callAdsgramRewardBackend(requestId, accessToken){
+    const cfg = window.PROX_CONFIG;
+    if(!cfg || !cfg.FUNCTIONS_URL || !cfg.SUPABASE_ANON_KEY){
+      return { ok:false, status:0, data:null, error:"Backend not configured yet." };
+    }
+    try{
+      const res = await fetch(cfg.FUNCTIONS_URL + "/adsgram-reward", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + accessToken,
+          "apikey": cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ request_id: requestId })
+      });
+      let json = null;
+      try{ json = await res.json(); }catch(parseErr){ /* non-JSON body */ }
+      return { ok: res.ok, status: res.status, data: json, error: (json && json.message) || null };
+    }catch(err){
+      return { ok:false, status:0, data:null, error: (err && err.message) || "Network error — try again" };
+    }
+  }
+
+  function adsgramRewardErrorMessage(result){
+    if(result.data && typeof result.data.message === "string" && result.data.message.trim()){
+      return result.data.message;
+    }
+    switch(result.status){
+      case 401: return "Session expired — please reopen the app.";
+      case 404: return "Mining profile not ready — try again in a moment.";
+      case 429: return "Daily ad limit reached — your 24h window will reset automatically.";
+      case 500: return "Server error — please try again.";
+      default: return result.error || "Could not process ad reward — try again.";
+    }
+  }
+
+  document.getElementById("watchAdBtn").addEventListener("click", async ()=>{
     if(captchaActive) return;
-    checkAdsWindowReset();
-    playSimulatedAd(()=>{
-      state.adsWatchedToday += 1;
-      addPoints(1);
-      if(state.adsWatchedToday >= REWARDS_CONFIG.adsRequiredForBoost){
-        state.adsWatchedToday = 0;
-        state.adsWindowStart = Date.now();
-        state.adBoostUntil = Date.now() + REWARDS_CONFIG.adBoostDurationHours*3600*1000;
-        toast(REWARDS_CONFIG.adBoostMultiplier + "x mining speed activated for " + REWARDS_CONFIG.adBoostDurationHours + " hours!");
-      } else {
-        toast("Ad credited — " + state.adsWatchedToday + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today");
+
+    // No AdsGram controller: SDK didn't load (opened outside Telegram, CDN
+    // unreachable, etc.). Surface a clear message rather than silently fail.
+    const controller = getAdsgramController();
+    if(!controller){
+      toast("Ads aren't available right now — try again in a moment.");
+      return;
+    }
+
+    const watchAdBtn = document.getElementById("watchAdBtn");
+    watchAdBtn.style.pointerEvents = "none";
+    watchAdBtn.style.opacity = "0.6";
+
+    // One idempotency key per fresh "watch ad" click, generated BEFORE the
+    // ad plays — so if the reward POST is retried, the backend recognizes
+    // the retry and replays the original credit rather than issuing another.
+    const requestId = (window.crypto && typeof window.crypto.randomUUID === "function")
+      ? window.crypto.randomUUID()
+      : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+    try{
+      // Show the ad. Resolves on completion (reward earned), rejects when
+      // the player closes early / no ad available / network failed — all
+      // "no reward" cases handled by the catch below.
+      await controller.show();
+
+      // Ad watched. Now claim the reward from OUR backend — this is the
+      // ONLY place the ad count, boost, and mining accrual get updated.
+      const accessToken = (window.ProXAuth && typeof window.ProXAuth.getAccessToken === "function")
+        ? await window.ProXAuth.getAccessToken()
+        : null;
+
+      if(!accessToken){
+        toast("Please reconnect your Telegram account.");
+        return;
       }
-      saveState(); render();
-    });
+
+      const result = await callAdsgramRewardBackend(requestId, accessToken);
+
+      if(result.ok && result.data && result.data.success){
+        // Mirror the backend's authoritative counters into local state so
+        // the UI reflects the new count/boost immediately without waiting
+        // for the next 20s mining-rate sync. These fields are now display
+        // caches only — the server is the sole source of truth.
+        if(typeof result.data.ads_watched === "number"){
+          state.adsWatchedToday = result.data.ads_watched;
+        }
+        if(typeof result.data.ad_boost_until === "string" && result.data.ad_boost_until){
+          const untilMs = new Date(result.data.ad_boost_until).getTime();
+          if(Number.isFinite(untilMs)) state.adBoostUntil = untilMs;
+        }
+
+        // Same local leaderboard-point bump the old simulated flow did — a
+        // purely local monthly counter, kept for parity (the real,
+        // backend-authoritative leaderboard is awarded server-side).
+        addPoints(1);
+
+        saveState();
+        render();
+
+        if(result.data.boost_activated){
+          toast(REWARDS_CONFIG.adBoostMultiplier + "x mining speed activated for " + REWARDS_CONFIG.adBoostDurationHours + " hours!");
+        } else {
+          const watched = Number.isFinite(Number(result.data.ads_watched))
+            ? result.data.ads_watched
+            : state.adsWatchedToday;
+          toast("Ad credited — " + watched + " / " + REWARDS_CONFIG.adsRequiredForBoost + " today");
+        }
+
+        // Pull the freshly accrued balance / new mining rate straight from
+        // the backend so the top-bar and MINING RATE display match what the
+        // RPC just committed.
+        if(typeof window.__proxSyncMiningRateFromBackend === "function"){
+          window.__proxSyncMiningRateFromBackend();
+        }
+      } else {
+        toast(adsgramRewardErrorMessage(result));
+      }
+    } catch(adErr){
+      // AdsGram SDK rejected: user closed early, no ad fill, etc. Not a
+      // server-side error — treat as "no reward" with a neutral message.
+      console.info("[AdsGram] ad not completed:", adErr);
+      toast("Ad not completed — no reward this time.");
+    } finally {
+      watchAdBtn.style.pointerEvents = "auto";
+      watchAdBtn.style.opacity = captchaActive ? "0.5" : "1";
+    }
   });
 
   document.getElementById("copyBtn").addEventListener("click", ()=>{
