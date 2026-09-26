@@ -2820,20 +2820,36 @@
   // How many of those units can be Applied at once is gated by Mining Level:
   // Lv.1 = 1 slot, Lv.5 = 2 slots, Lv.15 = 3 slots (each tier holds until the
   // next one is reached — see maxApplySlots()).
-  const APPLY_SLOT_TIERS = [
-    {level:1,  slots:1},
-    {level:5,  slots:2},
-    {level:15, slots:3}
-  ];
+   // ---------- Applied-miner slot rule (0057): +1 slot every 5 Mining
+  // Levels, hard-capped at 20.
+  //
+  // Formula: slots = min(20, floor(level / 5) + 1) — with level clamped
+  // to >= 1. This is the SAME formula the backend RPC set_miner_applied
+  // now uses (see 0057 migration), so the UI's "X / Y" applied-slot
+  // counter and the backend's actual limit enforcement can never drift
+  // apart:
+  //
+  //   Level 1-4    → 1 slot
+  //   Level 5-9    → 2 slots
+  //   Level 10-14  → 3 slots
+  //   Level 15-19  → 4 slots
+  //   ...
+  //   Level 90-94  → 19 slots
+  //   Level 95+    → 20 slots (hard cap — no further unlock at any level)
+  const MAX_APPLY_SLOTS = 20;
+  const APPLY_SLOT_STEP = 5;
 
   function maxApplySlots(level){
-    let slots = APPLY_SLOT_TIERS[0].slots;
-    APPLY_SLOT_TIERS.forEach(t => { if(level >= t.level) slots = t.slots; });
-    return slots;
+    const l = Math.max(1, level);
+    return Math.min(MAX_APPLY_SLOTS, Math.floor(l / APPLY_SLOT_STEP) + 1);
   }
 
   function nextApplySlotTier(level){
-    return APPLY_SLOT_TIERS.find(t => t.level > level) || null;
+    const l = Math.max(1, level);
+    const currentSlots = maxApplySlots(l);
+    if(currentSlots >= MAX_APPLY_SLOTS) return null;
+    const nextLevel = Math.floor(l / APPLY_SLOT_STEP) * APPLY_SLOT_STEP + APPLY_SLOT_STEP;
+    return { level: nextLevel, slots: currentSlots + 1 };
   }
 
   // ---------- backend-authoritative apply/remove (set-miner-applied) ----------
