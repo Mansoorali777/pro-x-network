@@ -233,6 +233,45 @@
   }
 
   /**
+   * Calls the authenticated `start-mining-session` Edge Function
+   * (0057_mining_sessions.sql / public.start_mining_session) using the
+   * current Supabase session — same auth pattern as
+   * fetchAccrueMining()/claim-mining above, never re-implemented here.
+   * Starts (or restarts) the caller's 8-hour mining session; the
+   * response includes session_started_at/session_ends_at plus
+   * level/claimed_total/pending_claim as of that moment, for the
+   * caller to render an updated Mine/Wallet screen without a second
+   * round trip. Never touches localStorage — index.html decides what
+   * to do with the response, same as every other ProXBackend call.
+   *
+   * Always resolves (never throws) with { ok, data, error }, same
+   * shape as every other ProXBackend call.
+   */
+  async function startMiningSession() {
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("start-mining-session", { method: "POST", body: {}, accessToken: accessToken });
+
+    if (result.ok && result.data && result.data.success) {
+      return { ok: true, data: result.data, error: null };
+    }
+
+    const message =
+      (result.data && (result.data.message || result.data.error)) ||
+      result.error ||
+      "Could not start mining session.";
+    return { ok: false, data: null, error: message };
+  }
+
+  /**
    * Calls the authenticated `claim-mining` Edge Function using the
    * current Supabase session (via ProXAuth.getAccessToken(), same
    * pattern as fetchMe()/fetchAccrueMining() above — never
@@ -343,6 +382,160 @@
     return { ok: false, data: null, error: message };
   }
 
+  // Non-secret cache of the last player-profile "get" response (the
+  // player's own player_wallets row, or null if none connected), so a
+  // caller can inspect it afterwards without re-hitting the network.
+  // Same caching pattern as the other lastXResult fields above — never
+  // holds tokens. Added alongside the wallet-onboarding /
+  // withdrawal-request feature (0052_player_wallet_and_withdrawals.sql).
+  let lastWalletResult = null;
+
+  // Non-secret cache of the last withdrawals "list" response.
+  let lastWithdrawalsResult = null;
+
+  /**
+   * Calls the authenticated `player-profile` Edge Function ({action:"get"})
+   * to read the caller's own wallet-connection status. Same
+   * auth/error-handling pattern as fetchMe()/fetchCurrentLeaderboard()
+   * above. On success, `data.wallet` is either the player's
+   * player_wallets row or null (no wallet connected yet).
+   */
+  async function fetchWalletStatus() {
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("player-profile", {
+      method: "POST",
+      body: { action: "get" },
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      lastWalletResult = result.data.wallet || null;
+      return { ok: true, data: { wallet: lastWalletResult }, error: null };
+    }
+
+    const message =
+      (result.data && result.data.error && result.data.error.message) ||
+      result.error ||
+      "Could not load wallet status.";
+    return { ok: false, data: null, error: message };
+  }
+
+  /**
+   * Calls `player-profile` ({action:"connect_wallet"}) to save the
+   * caller's TON wallet address. The backend (public.connect_wallet(),
+   * 0052) is authoritative: it validates the address format and is the
+   * only thing that ever writes player_wallets — this function only
+   * relays the caller's input and the backend's response, never
+   * pretends the save succeeded locally.
+   */
+  async function connectWallet(walletAddress, walletNetwork) {
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("player-profile", {
+      method: "POST",
+      body: {
+        action: "connect_wallet",
+        wallet_address: walletAddress,
+        wallet_network: walletNetwork || "ton",
+      },
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      lastWalletResult = result.data.wallet || null;
+      return { ok: true, data: { wallet: lastWalletResult }, error: null };
+    }
+
+    const message =
+      (result.data && result.data.error && result.data.error.message) ||
+      result.error ||
+      "Could not connect wallet.";
+    return { ok: false, data: null, error: message };
+  }
+
+  /**
+   * Calls `withdrawals` ({action:"list"}) for the caller's own
+   * withdrawal-request history.
+   */
+  async function fetchWithdrawals() {
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("withdrawals", {
+      method: "POST",
+      body: { action: "list" },
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      lastWithdrawalsResult = result.data.withdrawals || [];
+      return { ok: true, data: { withdrawals: lastWithdrawalsResult }, error: null };
+    }
+
+    const message =
+      (result.data && result.data.error && result.data.error.message) ||
+      result.error ||
+      "Could not load withdrawal history.";
+    return { ok: false, data: null, error: message };
+  }
+
+  /**
+   * Calls `withdrawals` ({action:"create"}) to submit a new withdrawal
+   * request for amountMpxn (a number, in m.PXN). The backend
+   * (public.create_withdrawal_request(), 0052) is authoritative for the
+   * wallet used, the PXN conversion, the balance debit, and every
+   * validation rule (wallet connected, not paused, minimum amount, no
+   * existing pending request) — this function only relays the amount
+   * and the backend's response.
+   */
+  async function createWithdrawal(amountMpxn) {
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("withdrawals", {
+      method: "POST",
+      body: { action: "create", amount_mpxn: amountMpxn },
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      return { ok: true, data: { withdrawal: result.data.withdrawal }, error: null };
+    }
+
+    const message =
+      (result.data && result.data.error && result.data.error.message) ||
+      result.error ||
+      "Could not submit withdrawal request.";
+    return { ok: false, data: result.data, error: message };
+  }
+
   const ProXBackend = {
     /** Returns true once real Supabase project values are configured. */
     isConfigured: isConfigured,
@@ -376,6 +569,7 @@
      * successful authentication (see index.html), not on an interval.
      */
     fetchAccrueMining: fetchAccrueMining,
+    startMiningSession: startMiningSession,
 
     /** Last accrue-mining verification response (raw JSON), or null. */
     getLastAccrueMiningResult: function () {
@@ -403,6 +597,41 @@
       return lastLeaderboardResult;
     },
 
+    /**
+     * Calls POST /player-profile ({action:"get"}) using the current
+     * Supabase session to read the caller's own wallet-connection
+     * status. See fetchWalletStatus() above for the full contract.
+     */
+    fetchWalletStatus: fetchWalletStatus,
+
+    /** Last player-profile "get" response's `wallet` object, or null. */
+    getLastWalletResult: function () {
+      return lastWalletResult;
+    },
+
+    /**
+     * Calls POST /player-profile ({action:"connect_wallet"}) to save a
+     * TON wallet address for the caller. See connectWallet() above.
+     */
+    connectWallet: connectWallet,
+
+    /**
+     * Calls POST /withdrawals ({action:"list"}) for the caller's own
+     * withdrawal-request history. See fetchWithdrawals() above.
+     */
+    fetchWithdrawals: fetchWithdrawals,
+
+    /** Last withdrawals "list" response's array, or null. */
+    getLastWithdrawalsResult: function () {
+      return lastWithdrawalsResult;
+    },
+
+    /**
+     * Calls POST /withdrawals ({action:"create"}) to submit a new
+     * withdrawal request. See createWithdrawal() above.
+     */
+    createWithdrawal: createWithdrawal,
+
     // Internal — exposed so later migration steps (and this module's
     // own tests) can call other functions without duplicating the
     // fetch/error-handling logic above. Not part of the public API
@@ -412,4 +641,3 @@
 
   global.ProXBackend = ProXBackend;
 })(window);
-
