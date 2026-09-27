@@ -834,7 +834,150 @@
     text-align:center;
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
-
+  /* ---------- roadmap modal ---------- */
+  .roadmap-modal{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(6,8,12,0.96);
+    z-index:70;
+    overflow-y:auto;
+    padding:0;
+  }
+  .roadmap-modal.show{ display:block; }
+  .roadmap-inner{
+    max-width:460px;
+    margin:0 auto;
+    padding:20px 16px 40px;
+    min-height:100vh;
+  }
+  .roadmap-top{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:20px;
+    position:sticky; top:0;
+    background:rgba(9,12,17,0.95);
+    backdrop-filter:blur(10px);
+    padding:12px 0;
+    z-index:2;
+  }
+  .roadmap-title{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700; font-size:20px;
+    letter-spacing:0.06em;
+  }
+  .roadmap-title span{ color:var(--cyan); }
+  .roadmap-close{
+    width:34px; height:34px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-size:18px;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .roadmap-hero{
+    padding:20px;
+    text-align:center;
+    margin-bottom:16px;
+  }
+  .roadmap-hero-logo{
+    width:64px; height:64px;
+    margin:0 auto 12px;
+    background:linear-gradient(135deg,var(--amber),var(--cyan));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:28px; color:#0a0d12;
+  }
+  .roadmap-hero h1{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:22px; margin:0;
+    letter-spacing:0.04em;
+  }
+  .roadmap-hero p{
+    font-size:12.5px; color:var(--steel);
+    margin:8px 0 0; line-height:1.6;
+  }
+  .roadmap-section-title{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:13px;
+    letter-spacing:0.12em;
+    color:var(--cyan);
+    margin:24px 0 12px;
+    text-transform:uppercase;
+  }
+  .roadmap-token-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  .roadmap-token-box{
+    padding:14px;
+    text-align:center;
+  }
+  .roadmap-token-box .lbl{
+    font-size:10px; color:var(--steel);
+    letter-spacing:0.08em; text-transform:uppercase;
+  }
+  .roadmap-token-box .val{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700; font-size:16px;
+    color:var(--amber); margin-top:4px;
+  }
+  .roadmap-phase{
+    padding:16px;
+    margin-bottom:12px;
+    position:relative;
+  }
+  .roadmap-phase-head{
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:10px;
+  }
+  .roadmap-phase-badge{
+    padding:3px 10px;
+    font-family:'Chakra Petch',sans-serif;
+    font-size:10px; font-weight:700;
+    letter-spacing:0.06em;
+    clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px);
+  }
+  .roadmap-phase-badge.done{ background:var(--good); color:#062a13; }
+  .roadmap-phase-badge.active{ background:var(--amber); color:#2a1506; }
+  .roadmap-phase-badge.planned{ background:var(--steel-soft); color:#cbd5e1; }
+  .roadmap-phase-title{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:700; font-size:14px;
+  }
+  .roadmap-phase-sub{
+    font-size:10.5px; color:var(--steel);
+    margin-left:auto;
+  }
+  .roadmap-phase img{
+    width:100%; max-height:160px; object-fit:cover;
+    margin-top:8px;
+    border:1px solid var(--line);
+  }
+  .roadmap-phase ul{
+    margin:8px 0 0; padding-left:18px;
+  }
+  .roadmap-phase li{
+    font-size:12px; line-height:1.7;
+    color:var(--text);
+  }
+  .roadmap-phase li.done::marker{ color:var(--good); }
+  .roadmap-whitepaper{
+    padding:16px;
+    font-size:12.5px;
+    line-height:1.7;
+    color:var(--text);
+  }
+  .roadmap-whitepaper h3{
+    font-family:'Chakra Petch',sans-serif;
+    font-size:13px; margin:14px 0 6px;
+    color:var(--amber);
+  }
+  .roadmap-whitepaper h3:first-child{ margin-top:0; }
+  .roadmap-cta{
+    display:flex; gap:8px; margin-top:20px;
+  }
+  .roadmap-cta .btn{ flex:1; }
   ::-webkit-scrollbar{ display:none; }
 </style>
 </head>
@@ -1174,7 +1317,134 @@
       </div>
     </div>
   </div>
+  <!-- ============ ROADMAP MODAL ============ -->
+  <div class="roadmap-modal" id="roadmapModal">
+    <div class="roadmap-inner">
 
+      <div class="roadmap-top">
+        <div class="roadmap-title">PRO-<span>X</span> ROADMAP</div>
+        <button class="roadmap-close" id="roadmapCloseBtn">✕</button>
+      </div>
+
+      <div class="panel roadmap-hero">
+        <div class="roadmap-hero-logo">X</div>
+        <h1>Pro-X Network</h1>
+        <p>The Telegram mining game where every tap builds the future of PXN token.</p>
+      </div>
+
+      <!-- PXN TOKEN INFO -->
+      <div class="roadmap-section-title">PXN Token</div>
+      <div class="roadmap-token-grid">
+        <div class="panel roadmap-token-box">
+          <div class="lbl">Total Supply</div>
+          <div class="val">1,000,000,000</div>
+        </div>
+        <div class="panel roadmap-token-box">
+          <div class="lbl">Blockchain</div>
+          <div class="val">TON</div>
+        </div>
+        <div class="panel roadmap-token-box">
+          <div class="lbl">Testnet Supply</div>
+          <div class="val">100,000,000</div>
+        </div>
+        <div class="panel roadmap-token-box">
+          <div class="lbl">DEX</div>
+          <div class="val">STON.fi</div>
+        </div>
+      </div>
+
+      <!-- ROADMAP PHASES -->
+      <div class="roadmap-section-title">Roadmap</div>
+
+      <div class="panel roadmap-phase">
+        <div class="roadmap-phase-head">
+          <span class="roadmap-phase-badge done">DONE</span>
+          <div class="roadmap-phase-title">Phase 1 — Foundation</div>
+          <div class="roadmap-phase-sub">Q3 2026</div>
+        </div>
+        <ul>
+          <li class="done">Telegram Mini App launched</li>
+          <li class="done">Mining engine + min.er marketplace</li>
+          <li class="done">Server-authoritative balance system</li>
+          <li class="done">Task, referral & leaderboard systems</li>
+        </ul>
+      </div>
+
+      <div class="panel roadmap-phase">
+        <div class="roadmap-phase-head">
+          <span class="roadmap-phase-badge active">IN PROGRESS</span>
+          <div class="roadmap-phase-title">Phase 2 — Token Launch</div>
+          <div class="roadmap-phase-sub">Q4 2026</div>
+        </div>
+        <!-- Ye image tum apna daal sakte ho, abhi placeholder hai -->
+        <!-- <img src="assets/roadmap/phase2.png" alt=""> -->
+        <ul>
+          <li>PXN token mainnet deployment on TON</li>
+          <li>Liquidity pool on STON.fi</li>
+          <li>PXN ↔ m.PXN swap going live</li>
+          <li>Withdrawals enabled for eligible players</li>
+        </ul>
+      </div>
+
+      <div class="panel roadmap-phase">
+        <div class="roadmap-phase-head">
+          <span class="roadmap-phase-badge planned">PLANNED</span>
+          <div class="roadmap-phase-title">Phase 3 — Expansion</div>
+          <div class="roadmap-phase-sub">Q1 2027</div>
+        </div>
+        <ul>
+          <li>PXN staking & governance</li>
+          <li>Advanced miner tiers & equipment</li>
+          <li>PvP mining battles</li>
+          <li>Centralized exchange listings</li>
+        </ul>
+      </div>
+
+      <div class="panel roadmap-phase">
+        <div class="roadmap-phase-head">
+          <span class="roadmap-phase-badge planned">PLANNED</span>
+          <div class="roadmap-phase-title">Phase 4 — Ecosystem</div>
+          <div class="roadmap-phase-sub">2027+</div>
+        </div>
+        <ul>
+          <li>Cross-game PXN utility</li>
+          <li>Mobile app (iOS + Android)</li>
+          <li>DAO formation</li>
+          <li>Global partnerships</li>
+        </ul>
+      </div>
+
+      <!-- WHITEPAPER -->
+      <div class="roadmap-section-title">Whitepaper — Summary</div>
+      <div class="panel roadmap-whitepaper">
+        <h3>What is Pro-X Network?</h3>
+        <p>Pro-X Network is a Telegram-based mining game where players earn m.PXN by mining, upgrading rigs, completing tasks, and trading miners on an in-game marketplace. It is the first consumer product powered by the PXN token.</p>
+
+        <h3>What is PXN?</h3>
+        <p>PXN is the native utility token of the Pro-X ecosystem, deployed on the TON blockchain. Total supply is fixed at 1 billion, with no inflation. PXN will be used for premium upgrades, staking, governance, and cross-game utilities.</p>
+
+        <h3>m.PXN vs PXN</h3>
+        <p><strong>m.PXN</strong> is the in-game currency earned through mining. It cannot be traded. Once withdrawals are enabled, players can convert their claimed m.PXN into PXN at the published rate, subject to eligibility rules.</p>
+
+        <h3>Tokenomics</h3>
+        <p>
+          Community & rewards: 40%<br>
+          Liquidity pool: 20%<br>
+          Team (4-year vest): 15%<br>
+          Treasury: 15%<br>
+          Marketing: 10%
+        </p>
+
+        <h3>Vision</h3>
+        <p>To become the most-played mining game on Telegram, with a real utility token used across multiple products — creating a sustainable, player-owned economy.</p>
+      </div>
+
+      <div class="roadmap-cta">
+        <button class="btn secondary" id="roadmapCloseBtn2">CLOSE</button>
+      </div>
+
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
 
   <div class="modal-overlay" id="captchaOverlay">
@@ -5326,7 +5596,12 @@
     listMinerForSale(uid, price, document.getElementById("listMinerBtn"));
     document.getElementById("sellPriceInput").value = "";
   });
-  document.getElementById("roadmapBtn").addEventListener("click", ()=> toast("Roadmap coming soon!"));
+  // ---------- Roadmap modal ----------
+function openRoadmap(){ document.getElementById("roadmapModal").classList.add("show"); }
+function closeRoadmap(){ document.getElementById("roadmapModal").classList.remove("show"); }
+document.getElementById("roadmapBtn").addEventListener("click", openRoadmap);
+document.getElementById("roadmapCloseBtn").addEventListener("click", closeRoadmap);
+document.getElementById("roadmapCloseBtn2").addEventListener("click", closeRoadmap);
 
   // Timed mining session (0057_mining_sessions.sql): starts (or
   // restarts) the caller's 8-hour session via the authenticated
