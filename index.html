@@ -907,7 +907,7 @@
       <div class="ads-caption" id="adsCardSub">+2x mining speed for 8 hours after your 5th ad today</div>
 
       <div class="panel earned-card">
-        <div class="eyebrow">CLAIMED m.PXN</div>
+        <div class="eyebrow">YOU HAVE EARNED</div>
         <div class="earned-big" id="earnedBig">0.0000 <span>m.PXN</span></div>
         <div class="earned-underline"></div>
         <div class="earned-claim-row">
@@ -920,9 +920,22 @@
         </div>
       </div>
 
+      <!-- Timed mining session (0057_mining_sessions.sql). Shows either a
+           live 8h countdown while a session is active, or a START MINING
+           button when idle/expired — see renderMiningSessionCard() and
+           the 1s countdown tick further down this file. -->
+      <div class="panel daily-banner" id="miningSessionCard">
+        <div class="daily-banner-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#3fd0ff" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+        <div class="daily-banner-body">
+          <div class="daily-banner-title">Mining Session</div>
+          <div class="daily-banner-sub" id="miningSessionSub">Start an 8-hour mining session to begin earning.</div>
+        </div>
+        <button class="btn" id="startMiningSessionBtn">START MINING</button>
+      </div>
+
       <div class="stats-grid-2">
         <div class="panel stat2-box">
-          <div class="eyebrow">LEVEL</div>
+          <div class="eyebrow">MINER LEVEL</div>
           <div class="stat-miner-icon">
             <div class="miner-icon-wrap small" id="statMinerIcon"></div>
             <div class="stat-val amber" id="statLevel">Lv. 1</div>
@@ -2411,6 +2424,36 @@
   // below (accrue()) — this only affects what the "MINING RATE" UI displays.
   let serverMiningRate = null;
 
+  // ---------- timed mining sessions (0057_mining_sessions.sql) ----------
+  // mining_session_started_at / mining_session_ends_at are read from the
+  // same accrue-mining response used for serverMiningRate/serverReferralCount
+  // above (its mining_state row already includes both columns — no extra
+  // network call) and re-synced on EVERY call, not just once, exactly like
+  // serverReferralCount — a session started/ended server-side (or via
+  // startMiningSession() below) must reach the countdown display without a
+  // full reload. Both start null (no session yet / not loaded yet); the
+  // Mine screen falls back to an idle "START MINING" state until the first
+  // successful sync or a successful startMiningSession() call sets them.
+  let sessionStartedAt = null;
+  let sessionEndsAt = null;
+
+  /**
+   * Whether the player's 8-hour mining session (see
+   * 0057_mining_sessions.sql / start-mining-session/index.ts) is
+   * currently active. Mirrors exactly what accrue-mining now requires
+   * server-side before it credits any accrual — used here only to
+   * decide (a) whether the LOCAL accrue() ticker below should keep
+   * adding to the pendingClaim/minedBalance display, so it doesn't
+   * show gains the backend will refuse to credit and
+   * syncMiningRateFromBackend() would just have to erase again every
+   * 20s, and (b) what the Mine screen's session UI shows. Does not
+   * itself grant or deny any accrual — that enforcement lives
+   * exclusively in accrue-mining/index.ts.
+   */
+  function isMiningSessionActive(){
+    return !!(sessionEndsAt && Date.now() < sessionEndsAt.getTime());
+  }
+
   // ---------- backend referral-count sync (real referral display) ----------
   // public.mining_state.referral_count (incremented ONLY by the server-side
   // qualify_referral() RPC — see 0046_qualify_and_flag_referral.sql — never
@@ -2514,25 +2557,22 @@
   // (that stays exclusively in admin-set-mining-speed / purchase-miner /
   // accrue-mining's own server-side logic).
   //
-  // m.PXN hydration: accrue-mining's own response already includes the
-  // full, current mining_state row — including claimed_total and
-  // pending_claim (see accrue-mining/index.ts, which SELECTs "*").
-  //
-  // claimed_total is re-synced from this field on EVERY successful call
-  // (every 20s, plus the immediate post-marketplace-mutation calls added
-  // alongside this comment) — see the inline comment right above that
-  // check, further down this function, for why.
-  //
-  // pending_claim is still corrected only the VERY FIRST time this
-  // function successfully resolves after load/login (guarded by
-  // claimStateHydratedFromBackend), so a stale/inflated localStorage
-  // pendingClaim is never trusted as authoritative going forward, but
-  // every call after that leaves it alone: state.pendingClaim continues
-  // to be driven by the existing local accrue() ticker between claims
-  // (unchanged mining-accrual behavior) — see the inline comment beside
-  // that check for why re-syncing it on every call would fight the
-  // ticker. This reuses the existing accrue-mining call already made at
-  // init/every 20s — no new endpoint or network request is added.
+  // m.PXN hydration (one-time only): accrue-mining's own response already
+  // includes the full, current mining_state row — including claimed_total
+  // and pending_claim (see accrue-mining/index.ts, which SELECTs "*").
+  // The VERY FIRST time this function successfully resolves after
+  // load/login, it uses those two fields to correct state.claimedTotal and
+  // state.pendingClaim against the real database values, so a stale/
+  // inflated localStorage claimedTotal (e.g. accumulated by a
+  // previously-fake local CLAIM flow) is never trusted as authoritative
+  // going forward. This reuses the existing accrue-mining call already
+  // made at init/every 20s — no new endpoint or network request is added.
+  // It intentionally runs only ONCE (guarded by claimStateHydratedFromBackend):
+  // after this initial correction, state.pendingClaim continues to be
+  // driven by the existing local accrue() ticker between claims (unchanged
+  // mining-accrual behavior), and state.claimedTotal continues to be
+  // corrected in real time by claim-mining/purchase-miner/upgrade-miner's
+  // own success responses, exactly as before.
   async function syncMiningRateFromBackend(){
     if(miningRateSyncInFlight) return;
     if(!window.ProXBackend) return;
@@ -2561,39 +2601,25 @@
             serverReferralCount = backendReferralCount;
           }
         }
-        // m.PXN claimed_total sync: re-synced from the backend on EVERY
-        // successful call (not just once). This is what makes marketplace
-        // escrow/credit (adjust_claimed_total() inside marketplace_make_offer/
-        // marketplace_accept_offer/etc.) show up in the UI promptly — those
-        // RPCs write straight to mining_state.claimed_total in the DB, and
-        // this periodic (20s) call is what pulls that authoritative value
-        // back into state.claimedTotal. Re-checking it every time (rather
-        // than once) means any drift — from a marketplace mutation whose
-        // response fields were missed, a stale local cache, or literally
-        // anything else — self-corrects within one sync cycle instead of
-        // requiring a manual reload.
-        //
-        // pending_claim stays one-time-only (claimStateHydratedFromBackend):
-        // between syncs, the local accrue() ticker keeps adding to
-        // state.pendingClaim every second as unclaimed mining accrues, and
-        // this function has no way to distinguish "backend is behind the
-        // ticker because 20s haven't elapsed yet" from "the ticker drifted"
-        // — so overwriting pending_claim on every call would fight the
-        // ticker and make the pending-claim display jump backwards
-        // repeatedly. claimed_total has no such local ticker (it only ever
-        // changes via an explicit claim/purchase/upgrade/marketplace
-        // mutation, each of which already applies its own authoritative
-        // response), so it's always safe to re-sync.
+        // Timed mining session sync (see sessionStartedAt/sessionEndsAt/
+        // isMiningSessionActive() above): re-synced on EVERY successful
+        // call, same reasoning as referral_count just above — a session
+        // started via startMiningSession() (which updates these two local
+        // variables immediately on its own success) or one that simply
+        // expired needs to reach this display within one periodic sync
+        // even if the player never taps anything.
         if(backendState){
-          const backendClaimedTotal = Number(backendState.claimed_total);
-          if(Number.isFinite(backendClaimedTotal) && backendClaimedTotal !== state.claimedTotal){
-            state.claimedTotal = backendClaimedTotal;
-            saveState();
-          }
+          sessionStartedAt = backendState.mining_session_started_at ? new Date(backendState.mining_session_started_at) : null;
+          sessionEndsAt = backendState.mining_session_ends_at ? new Date(backendState.mining_session_ends_at) : null;
         }
         if(!claimStateHydratedFromBackend && backendState){
+          const backendClaimedTotal = Number(backendState.claimed_total);
           const backendPendingClaim = Number(backendState.pending_claim);
           let hydrated = false;
+          if(Number.isFinite(backendClaimedTotal)){
+            state.claimedTotal = backendClaimedTotal;
+            hydrated = true;
+          }
           if(Number.isFinite(backendPendingClaim)){
             state.pendingClaim = backendPendingClaim;
             hydrated = true;
@@ -2665,18 +2691,69 @@
       }
     }
     const speed = currentSpeed();
-    const gained = elapsedSec * speed;
-    state.pendingClaim += gained;
-    state.minedBalance += gained;
+    // Timed mining sessions (0057_mining_sessions.sql): accrue-mining now
+    // credits 0 outside an active session, so this local display ticker
+    // must not add pendingClaim/minedBalance gains the backend will
+    // refuse — that would just be drift syncMiningRateFromBackend() has
+    // to silently erase every 20s. state.lastTick is still advanced
+    // below regardless, so starting a new session later doesn't suddenly
+    // credit the entire idle gap once accrual resumes.
+    if(isMiningSessionActive()){
+      const gained = elapsedSec * speed;
+      state.pendingClaim += gained;
+      state.minedBalance += gained;
+    }
     state.lastTick = now;
   }
 
   // ---------- render ----------
+  // ---------- timed mining session UI (0057_mining_sessions.sql) ----------
+  let startingMiningSessionInFlight = false;
+
+  function formatSessionCountdown(ms){
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return h + "h " + String(m).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
+  }
+
+  /**
+   * Updates the Mine screen's "Mining Session" card from
+   * sessionStartedAt/sessionEndsAt (see isMiningSessionActive() above,
+   * kept in sync by syncMiningRateFromBackend() and
+   * startMiningSessionBtn's own click handler below). Called from
+   * render() every second (the existing main loop below already calls
+   * render() on a 1s setInterval), so the countdown ticks live without
+   * a separate timer. Display-only: never starts, extends, or ends a
+   * session itself — that's exclusively startMiningSessionBtn's click
+   * handler (POST start-mining-session) and the backend's own
+   * mining_session_ends_at.
+   */
+  function renderMiningSessionCard(){
+    const sub = document.getElementById("miningSessionSub");
+    const btn = document.getElementById("startMiningSessionBtn");
+    if(!sub || !btn) return;
+    if(isMiningSessionActive()){
+      const remainingMs = sessionEndsAt.getTime() - Date.now();
+      sub.textContent = "Active — ends in " + formatSessionCountdown(remainingMs);
+      btn.textContent = "MINING…";
+      btn.disabled = true;
+    } else {
+      sub.textContent = sessionEndsAt
+        ? "Session ended — start a new one to keep mining."
+        : "Start an 8-hour mining session to begin earning.";
+      btn.textContent = startingMiningSessionInFlight ? "STARTING…" : "START MINING";
+      btn.disabled = startingMiningSessionInFlight;
+    }
+  }
+
   function render(){
+    renderMiningSessionCard();
     document.getElementById("topBalance").textContent = fmt(state.minedBalance);
     document.getElementById("balanceLabelText").textContent = TOKEN_SYMBOL + " MINED";
     document.getElementById("topBalanceUsd").textContent = fmtUsd(state.minedBalance);
-    document.getElementById("earnedBig").innerHTML = fmt(state.claimedTotal) + ' <span>' + TOKEN_SYMBOL + '</span>';
+    document.getElementById("earnedBig").innerHTML = fmt(state.minedBalance) + ' <span>' + TOKEN_SYMBOL + '</span>';
     document.getElementById("mineGreetName").textContent = PLAYER_NAME;
     document.getElementById("mineAvatar").textContent = PLAYER_NAME.replace("@","").charAt(0).toUpperCase() || "P";
     const speed = effectiveDisplayRate();
@@ -2820,36 +2897,20 @@
   // How many of those units can be Applied at once is gated by Mining Level:
   // Lv.1 = 1 slot, Lv.5 = 2 slots, Lv.15 = 3 slots (each tier holds until the
   // next one is reached — see maxApplySlots()).
-   // ---------- Applied-miner slot rule (0057): +1 slot every 5 Mining
-  // Levels, hard-capped at 20.
-  //
-  // Formula: slots = min(20, floor(level / 5) + 1) — with level clamped
-  // to >= 1. This is the SAME formula the backend RPC set_miner_applied
-  // now uses (see 0057 migration), so the UI's "X / Y" applied-slot
-  // counter and the backend's actual limit enforcement can never drift
-  // apart:
-  //
-  //   Level 1-4    → 1 slot
-  //   Level 5-9    → 2 slots
-  //   Level 10-14  → 3 slots
-  //   Level 15-19  → 4 slots
-  //   ...
-  //   Level 90-94  → 19 slots
-  //   Level 95+    → 20 slots (hard cap — no further unlock at any level)
-  const MAX_APPLY_SLOTS = 20;
-  const APPLY_SLOT_STEP = 5;
+  const APPLY_SLOT_TIERS = [
+    {level:1,  slots:1},
+    {level:5,  slots:2},
+    {level:15, slots:3}
+  ];
 
   function maxApplySlots(level){
-    const l = Math.max(1, level);
-    return Math.min(MAX_APPLY_SLOTS, Math.floor(l / APPLY_SLOT_STEP) + 1);
+    let slots = APPLY_SLOT_TIERS[0].slots;
+    APPLY_SLOT_TIERS.forEach(t => { if(level >= t.level) slots = t.slots; });
+    return slots;
   }
 
   function nextApplySlotTier(level){
-    const l = Math.max(1, level);
-    const currentSlots = maxApplySlots(l);
-    if(currentSlots >= MAX_APPLY_SLOTS) return null;
-    const nextLevel = Math.floor(l / APPLY_SLOT_STEP) * APPLY_SLOT_STEP + APPLY_SLOT_STEP;
-    return { level: nextLevel, slots: currentSlots + 1 };
+    return APPLY_SLOT_TIERS.find(t => t.level > level) || null;
   }
 
   // ---------- backend-authoritative apply/remove (set-miner-applied) ----------
@@ -3749,11 +3810,6 @@
 
         if(result.ok && result.data && result.data.success){
           await refreshInventoryAfterMarketplaceMutation(accessToken);
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           saveState();
           toast("Listed " + item.name + " for " + fmt(price, 0) + " m.PXN");
           await refreshMarketplaceReadData(true);
@@ -3786,11 +3842,6 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           await refreshInventoryAfterMarketplaceMutation(accessToken);
           addPoints(50);
           saveState();
@@ -3827,11 +3878,6 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           saveState();
           toast("Offer of " + fmt(amount, 0) + " m.PXN sent — held in escrow");
           await refreshMarketplaceReadData(true);
@@ -3864,11 +3910,6 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "buyer_claimed_total");
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           saveState();
           toast("Offer withdrawn" + (Number.isFinite(Number(result.data.data.refund_amount_mpxn)) ? " — " + fmt(result.data.data.refund_amount_mpxn, 0) + " m.PXN refunded" : ""));
           await refreshMarketplaceReadData(true);
@@ -3901,11 +3942,6 @@
 
         if(result.ok && result.data && result.data.success){
           applyMarketplaceClaimedTotal(result.data.data, "seller_claimed_total");
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           addPoints(50);
           saveState();
           toast("Offer accepted" + (Number.isFinite(Number(result.data.data.seller_proceeds_mpxn)) ? " — " + fmt(result.data.data.seller_proceeds_mpxn, 0) + " m.PXN added to your balance" : ""));
@@ -3953,11 +3989,6 @@
         }, accessToken);
 
         if(result.ok && result.data && result.data.success){
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           toast("Offer declined — buyer refunded");
           await refreshMarketplaceReadData(true);
         } else {
@@ -3989,11 +4020,6 @@
 
         if(result.ok && result.data && result.data.success){
           await refreshInventoryAfterMarketplaceMutation(accessToken);
-          // Fire-and-forget: refreshes state.claimedTotal from the
-          // authoritative backend value right away, instead of waiting up
-          // to 20s for the next periodic syncMiningRateFromBackend() call.
-          // Not awaited — the UI here doesn't depend on its result.
-          syncMiningRateFromBackend();
           saveState();
           toast("Listing cancelled — miner returned to your inventory");
           await refreshMarketplaceReadData(true);
@@ -5301,6 +5327,45 @@
     document.getElementById("sellPriceInput").value = "";
   });
   document.getElementById("roadmapBtn").addEventListener("click", ()=> toast("Roadmap coming soon!"));
+
+  // Timed mining session (0057_mining_sessions.sql): starts (or
+  // restarts) the caller's 8-hour session via the authenticated
+  // start-mining-session Edge Function / public.start_mining_session.
+  // Guarded against double-taps by startingMiningSessionInFlight and
+  // against tapping while a session is already active (renderMiningSessionCard()
+  // disables the button in both cases, this is defense in depth).
+  document.getElementById("startMiningSessionBtn").addEventListener("click", async ()=>{
+    if(startingMiningSessionInFlight || isMiningSessionActive()) return;
+    if(!window.ProXBackend || typeof ProXBackend.startMiningSession !== "function"){
+      toast("Backend unavailable — try again shortly");
+      return;
+    }
+    startingMiningSessionInFlight = true;
+    renderMiningSessionCard();
+    try{
+      const result = await ProXBackend.startMiningSession();
+      if(result.ok && result.data){
+        sessionStartedAt = result.data.session_started_at ? new Date(result.data.session_started_at) : new Date();
+        sessionEndsAt = result.data.session_ends_at ? new Date(result.data.session_ends_at) : null;
+        // Reset the local ticker's anchor to now, mirroring
+        // start_mining_session's own last_accrued_at reset server-side
+        // — avoids the local display crediting any pre-session idle
+        // gap the instant accrual resumes.
+        state.lastTick = Date.now();
+        if(Number.isFinite(Number(result.data.claimed_total))) state.claimedTotal = Number(result.data.claimed_total);
+        if(Number.isFinite(Number(result.data.pending_claim))) state.pendingClaim = Number(result.data.pending_claim);
+        saveState();
+        toast("Mining session started — 8 hours");
+      } else {
+        toast(result.error || "Could not start mining session");
+      }
+    } catch(e){
+      toast("Network error — try again");
+    } finally {
+      startingMiningSessionInFlight = false;
+      render();
+    }
+  });
 
   // level-3 task auto check
   const origRender = render;
