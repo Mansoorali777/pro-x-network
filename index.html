@@ -197,6 +197,55 @@
   }
   .pill-btn svg{ width:14px; height:14px; }
 
+  /* ---------- CHANGE 2: compact wallet status card on MINE screen ---------- */
+  /* Sits directly below the welcome header and above the mining blob.
+     Tapping it navigates to the WALLET screen for full details — see
+     the click handler wired up next to switchToScreen() further down. */
+  .mine-wallet-card{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin:8px 16px 0;
+    padding:10px 14px;
+    cursor:pointer;
+    transition:border-color 0.15s ease, background 0.15s ease;
+  }
+  .mine-wallet-card:active{ border-color:var(--cyan-dim); background:var(--panel-2); }
+  .mine-wallet-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--steel-soft);
+    flex-shrink:0;
+    box-shadow:0 0 0 3px rgba(124,136,150,0.14);
+    transition:background 0.2s ease, box-shadow 0.2s ease;
+  }
+  .mine-wallet-dot.connected{
+    background:var(--good);
+    box-shadow:0 0 0 3px rgba(74,222,128,0.18), 0 0 10px rgba(74,222,128,0.55);
+  }
+  .mine-wallet-body{
+    flex:1; min-width:0;
+    display:flex; flex-direction:column;
+  }
+  .mine-wallet-address{
+    font-family:'Chakra Petch',sans-serif;
+    font-weight:600;
+    font-size:12.5px;
+    color:var(--text);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .mine-wallet-label{
+    font-size:10.5px;
+    color:var(--steel);
+    letter-spacing:0.04em;
+    margin-top:1px;
+  }
+  .mine-wallet-label.connected{ color:var(--good); }
+  .mine-wallet-chevron{
+    width:14px; height:14px;
+    color:var(--steel);
+    flex-shrink:0;
+  }
+
   /* organic glowing blob button */
   .blob-wrap{ display:flex; justify-content:center; padding:18px 0 6px; position:relative; }
   .blob{
@@ -379,6 +428,47 @@
   }
   .captcha-error.show{ display:block; }
   .modal-box .btn{ margin-top:16px; }
+
+  /* ---------- CHANGE 3: enlarged wallet-connect gate ---------- */
+  /* Purely presentational polish — enforceWalletGate()'s logic and
+     the gate's button/error handling are untouched (see the script
+     below). All IDs remain the same. */
+  .wallet-gate-box{
+    max-width:360px;
+    padding:26px 22px;
+    text-align:center;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:14px;
+  }
+  .wallet-gate-icon{
+    width:68px; height:68px;
+    margin:0 auto 2px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:34px;
+    line-height:1;
+    background:radial-gradient(circle at 40% 32%, rgba(63,208,255,0.30), rgba(63,208,255,0.04) 70%);
+    border:1px solid var(--cyan-dim);
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    box-shadow:0 0 22px rgba(63,208,255,0.30), inset 0 0 20px rgba(63,208,255,0.16);
+  }
+  .wallet-gate-input{
+    width:100%;
+    box-sizing:border-box;
+    padding:14px 14px;
+    font-size:15px;
+    font-family:'Inter',sans-serif;
+    color:var(--text);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    outline:none;
+    transition:border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .wallet-gate-input:focus{
+    border-color:var(--cyan-dim);
+    box-shadow:0 0 0 3px rgba(63,208,255,0.14);
+  }
 
   /* ---------- miner detail / live upgrade-cost box (Goal A/B/G) ---------- */
   .modal-box.miner-detail-box{
@@ -1022,6 +1112,21 @@
         </button>
       </div>
 
+      <!-- CHANGE 2: compact wallet status card on MINE screen.
+           Sits between the welcome header and the mining blob.
+           Tapping it navigates to the WALLET screen for full details
+           (see the click handler wired up next to switchToScreen()).
+           Populated by updateMineWalletCard() from refreshWalletScreen();
+           starts in a neutral "Loading…" state on first paint. -->
+      <div class="panel mine-wallet-card" id="mineWalletCard">
+        <span class="mine-wallet-dot" id="mineWalletDot"></span>
+        <div class="mine-wallet-body">
+          <div class="mine-wallet-address" id="mineWalletAddress">—</div>
+          <div class="mine-wallet-label" id="mineWalletLabel">Loading wallet…</div>
+        </div>
+        <svg class="mine-wallet-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+
       <div class="blob-wrap">
         <div class="blob" id="coreBtn">
           <div class="blob-inner">
@@ -1215,15 +1320,12 @@
 
   <!-- ============ WALLET SCREEN ============ -->
   <div class="screen" id="screen-wallet">
-    <!-- 1. WALLET HEADER / BALANCE — the obsolete gameplay "PXN BALANCE"
-         panel (which described PXN as "used to buy miners in the Store &
-         level up") has been removed: the Store and Level Up both now spend
-         m.PXN (mining_state.claimed_total) via purchase-miner /
-         level-up-mining, so that description is no longer accurate. The
-         underlying state.pxnBalance field and its backend sync
-         (refreshAuthoritativePxnBalance() / syncMiningRateFromBackend())
-         are left fully intact — only this now-inaccurate display panel is
-         removed, not the PXN token feature itself. -->
+    <!-- CHANGE 2: the wallet connect/display cards previously shown here
+         (walletCardDisconnected / walletCardConnected / walletConnectForm)
+         have been REMOVED from this screen. Wallet connection status is
+         now shown on the MINE screen's compact card (see #mineWalletCard
+         above), and this screen keeps only the mining-rewards summary,
+         the swap card, the withdrawal card, and the withdrawal history. -->
 
     <!-- 2. MINING REWARDS CARD — read-only display of existing
          state.minedBalance / state.claimedTotal / state.pendingClaim.
@@ -1246,53 +1348,23 @@
       </div>
     </div>
 
-    <!-- 3. SWAP CARD — COMING SOON. No local balance math on this card. -->
+    <!-- 3. SWAP CARD — CHANGE 4: dynamic based on token_launched.
+         Rendered entirely by renderSwapCard() (see script below).
+         While withdrawalConfigCache is null or token_launched=false,
+         this shows the same disabled "COMING SOON" state as before.
+         When token_launched=true, it becomes a live m.PXN → PXN swap
+         form backed by ProXBackend.swapMpxnToPxn(). -->
     <div class="section-head">
       <h2>SWAP m.PXN → PXN</h2>
     </div>
-    <div class="panel card">
-      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M7 7h11M18 7l-3-3M18 7l-3 3"/><path d="M17 17H6M6 17l3-3M6 17l3 3"/></svg></div>
-      <div class="card-body">
-        <div class="card-title">Swap is currently unavailable.</div>
-      </div>
-      <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+    <div class="panel card" id="swapCard" style="flex-direction:column; align-items:stretch; gap:10px;">
+      <!-- Rendered by renderSwapCard() -->
     </div>
 
-    <!-- 4. TON WALLET CARD — wired to player-profile Edge Function
-         (0052_player_wallet_and_withdrawals.sql). Backend-authoritative:
-         this card only ever displays what the backend reports and only
-         ever sends the pasted address to ProXBackend.connectWallet();
-         it never writes a "connected" state locally. -->
-    <div class="section-head">
-      <h2>CONNECT TON WALLET</h2>
-      <span class="eyebrow" id="walletStatusEyebrow">NOT CONNECTED</span>
-    </div>
-    <div class="panel card" id="walletCardDisconnected">
-      <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2" fill="#7c8896" stroke="none"/></svg></div>
-      <div class="card-body">
-        <div class="card-title">Connect TON Wallet</div>
-        <div class="card-sub">Paste your TON wallet address. This is saved to your account and used for future PXN withdrawals.</div>
-      </div>
-      <div class="card-cta"><button class="btn secondary" id="openConnectWalletBtn">CONNECT</button></div>
-    </div>
-    <div class="panel card" id="walletCardConnected" style="display:none; flex-direction:column; align-items:stretch; gap:8px;">
-      <div class="card-sub" style="margin:0;">Connected address</div>
-      <div class="stat-val" id="walletAddressDisplay" style="font-size:13px; word-break:break-all;"></div>
-    </div>
-    <div class="panel card" id="walletConnectForm" style="display:none; flex-direction:column; align-items:stretch; gap:10px;">
-      <input type="text" id="walletAddressInput" placeholder="TON wallet address (raw or user-friendly)" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--border,#333); background:var(--panel-bg,#181c22); color:inherit; font-size:13px;">
-      <div id="walletConnectError" class="card-sub" style="display:none; color:var(--bad,#e05a5a); margin:0;"></div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn secondary" id="cancelConnectWalletBtn" style="flex:1;">CANCEL</button>
-        <button class="btn" id="submitConnectWalletBtn" style="flex:1;">SAVE WALLET</button>
-      </div>
-    </div>
-
-    <!-- 5. WITHDRAW CARD — wired to withdrawals Edge Function
-         (0052_player_wallet_and_withdrawals.sql). The backend decides
-         whether withdrawals are currently paused, the minimum amount,
-         and the m.PXN->PXN conversion — this card never computes or
-         assumes any of that locally. -->
+    <!-- 5. WITHDRAW CARD — CHANGE 5: field is now PXN (not m.PXN).
+         Placeholder/label updated, REQUEST button disabled when
+         pxn_balance === 0, small hint shown in that case. Backend
+         call ProXBackend.createWithdrawal() now sends { amount_pxn }. -->
     <div class="section-head">
       <h2>WITHDRAW PXN</h2>
     </div>
@@ -1301,9 +1373,12 @@
         <div class="card-title">Withdraw PXN</div>
         <div class="card-sub" id="withdrawHint">Connect a wallet to request a withdrawal.</div>
       </div>
-      <div id="withdrawFormRow" style="display:none; gap:8px;">
-        <input type="number" id="withdrawAmountInput" placeholder="Amount (m.PXN)" min="0" step="0.00000001" style="flex:1; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--border,#333); background:var(--panel-bg,#181c22); color:inherit; font-size:13px;">
-        <button class="btn" id="submitWithdrawBtn">REQUEST</button>
+      <div id="withdrawFormRow" style="display:none; flex-direction:column; gap:6px;">
+        <div style="display:flex; gap:8px;">
+          <input type="number" id="withdrawAmountInput" placeholder="Amount (PXN)" min="0" step="0.00000001" style="flex:1; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--line,#333); background:var(--panel-2,#181c22); color:inherit; font-size:13px;">
+          <button class="btn" id="submitWithdrawBtn">REQUEST</button>
+        </div>
+        <div id="withdrawZeroHint" class="card-sub" style="display:none; color:var(--steel); font-size:11px; margin:0;">You need to swap m.PXN → PXN first</div>
       </div>
     </div>
     <div id="withdrawHistoryList"></div>
@@ -1460,26 +1535,20 @@
   </div>
 
   <!-- ============ MANDATORY WALLET-CONNECT GATE ============
-       Shown after successful auth whenever the authenticated player has
-       no wallet on file (player_wallets, via player-profile's
-       fetchWalletStatus()). This is an application-flow gate, not just a
-       hidden nav item: see enforceWalletGate()/switchToScreen() below,
-       which refuse to activate ANY other screen while
-       walletGateActive === true, so the gate cannot be bypassed by
-       clicking nav, changing location.hash, or refreshing (the same
-       check re-runs on every boot). It disappears permanently for this
-       device/session the moment ProXBackend.connectWallet() succeeds,
-       and stays gone on future visits because the backend now reports a
-       wallet on the very next fetchWalletStatus() call. Reuses the
-       existing player-profile Edge Function / ProXBackend.connectWallet()
-       — no second authentication or wallet system. -->
+       CHANGE 3: this overlay is now visually larger/more prominent
+       (see .wallet-gate-box / .wallet-gate-icon / .wallet-gate-input
+       in the stylesheet above), with a TON-style icon area, a bigger
+       input, and clearer instructional copy. All IDs, the button,
+       the error element, and enforceWalletGate()'s logic are
+       completely unchanged — this is HTML/CSS polish only. -->
   <div class="modal-overlay" id="walletGateOverlay" style="z-index:55; background:rgba(6,8,12,0.94);">
-    <div class="panel modal-box" style="flex-direction:column; align-items:stretch; gap:12px;">
+    <div class="panel modal-box wallet-gate-box">
+      <div class="wallet-gate-icon" aria-hidden="true">💎</div>
       <div class="eyebrow">GET STARTED</div>
-      <div class="modal-title">Connect Your Wallet</div>
-      <div class="modal-sub">You need to connect a TON wallet address before you can use Pro-X Network. This is required once, and takes a few seconds.</div>
-      <input type="text" id="walletGateAddressInput" placeholder="TON wallet address (raw or user-friendly)" style="width:100%; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--border,#333); background:var(--panel-bg,#181c22); color:inherit; font-size:13px;">
-      <div id="walletGateError" class="card-sub" style="display:none; color:var(--bad,#e05a5a); margin:0;"></div>
+      <div class="modal-title">Connect your TON wallet to start mining</div>
+      <div class="modal-sub">Your wallet is required once, and used for future PXN withdrawals. It takes just a few seconds.</div>
+      <input type="text" id="walletGateAddressInput" class="wallet-gate-input" placeholder="TON wallet address (raw or user-friendly)" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div id="walletGateError" class="card-sub" style="display:none; color:var(--danger); margin:0;"></div>
       <button class="btn" id="walletGateSubmitBtn" style="width:100%;">CONNECT WALLET</button>
     </div>
   </div>
@@ -3114,6 +3183,156 @@
     document.getElementById("miningTotalMined").textContent = fmt(state.minedBalance) + " " + TOKEN_SYMBOL;
     document.getElementById("miningClaimed").textContent = fmt(state.claimedTotal, 4) + " " + TOKEN_SYMBOL;
     document.getElementById("miningPending").textContent = fmt(state.pendingClaim) + " " + TOKEN_SYMBOL;
+
+    // CHANGE 5: keep the withdrawal form's button/hint state in sync with
+    // the current pxn_balance even when it changes between wallet-screen
+    // visits (e.g. after a swap or a background accrue-mining sync). Only
+    // ever touches the form when it is actually visible (i.e. the wallet
+    // is connected) so it can't fight with the connect-gate logic above.
+    applyPxnBalanceToWithdrawForm();
+  }
+
+  // ---------- CHANGE 4 + CHANGE 5 helpers ----------
+  // Non-persisted, in-memory cache of the backend's withdrawal config
+  // (token_launched, mpxn_to_pxn_rate, withdrawals_paused,
+  // min_withdrawal_pxn). Populated by refreshWalletScreen() via
+  // ProXBackend.fetchWithdrawalConfig(); read by renderSwapCard() and any
+  // future UI that needs the current rate/pause/launch flags. Deliberately
+  // session-only (never written to localStorage) — it is a live mirror of
+  // backend state, same reasoning as maxLevelMiners/minerUpgradeCostsCache
+  // elsewhere in this file. Stays null until the first successful fetch.
+  let withdrawalConfigCache = null;
+
+  /**
+   * CHANGE 5 — applies the current state.pxnBalance to the withdrawal
+   * form: disables the REQUEST button and shows the "swap first" hint
+   * when pxn_balance is 0. No-op if the form isn't currently visible, so
+   * it can never accidentally enable/disable the button before the
+   * wallet is actually connected (refreshWalletScreen controls visibility).
+   */
+  function applyPxnBalanceToWithdrawForm(){
+    const withdrawFormRow = document.getElementById("withdrawFormRow");
+    if(!withdrawFormRow || withdrawFormRow.style.display === "none") return;
+    const pxnBal = Number(state.pxnBalance) || 0;
+    const submitWithdrawBtn = document.getElementById("submitWithdrawBtn");
+    const withdrawZeroHint = document.getElementById("withdrawZeroHint");
+    if(submitWithdrawBtn) submitWithdrawBtn.disabled = !(pxnBal > 0);
+    if(withdrawZeroHint) withdrawZeroHint.style.display = pxnBal === 0 ? "block" : "none";
+  }
+
+  /**
+   * CHANGE 2 — updates the MINE screen's compact wallet status card from
+   * a wallet object ({wallet_address, ...}) or null. Called by
+   * refreshWalletScreen() (which is itself triggered by the wallet-screen
+   * open, the initial page load, and a successful wallet-gate connect).
+   * Purely display-only: it never writes wallet state, never talks to the
+   * backend, and never gates anything (that's enforceWalletGate's job).
+   */
+  function updateMineWalletCard(wallet){
+    const dot = document.getElementById("mineWalletDot");
+    const addressEl = document.getElementById("mineWalletAddress");
+    const labelEl = document.getElementById("mineWalletLabel");
+    if(!dot || !addressEl || !labelEl) return;
+
+    const addr = wallet && wallet.wallet_address;
+    if(addr && typeof addr === "string" && addr.length){
+      const truncated = addr.length > 18 ? (addr.slice(0, 8) + "…" + addr.slice(-6)) : addr;
+      dot.classList.add("connected");
+      addressEl.textContent = truncated;
+      labelEl.textContent = "✓ TON Wallet";
+      labelEl.classList.add("connected");
+    } else {
+      dot.classList.remove("connected");
+      addressEl.textContent = "Not connected";
+      labelEl.textContent = "Tap to connect";
+      labelEl.classList.remove("connected");
+    }
+  }
+
+  /**
+   * CHANGE 4 — paints the WALLET screen's SWAP card from
+   * withdrawalConfigCache (see above). Three states:
+   *   1. no config yet           → neutral "loading" message
+   *   2. token_launched === false → the previous disabled "COMING SOON" card
+   *   3. token_launched === true  → live swap form backed by
+   *      ProXBackend.swapMpxnToPxn(); success updates state.pxnBalance from
+   *      the backend's new_pxn_balance, then re-renders (so the withdrawal
+   *      form's zero-balance hint/disable logic updates too).
+   * Never computes the rate locally — it only displays what the backend
+   * returned. No-ops silently if the swap card isn't in the DOM.
+   */
+  function renderSwapCard(){
+    const card = document.getElementById("swapCard");
+    if(!card) return;
+
+    // State 1 — config not loaded yet: safe, non-interactive placeholder.
+    if(!withdrawalConfigCache){
+      card.innerHTML = `
+        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M7 7h11M18 7l-3-3M18 7l-3 3"/><path d="M17 17H6M6 17l3-3M6 17l3 3"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">Swap is currently unavailable.</div>
+          <div class="card-sub">Loading configuration…</div>
+        </div>
+      `;
+      return;
+    }
+
+    // State 2 — token not launched yet: same disabled "COMING SOON" card
+    // as before (unchanged behavior for the pre-launch period).
+    if(!withdrawalConfigCache.token_launched){
+      card.innerHTML = `
+        <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#7c8896" stroke-width="1.8"><path d="M7 7h11M18 7l-3-3M18 7l-3 3"/><path d="M17 17H6M6 17l3-3M6 17l3 3"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">Swap is currently unavailable.</div>
+        </div>
+        <div class="card-cta"><button class="btn secondary" disabled>COMING SOON</button></div>
+      `;
+      return;
+    }
+
+    // State 3 — token launched: live swap form. Rate is read straight from
+    // the backend config (never recomputed here); the input/button markup
+    // uses the same inline styling as the withdrawal form for consistency.
+    const rate = Number(withdrawalConfigCache.mpxn_to_pxn_rate) || 0;
+    card.innerHTML = `
+      <div class="card-body" style="padding:0;">
+        <div class="card-title">Swap m.PXN → PXN</div>
+        <div class="card-sub">Rate: 1 m.PXN = ${rate} PXN</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <input type="number" id="swapAmountInput" placeholder="m.PXN amount to swap" min="0" step="0.00000001" style="flex:1; box-sizing:border-box; padding:10px; border-radius:8px; border:1px solid var(--line,#333); background:var(--panel-2,#181c22); color:inherit; font-size:13px;">
+        <button class="btn" id="swapSubmitBtn">SWAP</button>
+      </div>
+    `;
+
+    const swapBtn = document.getElementById("swapSubmitBtn");
+    if(!swapBtn) return;
+    swapBtn.addEventListener("click", async function(){
+      const input = document.getElementById("swapAmountInput");
+      if(!input) return;
+      const amount = Number(input.value);
+      if(!Number.isFinite(amount) || amount <= 0){
+        toast("Enter a valid amount");
+        return;
+      }
+      swapBtn.disabled = true;
+      const result = await ProXBackend.swapMpxnToPxn(amount);
+      swapBtn.disabled = false;
+      if(result.ok && result.data && result.data.success){
+        const newBal = Number(result.data.new_pxn_balance);
+        const swapped = Number(result.data.amount_mpxn_swapped);
+        if(Number.isFinite(newBal)){
+          state.pxnBalance = newBal;
+          saveState();
+        }
+        toast("Swapped " + fmt(Number.isFinite(swapped) ? swapped : amount, 2) + " m.PXN → " + fmt(Number.isFinite(newBal) ? newBal : 0, 4) + " PXN");
+        input.value = "";
+        render();
+        refreshWalletScreen();
+      } else {
+        toast(result.error || "Swap failed");
+      }
+    });
   }
 
   function renderUpgrade(){
@@ -5084,7 +5303,10 @@
   // NOTE: the m.PXN → PXN swap action/listener was intentionally removed —
   // the Wallet screen's SWAP card is now a disabled COMING SOON state (see
   // WALLET SCREEN markup above). No frontend code adjusts PXN or m.PXN
-  // balances from this screen anymore.
+  // balances from this screen anymore. CHANGE 4 adds the live swap path
+  // back in via renderSwapCard()'s own click handler (gated on the
+  // backend's token_launched flag) — the old always-on swap handler stays
+  // removed.
 
   // ---------- watch ads for a big boost ----------
   // NOTE: no real ad network is wired up here — there's no ad SDK available in
@@ -5327,30 +5549,42 @@
     if(!window.ProXBackend || typeof ProXBackend.fetchWalletStatus !== "function") return;
     walletScreenLoading = true;
     try {
+      // CHANGE 4: load the withdrawal config first so the SWAP card can
+      // be painted in its correct state (COMING SOON vs. live) as soon
+      // as the WALLET screen opens. Failure here is silent and leaves
+      // the previous cache (if any) in place — renderSwapCard() handles
+      // a null cache with a neutral loading state.
+      const configResult = await ProXBackend.fetchWithdrawalConfig();
+      if(configResult.ok && configResult.data && configResult.data.config){
+        withdrawalConfigCache = configResult.data.config;
+      }
+      renderSwapCard();
+
       const walletResult = await ProXBackend.fetchWalletStatus();
-      const eyebrow = document.getElementById("walletStatusEyebrow");
-      const disconnectedCard = document.getElementById("walletCardDisconnected");
-      const connectedCard = document.getElementById("walletCardConnected");
-      const addressDisplay = document.getElementById("walletAddressDisplay");
       const withdrawHint = document.getElementById("withdrawHint");
       const withdrawFormRow = document.getElementById("withdrawFormRow");
 
       const wallet = (walletResult.ok && walletResult.data) ? walletResult.data.wallet : null;
 
+      // CHANGE 2: mirror the wallet status onto the MINE screen's compact
+      // card so it stays correct regardless of which screen the player
+      // is on. Display-only — never writes wallet state.
+      updateMineWalletCard(wallet);
+
       if(wallet && wallet.wallet_address){
-        if(eyebrow){ eyebrow.textContent = "CONNECTED"; }
-        if(disconnectedCard) disconnectedCard.style.display = "none";
-        if(connectedCard) connectedCard.style.display = "flex";
-        if(addressDisplay) addressDisplay.textContent = wallet.wallet_address;
-        if(withdrawHint) withdrawHint.textContent = "Enter an amount of m.PXN to request a withdrawal.";
+        // CHANGE 5: this hint now says PXN (not m.PXN) to match the
+        // renamed withdrawal input.
+        if(withdrawHint) withdrawHint.textContent = "Enter PXN amount to withdraw";
         if(withdrawFormRow) withdrawFormRow.style.display = "flex";
       } else {
-        if(eyebrow){ eyebrow.textContent = "NOT CONNECTED"; }
-        if(disconnectedCard) disconnectedCard.style.display = "flex";
-        if(connectedCard) connectedCard.style.display = "none";
         if(withdrawHint) withdrawHint.textContent = "Connect a wallet to request a withdrawal.";
         if(withdrawFormRow) withdrawFormRow.style.display = "none";
       }
+
+      // CHANGE 5: apply the current pxn_balance to the form (disable
+      // REQUEST when 0, show the small hint in that case). Runs only
+      // when the form is visible — see applyPxnBalanceToWithdrawForm().
+      applyPxnBalanceToWithdrawForm();
 
       const historyResult = await ProXBackend.fetchWithdrawals();
       if(historyResult.ok && historyResult.data){
@@ -5368,6 +5602,13 @@
   const walletConnectError = document.getElementById("walletConnectError");
   const walletAddressInput = document.getElementById("walletAddressInput");
 
+  // CHANGE 2: the wallet connect/display cards have been removed from the
+  // WALLET screen, so the elements above are now typically null. Their
+  // handlers below are guarded by the same `if(element)` checks they
+  // always had, so no behavior changes and nothing throws — the code is
+  // simply dormant. Connection now happens through the mandatory wallet
+  // gate (walletGateOverlay) and the MINE screen card navigates to the
+  // WALLET screen for full details (mining-rewards / swap / withdrawals).
   if(connectWalletBtn && walletConnectForm){
     connectWalletBtn.addEventListener("click", function(){
       walletConnectForm.style.display = "flex";
@@ -5407,6 +5648,8 @@
     submitWithdrawBtn.addEventListener("click", async function(){
       const input = document.getElementById("withdrawAmountInput");
       if(!input) return;
+      // CHANGE 5: the amount entered here is PXN (see placeholder),
+      // and ProXBackend.createWithdrawal() now sends { amount_pxn }.
       const amount = Number(input.value);
       if(!Number.isFinite(amount) || amount <= 0){
         toast("Enter a valid amount");
@@ -5414,12 +5657,14 @@
       }
       submitWithdrawBtn.disabled = true;
       const result = await ProXBackend.createWithdrawal(amount);
-      submitWithdrawBtn.disabled = false;
+      // Do NOT force-enable here — applyPxnBalanceToWithdrawForm() (called
+      // by refreshWalletScreen/renderWallet) decides the correct state.
       if(result.ok){
         input.value = "";
         toast("Withdrawal request submitted");
         refreshWalletScreen();
       } else {
+        submitWithdrawBtn.disabled = false;
         toast(result.error || "Could not submit withdrawal request");
       }
     });
@@ -5440,6 +5685,10 @@
   // and it also covers a location.hash change (see the hashchange
   // listener further below), since nothing in this app can show a
   // screen except by calling this function.
+  //
+  // CHANGE 3 note: only the gate's HTML/CSS was polished (bigger input,
+  // TON-style icon, clearer copy) — enforceWalletGate() itself, and the
+  // submit button handler below, are completely unchanged.
   let walletGateActive = false;
 
   function showWalletGate(){
@@ -5451,6 +5700,9 @@
     walletGateActive = false;
     document.getElementById("walletGateOverlay").classList.remove("show");
     switchToScreen("mine");
+    // Refresh the wallet display so the newly-connected address shows up
+    // on the MINE screen's compact card immediately (no full reload).
+    if(typeof refreshWalletScreen === "function") refreshWalletScreen();
   }
 
   // Calls player-profile ({action:"get"}) via ProXBackend.fetchWalletStatus()
@@ -5542,6 +5794,8 @@
     // Re-sync the Wallet screen's connection status + withdrawal
     // history every time it opens (per-open refresh, not a timer),
     // same pattern as refreshMinerCatalog()/refreshTaskCatalog() above.
+    // This also drives CHANGE 2's MINE wallet card and CHANGE 4's
+    // swap card state via refreshWalletScreen()'s own calls.
     if(name === "wallet"){
       refreshWalletScreen();
     }
@@ -5552,6 +5806,15 @@
   });
 
   document.getElementById("goFriendsBtn").addEventListener("click", ()=> switchToScreen("friends"));
+
+  // CHANGE 2: tapping the MINE screen's compact wallet card opens the
+  // WALLET screen for full details (mining-rewards summary, swap,
+  // withdrawals). No-op while the wallet gate is active — switchToScreen
+  // already enforces that itself.
+  const mineWalletCard = document.getElementById("mineWalletCard");
+  if(mineWalletCard){
+    mineWalletCard.addEventListener("click", ()=> switchToScreen("wallet"));
+  }
 
   // marketplace tabs
   document.querySelectorAll(".market-tab").forEach(btn=>{
@@ -5662,6 +5925,11 @@ document.getElementById("roadmapCloseBtn2").addEventListener("click", closeRoadm
     showBlockOverlay(initialAccess.reason);
   } else {
     accrue(); /* processSettlements(); — disabled: obsolete localStorage Marketplace settlement processor, see processSettlements() definition above */ render(); syncPlayerRecord();
+    // CHANGE 2: warm the MINE screen's compact wallet card on first paint.
+    // refreshWalletScreen() is idempotent and guarded by walletScreenLoading,
+    // so this is safe even if it runs concurrently with the wallet-gate
+    // check that ProXAuth.authenticate() already triggered on boot.
+    refreshWalletScreen();
   }
 })();
 </script>
