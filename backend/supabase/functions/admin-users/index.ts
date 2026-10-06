@@ -15,11 +15,12 @@
 //
 // "list" lets an admin view every player's identity fields (from
 // public.users) alongside their EXACT, database-authoritative PXN
-// balance (public.mining_state.pxn_balance), optionally filtered by a
-// case-insensitive match against Telegram ID / username / first name
-// / last name — filtered IN THE DATABASE QUERY (a Postgres
-// ILIKE/eq filter via the service-role client below), not by fetching
-// every row and filtering in this file or in the browser.
+// balance (public.mining_state.pxn_balance) and their TON wallet
+// info (public.player_wallets.wallet_address / wallet_network),
+// optionally filtered by a case-insensitive match against Telegram ID
+// / username / first name / last name — filtered IN THE DATABASE QUERY
+// (a Postgres ILIKE/eq filter via the service-role client below), not
+// by fetching every row and filtering in this file or in the browser.
 //
 // "get" additionally returns one player's full balance/progression
 // snapshot (pxn_balance, mined_balance_total, pending_claim,
@@ -74,7 +75,8 @@
 //     trusted as proof of anything; it is used solely to select rows
 //     after the caller has already been confirmed to be an admin.
 //   - Only after BOTH checks pass is the service-role client used, to
-//     read public.users / public.mining_state / public.mining_inventory.
+//     read public.users / public.mining_state / public.mining_inventory
+//     / public.player_wallets.
 //     SUPABASE_SERVICE_ROLE_KEY is read only from Deno.env (Supabase
 //     secrets, via _shared/env.ts -> _shared/supabaseAdmin.ts), is
 //     never present in any response, and is never sent to or usable
@@ -83,12 +85,14 @@
 //     other than yourself at all: public.users has only a
 //     "users_select_own" RLS policy (auth.uid() = id),
 //     public.mining_state only "mining_state_select_own"
-//     (auth.uid() = user_id), and public.mining_inventory only
-//     "mining_inventory_select_own" (auth.uid() = user_id) — an
-//     authenticated, non-admin caller can never read another player's
-//     row through any client-side query; RLS denies it by default.
-//     This function is a deliberate, narrow, admin-gated exception,
-//     exactly like the target-lookup half of admin-set-mining-speed.
+//     (auth.uid() = user_id), public.mining_inventory only
+//     "mining_inventory_select_own" (auth.uid() = user_id), and
+//     public.player_wallets only "player_wallets_select_own"
+//     (auth.uid() = user_id) — an authenticated, non-admin caller can
+//     never read another player's row through any client-side query;
+//     RLS denies it by default. This function is a deliberate, narrow,
+//     admin-gated exception, exactly like the target-lookup half of
+//     admin-set-mining-speed.
 //
 // Search ("list" only):
 //   - Optional `search` string (max 200 chars). Empty/omitted =
@@ -121,9 +125,17 @@
 //     when admin_speed_override is NULL, miningRate is returned as
 //     `null` rather than an invented/recomputed number.
 //
+// Wallet info ("list" only):
+//   - Each returned user row additionally carries wallet_address and
+//     wallet_network, sourced from public.player_wallets
+//     (player_wallets.user_id = users.id), fetched in a single batched
+//     SELECT and joined in-memory alongside mining_state — the same
+//     pattern already used for pxn_balance. A user with no
+//     player_wallets row returns null for both fields.
+//
 // Response 200 (list): { success: true, users: [ { userId,
 //   telegramUserId, username, firstName, lastName, pxnBalance,
-//   createdAt }, ... ] }
+//   createdAt, wallet_address, wallet_network }, ... ] }
 // Response 200 (get): { success: true, user: { userId, telegramUserId,
 //   username, firstName, lastName, pxnBalance, minedBalanceTotal,
 //   pendingClaim, claimedTotal, level, miningRate, createdAt },
@@ -205,6 +217,12 @@ interface MiningInventoryRow {
   miner_speed: number | string | null;
   is_applied: boolean;
   created_at: string;
+}
+
+interface PlayerWalletRow {
+  user_id: string;
+  wallet_address: string | null;
+  wallet_network: string | null;
 }
 
 function extractBearerToken(req: Request): string | null {
@@ -442,10 +460,11 @@ Deno.serve(async (req: Request) => {
   }
 
   // Service-role client — the only client that can read every player's
-  // public.users / public.mining_state / public.mining_inventory row
-  // (each table only grants "select own" to authenticated via RLS).
-  // Only constructed after the caller has already been confirmed
-  // authenticated AND admin above. Used for read-only SELECTs only.
+  // public.users / public.mining_state / public.mining_inventory /
+  // public.player_wallets row (each table only grants "select own" to
+  // authenticated via RLS). Only constructed after the caller has
+  // already been confirmed authenticated AND admin above. Used for
+  // read-only SELECTs only.
   let admin;
   try {
     admin = getSupabaseAdmin();
@@ -560,13 +579,37 @@ Deno.serve(async (req: Request) => {
       balanceByUserId.set(row.user_id, row.pxn_balance);
     }
 
-    const users = ((usersData ?? []) as UserRow[]).map((u) => ({
-      ...mapUserRow(u),
-      // Not present in balanceByUserId (no mining_state row yet) safely
-      // falls back to 0 via safeNumber(undefined), same as a
-      // non-finite stored value would.
-      pxnBalance: safeNumber(balanceByUserId.get(u.id)),
-    }));
+    // Batched wallet lookup — same pattern as the mining_state fetch
+    // just above: one SELECT over public.player_wallets, joined
+    // in-memory by user_id. A user with no player_wallets row simply
+    // has no entry here (handled as null/null in the map below).
+    const { data: walletsData, error: walletsError } = await admin
+      .from("player_wallets")
+      .select("user_id, wallet_address, wallet_network");
+
+    if (walletsError) {
+      console.error("[admin-users] player_wallets list failed:", walletsError.message);
+      return jsonResponse({ success: false, message: "Could not load users" }, 500);
+    }
+
+    const walletByUserId = new Map<string, PlayerWalletRow>();
+    for (const row of (walletsData ?? []) as PlayerWalletRow[]) {
+      walletByUserId.set(row.user_id, row);
+    }
+
+    const users = ((usersData ?? []) as UserRow[]).map((u) => {
+      const wallet = walletByUserId.get(u.id);
+      return {
+        ...mapUserRow(u),
+        // Not present in balanceByUserId (no mining_state row yet) safely
+        // falls back to 0 via safeNumber(undefined), same as a
+        // non-finite stored value would.
+        pxnBalance: safeNumber(balanceByUserId.get(u.id)),
+        // Absent player_wallets row -> both null, per spec.
+        wallet_address: wallet?.wallet_address ?? null,
+        wallet_network: wallet?.wallet_network ?? null,
+      };
+    });
 
     return jsonResponse({ success: true, users }, 200);
   }
