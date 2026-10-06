@@ -9,7 +9,24 @@
 //      (never trusts initDataUnsafe, a client-sent user id, a
 //      username, or a referral code as identity proof).
 //   2. Loads the existing `users` row for that Telegram id, or
-//      creates one if this is a first login.
+//      creates one if this is a first login. Only on the CREATE branch
+//      (a brand-new user, never an existing login), and only when the
+//      verified initData carried a `start_param`, this also calls
+//      public.record_pending_referral() so a referral link
+//      (t.me/<bot>?start=<referrer's telegram_user_id>) results in a
+//      pending row in public.referrals (0043_create_referrals.sql). This
+//      is best-effort and never blocks or fails sign-in: an invalid code,
+//      an unknown referrer, self-referral, or a referral row that somehow
+//      already exists are all silent no-ops inside that RPC (see
+//      0045_record_pending_referral.sql) — record_pending_referral() never
+//      raises for any of those cases, and even if it did, the call below is
+//      wrapped so it can never fail this request. No reward, referral
+//      count, or leaderboard change happens here or inside that RPC —
+//      qualification (and the referral_count increment) happens later,
+//      entirely inside qualify_referral(), run by the
+//      referral-qualification-sweep cron job
+//      (0046_qualify_and_flag_referral.sql /
+//      0048_schedule_referral_qualification_sweep.sql).
 //   3. Ensures a matching Supabase Auth (`auth.users`) row exists,
 //      with the SAME id as the `public.users` row, then mints a
 //      real Supabase Auth session for it (admin.createUser +
@@ -152,6 +169,12 @@ Deno.serve(async (req: Request) => {
     is_banned: boolean;
   } | null = null;
 
+  // Set to true ONLY on the branch below that inserts a brand-new
+  // public.users row. Used exclusively to decide whether to attempt
+  // referral capture further down — never used for anything else, and
+  // never changes which branch (update vs. insert) runs.
+  let isNewUser = false;
+
   try {
     const { data: existing, error: selectError } = await supabase
       .from("users")
@@ -195,6 +218,7 @@ Deno.serve(async (req: Request) => {
         .single();
       if (insertError) throw insertError;
       userRow = created;
+      isNewUser = true;
     }
   } catch (err) {
     console.error(
@@ -215,6 +239,42 @@ Deno.serve(async (req: Request) => {
     // session for a user we don't actually have a row for.
     console.error("[auth-telegram] no user row after upsert — this should never happen");
     return jsonResponse({ status: "error", message: "Could not complete sign-in" }, 500);
+  }
+
+  // --- Best-effort referral capture: brand-new users only, never existing logins. ---
+  // This never affects the response, never affects whether sign-in
+  // succeeds, and is skipped entirely (no RPC call at all) for the
+  // common case of an organic install with no start_param, so an
+  // ordinary login round-trip does not pay for an extra network hop it
+  // doesn't need. record_pending_referral() (0045) resolves start_param
+  // to a referrer via public.users.telegram_user_id, and is itself
+  // already silent-no-op-safe for every "this doesn't lead anywhere
+  // useful" case (self-referral, unknown/malformed code, a referred user
+  // who already has a referral row) — the try/catch below exists purely
+  // as an extra guard against something unexpected (e.g. a transient
+  // network/DB error calling the RPC), never against normal referral
+  // outcomes, which that RPC already handles without raising.
+  if (isNewUser) {
+    const startParam = verification.data.startParam;
+    if (startParam) {
+      try {
+        const { error: referralError } = await supabase.rpc("record_pending_referral", {
+          p_referred_user_id: userRow.id,
+          p_start_param: startParam,
+        });
+        if (referralError) {
+          console.warn(
+            `[auth-telegram] record_pending_referral failed (non-fatal) for new user ${userRow.id}:`,
+            referralError.message,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[auth-telegram] unexpected error calling record_pending_referral (non-fatal) for new user ${userRow.id}:`,
+          err instanceof Error ? err.message : "unknown error",
+        );
+      }
+    }
   }
 
   if (userRow.is_banned) {

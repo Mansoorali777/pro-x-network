@@ -14,7 +14,21 @@
 // in admin-set-mining-speed/index.ts and its
 // public.admin_set_mining_speed() / admin_clear_mining_speed_override()
 // RPCs (see 0020_admin_mining_speed_control.sql); this function only
-// ever READS admin_speed_override, never writes it. It reads:
+// ever READS admin_speed_override, never writes it.
+//
+// Timed mining sessions (0057_mining_sessions.sql): accrual now
+// REQUIRES an active 8-hour session. mining_session_started_at /
+// mining_session_ends_at are read from the player's own mining_state
+// row (never from the request body) and only the portion of elapsed
+// time that falls inside that window is credited — once
+// mining_session_ends_at has passed, accrual is 0 until the player
+// calls start-mining-session again. This does NOT implement or modify
+// session start/restart itself — that stays exclusively in
+// start-mining-session/index.ts and public.start_mining_session();
+// this function only ever READS mining_session_started_at/
+// mining_session_ends_at, never writes them. See the comment above
+// the accrual-gating calculation further down this file for the
+// exact overlap logic. It reads:
 //   - public.mining_config (base_speed, referral_speed_bonus,
 //     boost_multiplier, ad_boost_multiplier, max_offline_accrual_sec,
 //     level_boost_percent) — the same values already documented in
@@ -148,6 +162,13 @@ interface MiningStateRow {
   referral_count: number;
   accrual_lock_version: number;
   admin_speed_override: number | string | null;
+  // Timed mining session (0057_mining_sessions.sql). Both null until
+  // the player's first start-mining-session call. Read-only here —
+  // written exclusively by public.start_mining_session, never by this
+  // file. See the accrual-gating comment above the CAS loop below for
+  // how these two columns are used.
+  mining_session_started_at: string | null;
+  mining_session_ends_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -404,9 +425,59 @@ Deno.serve(async (req: Request) => {
     const now = new Date();
     const lastAccruedAt = new Date(workingState.last_accrued_at);
     // Clamp negative elapsed time (e.g. clock skew) to 0 rather than
-    // ever subtracting from a balance.
+    // ever subtracting from a balance. This remains the RAW wall-clock
+    // gap since the last call (returned as elapsed_seconds below) —
+    // session gating only affects appliedSeconds, computed next.
     const elapsedSeconds = Math.max(0, (now.getTime() - lastAccruedAt.getTime()) / 1000);
-    const appliedSeconds = Math.min(elapsedSeconds, config.max_offline_accrual_sec);
+
+    // --- Timed mining session gating (0057_mining_sessions.sql). ---
+    //
+    // Accrual now REQUIRES an active session: only wall-clock time
+    // that falls inside [mining_session_started_at,
+    // mining_session_ends_at] is ever counted, computed as the
+    // overlap of that session window with [lastAccruedAt, now] — the
+    // same interval elapsedSeconds above is drawn from, just clipped
+    // to the session. mining_session_started_at/ends_at are written
+    // exclusively by public.start_mining_session (called from
+    // start-mining-session/index.ts) and are only ever READ here,
+    // exactly like admin_speed_override/appliedMinerSpeed above.
+    //
+    // This naturally covers every required case with one calculation:
+    //   - No session ever started (both columns null): overlap is 0,
+    //     so sessionAppliedSeconds is 0 — no special-case branch
+    //     needed.
+    //   - Session still active (now <= mining_session_ends_at): the
+    //     overlap's upper bound is `now` itself, so this behaves
+    //     exactly like the pre-session-gating logic (elapsedSeconds,
+    //     unless mining_session_started_at is more recent than
+    //     lastAccruedAt).
+    //   - Session has ended (now > mining_session_ends_at) and the
+    //     player hasn't started a new one: the overlap's upper bound
+    //     is clamped to mining_session_ends_at, so once lastAccruedAt
+    //     itself reaches that boundary (i.e. the ended session has
+    //     already been fully credited by a prior call), the overlap —
+    //     and therefore all further accrual — is exactly 0, with no
+    //     explicit "is the session over" branch required. Calling
+    //     start_mining_session again is the only way to make new time
+    //     accrue (it also resets last_accrued_at to the new session's
+    //     start, so no pre-session backlog is ever credited either).
+    //
+    // The pre-existing max_offline_accrual_sec cap below still applies
+    // ON TOP of this — session gating narrows the window accrual can
+    // come from; it does not widen or replace the existing offline cap.
+    const sessionStartedAt = workingState.mining_session_started_at
+      ? new Date(workingState.mining_session_started_at)
+      : null;
+    const sessionEndsAt = workingState.mining_session_ends_at
+      ? new Date(workingState.mining_session_ends_at)
+      : null;
+    let sessionAppliedSeconds = 0;
+    if (sessionStartedAt && sessionEndsAt) {
+      const overlapStartMs = Math.max(lastAccruedAt.getTime(), sessionStartedAt.getTime());
+      const overlapEndMs = Math.min(now.getTime(), sessionEndsAt.getTime());
+      sessionAppliedSeconds = Math.max(0, (overlapEndMs - overlapStartMs) / 1000);
+    }
+    const appliedSeconds = Math.min(sessionAppliedSeconds, config.max_offline_accrual_sec);
 
     const adminSpeedOverride =
       workingState.admin_speed_override === null || workingState.admin_speed_override === undefined

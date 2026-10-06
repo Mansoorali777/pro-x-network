@@ -23,6 +23,22 @@ export interface TelegramWebAppUser {
 export interface VerifiedInitData {
   user: TelegramWebAppUser;
   authDate: number; // unix seconds, from the signed payload
+  // The raw `start_param` field from a Telegram deep link
+  // (`t.me/<bot>?start=<value>`), if this session was launched via one.
+  // Per the Friends Referral design, this value is the REFERRER's own
+  // telegram_user_id, rendered as a plain decimal string by the frontend's
+  // referral link — nothing new is decoded or trusted here. `start_param`
+  // is just another field inside the same query-string payload whose
+  // signature is verified below (it is already covered by the
+  // data-check-string, exactly like `user` and `auth_date`), so exposing it
+  // requires no change to the HMAC verification algorithm itself and
+  // introduces no new trust boundary. `undefined` when this session was not
+  // launched via a referral deep link (an ordinary/organic open) — this is
+  // the normal case, not an error. Consumed only by
+  // record_pending_referral() (see 0045_record_pending_referral.sql), which
+  // does its own strict validation of the value; this module never
+  // interprets or validates it beyond extracting it verbatim.
+  startParam?: string;
 }
 
 export type InitDataVerificationFailureReason =
@@ -138,7 +154,16 @@ export async function verifyTelegramInitData(
   // At this point `user` came out of a payload whose signature we
   // just verified against the bot token, so — and only now — it is
   // safe to treat user.id as the caller's real Telegram identity.
-  return { ok: true, data: { user, authDate } };
+  //
+  // start_param is read out of this SAME verified `params`, after the
+  // signature check above has already passed — it was already covered by
+  // the data-check-string, so no additional verification step is needed or
+  // added here. `null` (no such field, an ordinary/organic open) becomes
+  // `undefined` on VerifiedInitData, matching every other optional field on
+  // TelegramWebAppUser above.
+  const startParam = params.get("start_param") ?? undefined;
+
+  return { ok: true, data: { user, authDate, startParam } };
 }
 
 /** Constant-time string comparison, to avoid leaking hash bytes via timing. */
