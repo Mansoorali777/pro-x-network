@@ -489,7 +489,10 @@
 
       <div class="panel table-wrap">
         <table>
-          <thead><tr><th>TELEGRAM USER ID</th><th>USERNAME</th><th>NAME</th><th>PXN BALANCE</th><th>CREATED AT</th><th>ACTIONS</th></tr></thead>
+          <!-- CHANGED: new "TON WALLET" column inserted between PXN BALANCE
+               and CREATED AT. Populated from the same admin-users response
+               (wallet_address / walletAddress). -->
+          <thead><tr><th>TELEGRAM USER ID</th><th>USERNAME</th><th>NAME</th><th>PXN BALANCE</th><th>TON WALLET</th><th>CREATED AT</th><th>ACTIONS</th></tr></thead>
           <tbody id="dbUsersTableBody"></tbody>
         </table>
       </div>
@@ -652,13 +655,38 @@
         <h2>Withdrawals</h2>
         <div class="sub">Pending and approved PXN withdrawal requests. The backend remains authoritative for every field and every transition — this page never computes a balance, a conversion rate, or an approval decision locally.</div>
       </div>
+
+      <!-- NEW: PXN Token Launch Control — reads current state on page load
+           via the withdrawals Edge Function's action:"config" (the same
+           source of truth the game client uses) and writes via
+           admin-set-token-launched. Reuses the same signed-in admin
+           session/client as every other live section here via
+           getAdminSupabaseClient() — client.functions.invoke() attaches
+           the bearer token automatically, and the service-role key is
+           never present in this file. -->
+      <div class="panel" style="padding:18px; margin-bottom:16px;">
+        <div class="eyebrow" style="margin-bottom:12px;">PXN TOKEN LAUNCH CONTROL</div>
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+          <button class="btn" id="tokenLaunchToggle" style="min-width:84px;">…</button>
+          <div style="flex:1; min-width:220px;">
+            <div style="font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:13.5px; letter-spacing:0.03em; color:var(--text);">PXN Token Launched</div>
+            <div style="font-size:11.5px; color:var(--steel); margin-top:4px; line-height:1.5;">When ON, players can swap m.PXN → PXN. Withdrawals require swap first.</div>
+          </div>
+        </div>
+        <div class="note" id="tokenLaunchMsg" style="display:none; padding:10px 0 0;"></div>
+      </div>
+
       <div class="btn-row">
         <button class="btn ghost" id="wdRefreshBtn">REFRESH LIST</button>
       </div>
       <div class="note" id="wdListMsg" style="display:none; padding:10px 16px;"></div>
       <div class="panel table-wrap">
         <table>
-          <thead><tr><th>PLAYER</th><th>WALLET ADDRESS</th><th>AMOUNT (m.PXN)</th><th>AMOUNT (PXN)</th><th>STATUS</th><th>REQUESTED</th><th>ACTIONS</th></tr></thead>
+          <!-- CHANGED: the two separate m.PXN / PXN amount columns are now a
+               single AMOUNT column that shows both figures when amount_pxn
+               is present, or only m.PXN for legacy rows (see
+               fmtWithdrawalAmount below). -->
+          <thead><tr><th>PLAYER</th><th>WALLET ADDRESS</th><th>AMOUNT</th><th>STATUS</th><th>REQUESTED</th><th>ACTIONS</th></tr></thead>
           <tbody id="wdTableBody"></tbody>
         </table>
       </div>
@@ -1802,6 +1830,82 @@
     return div.innerHTML;
   }
 
+  // ---------- NEW: TON wallet helpers for the Users table ----------
+  // The wallet address is user-supplied, so it is only ever inserted
+  // into the DOM via createElement/textContent (never string-
+  // concatenated into HTML), and the copy button carries only the
+  // backend-minted user UUID in its data attribute. The admin-users
+  // function returns this as either camelCase (walletAddress) or
+  // snake_case (wallet_address) depending on the response shape, so
+  // read both defensively.
+  function dbUsersGetWallet(u){
+    if(!u) return null;
+    const v = u.walletAddress || u.wallet_address;
+    return (typeof v === "string" && v.trim()) ? v : null;
+  }
+
+  // Truncate to first-8 + "…" + last-6 for compact display in the
+  // table; the full address stays available via the copy button and
+  // the title (hover) attribute.
+  function dbUsersTruncateWallet(addr){
+    const s = String(addr || "");
+    if(!s) return "";
+    if(s.length <= 16) return s;
+    return s.slice(0, 8) + "…" + s.slice(-6);
+  }
+
+  function buildDbUsersWalletCell(u){
+    const td = document.createElement("td");
+    const addr = dbUsersGetWallet(u);
+    if(addr){
+      const span = document.createElement("span");
+      span.textContent = dbUsersTruncateWallet(addr);
+      span.title = addr;
+      span.style.cssText = "font-family:'Chakra Petch',sans-serif; font-size:11.5px; color:var(--text); letter-spacing:0.02em;";
+      td.appendChild(span);
+
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "btn ghost";
+      copyBtn.style.cssText = "padding:3px 8px; font-size:10px; margin-left:8px;";
+      copyBtn.textContent = "COPY";
+      copyBtn.title = "Copy full wallet address";
+      // Backend UUID — safe to embed in an attribute (never the raw
+      // wallet string itself).
+      copyBtn.dataset.dbWalletCopy = u.userId;
+      td.appendChild(copyBtn);
+    } else {
+      const span = document.createElement("span");
+      span.textContent = "Not connected";
+      span.style.cssText = "color:var(--steel); font-size:12px;";
+      td.appendChild(span);
+    }
+    return td;
+  }
+
+  async function copyDbUserWallet(userId){
+    const u = dbUsersList.find(x => x.userId === userId);
+    const addr = dbUsersGetWallet(u);
+    if(!addr){ toast("No wallet address to copy"); return; }
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(addr);
+      } else {
+        // Fallback for older browsers / non-secure contexts.
+        const ta = document.createElement("textarea");
+        ta.value = addr;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      toast("Wallet address copied");
+    } catch(e){
+      toast("Could not copy wallet address");
+    }
+  }
+
   function renderDbUsersTable(){
     const body = document.getElementById("dbUsersTableBody");
     body.innerHTML = "";
@@ -1818,10 +1922,16 @@
         <td>${dbUsersFmtBalance(u.pxnBalance)} PXN</td>
         <td>${dbUsersEsc(fmtTime(u.createdAt))}</td>
         <td class="row-actions"><button class="btn ghost" data-db-user-view="${u.userId}">VIEW</button></td>`;
+      // CHANGED: insert the new TON WALLET cell between PXN BALANCE and
+      // CREATED AT — index 4 is the CREATED AT cell as rendered above.
+      tr.insertBefore(buildDbUsersWalletCell(u), tr.children[4]);
       body.appendChild(tr);
     });
     body.querySelectorAll("[data-db-user-view]").forEach(btn=>{
       btn.addEventListener("click", ()=> openDbUserDetail(btn.dataset.dbUserView));
+    });
+    body.querySelectorAll("[data-db-wallet-copy]").forEach(btn=>{
+      btn.addEventListener("click", ()=> copyDbUserWallet(btn.dataset.dbWalletCopy));
     });
   }
 
@@ -2063,6 +2173,12 @@
     idGrid.appendChild(dbUsersDetailField("LAST NAME", user.lastName));
     idGrid.appendChild(dbUsersDetailField("USER UUID", user.userId));
     idGrid.appendChild(dbUsersDetailField("ACCOUNT CREATED", fmtTime(user.createdAt)));
+    // NEW: surface the TON wallet in the detail view too — the
+    // admin-users "get" action returns the same wallet_address field
+    // the list action does. Passed as a plain string; dbUsersDetailField
+    // renders it with textContent, so it's inert even if it contained
+    // markup characters.
+    idGrid.appendChild(dbUsersDetailField("TON WALLET", dbUsersGetWallet(user) || "Not connected"));
     el.appendChild(idGrid);
 
     el.appendChild(buildAdjustBalanceSection(user));
@@ -2602,6 +2718,20 @@
     return "inactive";
   }
 
+  // CHANGED: formats a single withdrawal's amount for the new combined
+  // AMOUNT column. When amount_pxn is present, both figures are shown as
+  // "X.XXXX PXN (Y.YYYY m.PXN)". For legacy rows where amount_pxn is
+  // null/undefined, only "Y.YYYY m.PXN" is shown. Numbers are fixed to 4
+  // decimals to match the admin panel's existing display convention.
+  function fmtWithdrawalAmount(w){
+    const mpxn = Number(w.amount_mpxn || 0).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    if(w.amount_pxn === null || w.amount_pxn === undefined){
+      return mpxn + " m.PXN";
+    }
+    const pxn = Number(w.amount_pxn).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    return pxn + " PXN (" + mpxn + " m.PXN)";
+  }
+
   function renderWithdrawalsTable(){
     const body = document.getElementById("wdTableBody");
     body.innerHTML = "";
@@ -2612,11 +2742,12 @@
       const address = (w.wallet_address || "").replace(/</g,"&lt;");
       const requested = w.created_at ? new Date(w.created_at).toLocaleString() : "";
       const isApproved = w.status === "approved";
+      // CHANGED: single combined amount cell (was two separate cells).
+      const amountText = fmtWithdrawalAmount(w);
       tr.innerHTML = `
         <td>${displayName}</td>
         <td style="word-break:break-all; max-width:220px;">${address}</td>
-        <td>${Number(w.amount_mpxn || 0).toLocaleString("en-US",{maximumFractionDigits:8})}</td>
-        <td>${Number(w.amount_pxn || 0).toLocaleString("en-US",{maximumFractionDigits:8})}</td>
+        <td>${amountText}</td>
         <td><span class="tag ${wdStatusTagClass(w.status)}">${(w.status || "").toUpperCase()}</span></td>
         <td>${requested}</td>
         <td>
@@ -2727,10 +2858,128 @@
 
   document.getElementById("wdRefreshBtn").addEventListener("click", fetchWithdrawalsList);
 
-  // Load the pending list automatically the moment this section is
-  // opened — same one-nav-button-listener pattern as etNavBtn above.
+  // ---------- NEW: PXN Token Launch Control (real backend) ----------
+  // Reads the current launch state via the player-facing `withdrawals`
+  // Edge Function's action:"config" — the same source of truth the game
+  // client uses, so the admin panel can never disagree with what players
+  // see. Writes go through admin-set-token-launched. Both calls reuse the
+  // same signed-in admin session/client as every other live section here
+  // via getAdminSupabaseClient() — client.functions.invoke() attaches the
+  // current session's Authorization bearer token automatically, so no
+  // token is ever read or attached by hand, and the service-role key is
+  // never present in this file. The toggle is never changed ahead of the
+  // server response, so a failed request can never leave it lying about
+  // the real state.
+  let tokenLaunchedState = false;
+  let tokenLaunchPending = false;
+
+  function setTokenLaunchMsg(text, isError){
+    const el = document.getElementById("tokenLaunchMsg");
+    if(!el) return;
+    if(!text){ el.style.display = "none"; return; }
+    el.style.display = "block";
+    el.style.color = isError ? "var(--danger)" : "var(--good)";
+    el.textContent = text;
+  }
+
+  function renderTokenLaunchToggle(launched){
+    tokenLaunchedState = !!launched;
+    const btn = document.getElementById("tokenLaunchToggle");
+    if(!btn) return;
+    if(tokenLaunchedState){
+      btn.textContent = "ON";
+      btn.classList.remove("ghost");
+      btn.classList.add("good");
+      btn.style.background = "";
+      btn.style.color = "";
+    } else {
+      btn.textContent = "OFF";
+      btn.classList.remove("good", "ghost");
+      btn.style.background = "var(--steel-soft)";
+      btn.style.color = "#cfd6dd";
+    }
+  }
+
+  // Loads the token launch state on page load (and whenever the
+  // Withdrawals page is (re)opened). Envelope from the withdrawals
+  // function is expected to be { success:true, data:{ token_launched, ... } }
+  // but this reads either data.data or data.config defensively.
+  async function loadTokenLaunchState(){
+    const client = getAdminSupabaseClient();
+    if(!client){
+      setTokenLaunchMsg("Backend not configured — edit config/frontend-config.js.", true);
+      return;
+    }
+    setTokenLaunchMsg("", false);
+    const { data, error } = await client.functions.invoke("withdrawals", { body: { action: "config" } });
+    if(error){
+      setTokenLaunchMsg(await wdErrorMessage(error), true);
+      return;
+    }
+    const cfgData = data && (data.data || data.config);
+    if(!data || data.success !== true || !cfgData){
+      setTokenLaunchMsg((data && data.error && data.error.message) || "Could not load token launch state.", true);
+      return;
+    }
+    renderTokenLaunchToggle(!!cfgData.token_launched);
+  }
+
+  document.getElementById("tokenLaunchToggle").addEventListener("click", async ()=>{
+    if(tokenLaunchPending) return;
+    setTokenLaunchMsg("", false);
+
+    const next = !tokenLaunchedState;
+    const client = getAdminSupabaseClient();
+    if(!client){
+      setTokenLaunchMsg("Backend not configured — edit config/frontend-config.js.", true);
+      return;
+    }
+
+    tokenLaunchPending = true;
+    const btn = document.getElementById("tokenLaunchToggle");
+    btn.disabled = true;
+    try{
+      const { data, error } = await client.functions.invoke("admin-set-token-launched", {
+        body: { launched: next }
+      });
+      if(error){
+        // Toggle was never changed ahead of the response, so there is
+        // nothing to "revert" — it already reflects the last confirmed
+        // server state. Just surface the error.
+        setTokenLaunchMsg(await wdErrorMessage(error), true);
+        toast("Token launch update failed");
+        return;
+      }
+      if(!data || data.success !== true){
+        setTokenLaunchMsg(
+          (data && data.error && data.error.message) || (data && data.message) || "Request failed",
+          true
+        );
+        toast("Token launch update failed");
+        return;
+      }
+      // Reflect whatever the server confirmed — never assume.
+      let confirmed = next;
+      if(data.data && typeof data.data.token_launched === "boolean") confirmed = data.data.token_launched;
+      else if(typeof data.token_launched === "boolean") confirmed = data.token_launched;
+      renderTokenLaunchToggle(confirmed);
+      setTokenLaunchMsg("", false);
+      logAction("TOKEN LAUNCH " + (confirmed ? "ENABLED" : "DISABLED"), "launched=" + confirmed);
+      toast("Token launched: " + (confirmed ? "ON" : "OFF"));
+    } finally {
+      tokenLaunchPending = false;
+      btn.disabled = false;
+    }
+  });
+
+  // Load the pending list — and refresh the token launch toggle — the
+  // moment the Withdrawals section is opened. Same one-nav-button-
+  // listener pattern as etNavBtn / mcNavBtn above.
   const wdNavBtn = document.querySelector('.side-btn[data-page="withdrawals"]');
-  if(wdNavBtn) wdNavBtn.addEventListener("click", fetchWithdrawalsList);
+  if(wdNavBtn) wdNavBtn.addEventListener("click", ()=>{
+    fetchWithdrawalsList();
+    loadTokenLaunchState();
+  });
 
   // ---------- nav ----------
   document.querySelectorAll(".side-btn").forEach(btn=>{
@@ -3415,6 +3664,9 @@
     // economy values (never from cfg/localStorage) so they're already
     // current even before the admin opens the Rewards page.
     loadLiveMiningConfig();
+    // NEW: also load the real PXN token launch state on page load, so the
+    // toggle in the Withdrawals section reflects the server immediately.
+    loadTokenLaunchState();
   }
 
   function renderAnticheat(){
