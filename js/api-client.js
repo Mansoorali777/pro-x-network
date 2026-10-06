@@ -393,6 +393,12 @@
   // Non-secret cache of the last withdrawals "list" response.
   let lastWithdrawalsResult = null;
 
+  // Non-secret cache of the last withdrawals "config" response — the
+  // { token_launched, mpxn_to_pxn_rate, withdrawals_paused,
+  // min_withdrawal_pxn } object the backend returns. Same caching
+  // pattern as the other lastXResult fields above — never holds tokens.
+  let lastWithdrawalConfigResult = null;
+
   /**
    * Calls the authenticated `player-profile` Edge Function ({action:"get"})
    * to read the caller's own wallet-connection status. Same
@@ -501,15 +507,15 @@
   }
 
   /**
-   * Calls `withdrawals` ({action:"create"}) to submit a new withdrawal
-   * request for amountMpxn (a number, in m.PXN). The backend
-   * (public.create_withdrawal_request(), 0052) is authoritative for the
-   * wallet used, the PXN conversion, the balance debit, and every
-   * validation rule (wallet connected, not paused, minimum amount, no
-   * existing pending request) — this function only relays the amount
-   * and the backend's response.
+   * CHANGE 1 (new method) — Calls `withdrawals` ({action:"config"}) to
+   * read the backend's current launch/rate/pause configuration:
+   *   { success:true, config: { token_launched, mpxn_to_pxn_rate,
+   *                              withdrawals_paused, min_withdrawal_pxn } }
+   * Same auth/error-handling pattern as fetchWithdrawals() above. The
+   * WALLET screen uses token_launched to decide whether the SWAP card
+   * is live or "COMING SOON". Purely read-only — never writes anything.
    */
-  async function createWithdrawal(amountMpxn) {
+  async function fetchWithdrawalConfig() {
     const auth = global.ProXAuth;
     if (!auth || typeof auth.getAccessToken !== "function") {
       return { ok: false, data: null, error: "Auth module not available." };
@@ -521,7 +527,48 @@
 
     const result = await callFunction("withdrawals", {
       method: "POST",
-      body: { action: "create", amount_mpxn: amountMpxn },
+      body: { action: "config" },
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      lastWithdrawalConfigResult = result.data.config || null;
+      return { ok: true, data: { config: lastWithdrawalConfigResult }, error: null };
+    }
+
+    const message =
+      (result.data && result.data.error && result.data.error.message) ||
+      result.error ||
+      "Could not load withdrawal config.";
+    return { ok: false, data: null, error: message };
+  }
+
+  /**
+   * CHANGE 1 (renamed parameter) — Calls `withdrawals`
+   * ({action:"create"}) to submit a new withdrawal request for
+   * amountPxn (a number, in PXN — NOT m.PXN).
+   *
+   * The backend (public.create_withdrawal_request(), renamed RPC) is
+   * authoritative for the wallet used, the balance debit, and every
+   * validation rule (wallet connected, not paused, minimum amount, no
+   * existing pending request) — this function only relays the PXN
+   * amount and the backend's response. Players must have swapped their
+   * m.PXN → PXN first (see swapMpxnToPxn() below); this method never
+   * does that conversion itself.
+   */
+  async function createWithdrawal(amountPxn) {
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("withdrawals", {
+      method: "POST",
+      body: { action: "create", amount_pxn: amountPxn },
       accessToken: accessToken,
     });
 
@@ -533,6 +580,56 @@
       (result.data && result.data.error && result.data.error.message) ||
       result.error ||
       "Could not submit withdrawal request.";
+    return { ok: false, data: result.data, error: message };
+  }
+
+  /**
+   * CHANGE 1 (new method) — Calls the authenticated
+   * `swap-mpxn-to-pxn` Edge Function to convert the caller's m.PXN
+   * into PXN at the published rate.
+   *
+   * Same auth/error-handling pattern as fetchClaimMining()/createWithdrawal()
+   * above — never re-implements auth, and never touches localStorage. On
+   * success, the backend returns:
+   *   { success:true, new_pxn_balance, amount_mpxn_swapped }
+   * index.html is responsible for applying new_pxn_balance to its
+   * in-memory state (see renderSwapCard()/the swap click handler).
+   *
+   * Always resolves (never throws) with { ok, data, error }, same shape
+   * as every other ProXBackend call.
+   */
+  async function swapMpxnToPxn(amountMpxn) {
+    console.log("[ProXBackend] swapping m.PXN → PXN");
+
+    const auth = global.ProXAuth;
+    if (!auth || typeof auth.getAccessToken !== "function") {
+      console.warn("[ProXBackend] swap failed");
+      return { ok: false, data: null, error: "Auth module not available." };
+    }
+
+    const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      console.warn("[ProXBackend] swap failed");
+      return { ok: false, data: null, error: "No active session." };
+    }
+
+    const result = await callFunction("swap-mpxn-to-pxn", {
+      method: "POST",
+      body: { amount_mpxn: amountMpxn },
+      accessToken: accessToken,
+    });
+
+    if (result.ok && result.data && result.data.success) {
+      console.log("[ProXBackend] swap succeeded");
+      return { ok: true, data: result.data, error: null };
+    }
+
+    console.warn("[ProXBackend] swap failed");
+    const message =
+      (result.data && result.data.error && result.data.error.message) ||
+      (result.data && result.data.message) ||
+      result.error ||
+      "Could not swap m.PXN to PXN.";
     return { ok: false, data: result.data, error: message };
   }
 
@@ -631,6 +728,24 @@
      * withdrawal request. See createWithdrawal() above.
      */
     createWithdrawal: createWithdrawal,
+
+    /**
+     * CHANGE 1 — Calls POST /withdrawals ({action:"config"}) to read
+     * the current launch/rate/pause configuration. See
+     * fetchWithdrawalConfig() above.
+     */
+    fetchWithdrawalConfig: fetchWithdrawalConfig,
+
+    /** Last withdrawals "config" response's `config` object, or null. */
+    getLastWithdrawalConfigResult: function () {
+      return lastWithdrawalConfigResult;
+    },
+
+    /**
+     * CHANGE 1 — Calls POST /swap-mpxn-to-pxn to convert the caller's
+     * m.PXN into PXN at the published rate. See swapMpxnToPxn() above.
+     */
+    swapMpxnToPxn: swapMpxnToPxn,
 
     // Internal — exposed so later migration steps (and this module's
     // own tests) can call other functions without duplicating the
