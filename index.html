@@ -1653,11 +1653,18 @@
       // failed profile load never delays or skips this check. A
       // failure inside enforceWalletGate() itself (network issue) is
       // only logged there and never shows the gate on a guess.
-      if (typeof window.__proxEnforceWalletGate === "function") {
-        window.__proxEnforceWalletGate();
-      } else {
-        console.info("[ProXAuth] wallet gate hook not ready yet");
-      }
+      // Wallet gate: the game IIFE (next <script> tag) defines
+      // window.__proxEnforceWalletGate. If auth resolved faster than
+      // that script ran, retry briefly until the hook is ready.
+      (function tryEnforceGate(attempts) {
+        if (typeof window.__proxEnforceWalletGate === "function") {
+          window.__proxEnforceWalletGate();
+        } else if (attempts > 0) {
+          setTimeout(function () { tryEnforceGate(attempts - 1); }, 50);
+        } else {
+          console.warn("[ProXAuth] wallet gate hook never became ready");
+        }
+      })(40); // up to 2s
 
       // Load the authenticated backend profile (POST /me) using the
       // session ProXAuth just established. ProXBackend.getCurrentUser()
