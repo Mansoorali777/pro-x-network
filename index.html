@@ -1522,15 +1522,29 @@
   </div>
   <div class="toast" id="toast"></div>
 
-  <div class="modal-overlay" id="captchaOverlay">
+  <!-- ============================================================
+       CAPTCHA OVERLAY — REMOVED.
+       The old tap-bot captcha (#captchaOverlay) has been removed
+       entirely. Bot-tap detection now uses the ad-based verification
+       gate (adOverlay, below) via openBotCheckAd(). The playSimulatedAd()
+       function it shares with the Watch Ad flow is unchanged.
+       ============================================================ -->
+
+  <!-- ============ AD OVERLAY (shared by "Watch Ad" reward flow and
+       the new bot-check verification gate).
+       Text has been re-tuned for the bot-check use case (SECURITY CHECK
+       / "Verify you're human" / "Please wait for verification to
+       complete.") as required. Note: this is a plain overlay with no
+       built-in reward logic — the reward/boost grant lives in the
+       watchAdBtn click handler, and the bot-check path (openBotCheckAd)
+       intentionally grants nothing. ============ -->
+  <div class="modal-overlay" id="adOverlay">
     <div class="panel modal-box">
       <div class="eyebrow">SECURITY CHECK</div>
       <div class="modal-title">Verify you're human</div>
-      <div class="modal-sub">We noticed unusually regular tapping. Solve this to keep mining.</div>
-      <div class="captcha-question" id="captchaQuestion">? + ? = ?</div>
-      <input class="captcha-input" type="number" inputmode="numeric" id="captchaInput" placeholder="Your answer">
-      <div class="captcha-error" id="captchaError">Incorrect — try again</div>
-      <button class="btn full" id="captchaSubmit">VERIFY</button>
+      <div class="modal-sub">Please wait for verification to complete.</div>
+      <div class="ad-progress-track"><div class="ad-progress-fill" id="adProgressFill"></div></div>
+      <div class="captcha-question" id="adCountdown" style="font-size:30px;">5</div>
     </div>
   </div>
 
@@ -1558,16 +1572,6 @@
       <div class="eyebrow">ACCOUNT STATUS</div>
       <div class="modal-title" id="banOverlayTitle" style="color:var(--danger);">Account Suspended</div>
       <div class="modal-sub" id="banOverlayMsg">This account has been suspended by an administrator. Mining is disabled.</div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="adOverlay">
-    <div class="panel modal-box">
-      <div class="eyebrow">ADVERTISEMENT</div>
-      <div class="modal-title">Ad Playing…</div>
-      <div class="modal-sub">Please wait for the ad to finish to earn credit.</div>
-      <div class="ad-progress-track"><div class="ad-progress-fill" id="adProgressFill"></div></div>
-      <div class="captcha-question" id="adCountdown" style="font-size:30px;">5</div>
     </div>
   </div>
 
@@ -1757,7 +1761,6 @@
     }
   });
 </script>
-
 <script>
 (function(){
   const tg = window.Telegram ? window.Telegram.WebApp : null;
@@ -2691,56 +2694,66 @@
     state.monthlyPoints = (state.monthlyPoints || 0) + amount;
   }
 
-  // ---------- tap bot-detection (captcha) ----------
+  // ---------- tap bot-detection (ad-based verification) ----------
+  //
+  // REPLACED: this section used to run a math-captcha (openCaptcha() with a
+  // numeric answer check). It now uses the shared ad overlay (#adOverlay,
+  // also used by the "Watch Ad" reward flow) as a one-off verification gate
+  // whenever a bot-like tap pattern is detected — but throttled so the ad
+  // only ever appears at most once every BOT_CHECK_COOLDOWN_MS (5 minutes).
+  //
+  // The tap-interval detection logic itself (lastTapAt, lastTapInterval,
+  // consistentTapStreak, and the TAP_INTERVAL_* constants) is unchanged;
+  // only the "what happens when we detect a bot pattern" branch in the
+  // coreBtn click handler below changed (see the >= 10 check further down).
   let lastTapAt = 0;
   let lastTapInterval = null;
   let consistentTapStreak = 0;
+  // Kept under its original name for compatibility — it still means "the
+  // coreBtn is locked and no tap reward/boost should fire". Now set/cleared
+  // by the ad-based bot check below instead of the removed captcha.
   let captchaActive = false;
-  let captchaAnswer = null;
   const TAP_INTERVAL_TOLERANCE_MS = 150; // "exact" repeat window
   const TAP_INTERVAL_MIN_MS = 4500;      // ~5s
   const TAP_INTERVAL_MAX_MS = 13500;     // ~13s
 
-  function newCaptchaQuestion(){
-    const a = 1 + Math.floor(Math.random()*9);
-    const b = 1 + Math.floor(Math.random()*9);
-    captchaAnswer = a + b;
-    document.getElementById("captchaQuestion").textContent = a + " + " + b + " = ?";
-    document.getElementById("captchaInput").value = "";
-  }
+  // Bot-check rate limit: the verification ad can only be shown once every
+  // 5 minutes. If another bot-like streak is detected inside that window,
+  // we silently reset the streak instead of showing the overlay again —
+  // the player is never blocked or punished twice.
+  let lastBotCheckAt = 0; // timestamp of last bot-check ad shown
+  const BOT_CHECK_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
-  function openCaptcha(){
+  /**
+   * Ad-based bot-check (replaces the old openCaptcha()).
+   *
+   * Reuses:
+   *   - the existing `captchaActive` flag (kept under its original name for
+   *     compatibility — coreBtn click handler and render() already read it)
+   *   - the existing `playSimulatedAd()` helper (same one the Watch Ad
+   *     reward flow uses) and the existing `#adOverlay` markup
+   *
+   * IMPORTANT: this is a VERIFICATION gate, not a rewarded ad. The
+   * onComplete callback below only unlocks the player and resets the
+   * tap-streak state — it grants NO boost, NO points, NO currency.
+   */
+  function openBotCheckAd(){
     captchaActive = true;
-    newCaptchaQuestion();
-    document.getElementById("captchaError").classList.remove("show");
-    document.getElementById("captchaOverlay").classList.add("show");
     document.getElementById("coreBtn").classList.add("locked");
-    setTimeout(()=> document.getElementById("captchaInput").focus(), 50);
-  }
-
-  function closeCaptchaSuccess(){
-    captchaActive = false;
-    tapBoostUntil = 0;
-    lastTapAt = 0;
-    lastTapInterval = null;
-    consistentTapStreak = 0;
-    document.getElementById("captchaOverlay").classList.remove("show");
     render();
-    toast("Verified — mining taps re-enabled");
-  }
 
-  document.getElementById("captchaSubmit").addEventListener("click", ()=>{
-    const val = parseInt(document.getElementById("captchaInput").value, 10);
-    if(val === captchaAnswer){
-      closeCaptchaSuccess();
-    } else {
-      document.getElementById("captchaError").classList.add("show");
-      newCaptchaQuestion();
-    }
-  });
-  document.getElementById("captchaInput").addEventListener("keydown", (e)=>{
-    if(e.key === "Enter") document.getElementById("captchaSubmit").click();
-  });
+    playSimulatedAd(() => {
+      // Verification complete — unlock the player and clear bot-detect
+      // state so the next legit tap starts a fresh interval history.
+      captchaActive = false;
+      document.getElementById("coreBtn").classList.remove("locked");
+      lastTapAt = 0;
+      lastTapInterval = null;
+      consistentTapStreak = 0;
+      render();
+      toast("Verified — mining taps re-enabled");
+    });
+  }
 
   // Fixed baseline mining speed every player has for free, regardless of which
   // (if any) Store miners they own — Store miners only ever add extra speed
@@ -3111,11 +3124,15 @@
     const blobLabel = document.getElementById("blobLabel");
     const blobSub = document.getElementById("blobSub");
     if(captchaActive){
+      // Bot-check verification is in progress — the coreBtn is locked and
+      // the ad overlay is on screen. (This branch used to be for the
+      // removed math-captcha; the copy has been reworded to match the new
+      // ad-based verification gate.)
       tapBadge.classList.remove("show");
       core.classList.remove("boosted");
       core.classList.add("locked");
       blobLabel.textContent = "VERIFY REQUIRED";
-      blobSub.textContent = "Solve the check to keep mining";
+      blobSub.textContent = "Complete the check to keep mining";
     } else if(tapBoostUntil > Date.now()){
       const secsLeft = Math.ceil((tapBoostUntil - Date.now())/1000);
       tapBadge.textContent = REWARDS_CONFIG.tapBoostMultiplier + "x · " + secsLeft + "s";
@@ -3556,7 +3573,7 @@
       case 404: return "Miner not found — try refreshing.";
       case 409: return "Not enough m.PXN or this upgrade cannot be completed right now.";
       case 500: return "Server error — please try again.";
-      default: return result.error || "Network error — try again.";
+      default: return result.error || "Network error — try again";
     }
   }
 
@@ -5182,6 +5199,13 @@
   // Tapping the core only starts the 2x speed boost — it never adds coins directly.
   // All coin income (including the boosted rate) is still applied only by the
   // once-per-second mining tick below.
+  //
+  // Bot-detection branch (>= 10 consistent taps) now uses the ad-based
+  // verification gate (openBotCheckAd()) instead of the removed captcha,
+  // and is rate-limited to once every BOT_CHECK_COOLDOWN_MS. If the
+  // cooldown is still active, we silently reset the streak and let the
+  // tap fall through without ever showing the overlay or blocking the
+  // player — see the >= 10 branch below.
   document.getElementById("coreBtn").addEventListener("click", (e)=>{
     if(captchaActive) return;
 
@@ -5200,7 +5224,20 @@
     lastTapAt = now;
 
     if(consistentTapStreak >= 10){
-      openCaptcha();
+      // A bot-like, consistent tap cadence has been detected.
+      // Rate-limit: only fire the verification overlay once every
+      // BOT_CHECK_COOLDOWN_MS (5 minutes). Inside the cooldown window we
+      // just reset the streak and let this tap run through normally
+      // (no overlay, no block, no reward) — the player is never punished
+      // twice for the same behaviour.
+      if((Date.now() - lastBotCheckAt) < BOT_CHECK_COOLDOWN_MS){
+        consistentTapStreak = 0;
+        lastTapAt = 0;
+        lastTapInterval = null;
+        return; // within cooldown — skip overlay, don't block
+      }
+      lastBotCheckAt = Date.now();
+      openBotCheckAd();
       return;
     }
 
@@ -5210,6 +5247,12 @@
 
     if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
   });
+
+  // REMOVED: the old #captchaSubmit / #captchaInput event listeners
+  // (and the newCaptchaQuestion()/openCaptcha()/closeCaptchaSuccess()
+  // functions they were wired to). The math-captcha flow has been fully
+  // replaced by the ad-based bot-check (openBotCheckAd() above), which
+  // reuses the existing #adOverlay + playSimulatedAd() helper.
 
   // Guards against a double-click firing two overlapping claim requests
   // while the first is still in flight. Same role as
@@ -5322,6 +5365,11 @@
   // rewarded-ad network (e.g. Adsgram, Monetag — common for Telegram Mini Apps)
   // just means replacing the body of playSimulatedAd() with that SDK's
   // "show rewarded ad" call and firing onAdComplete() from its success callback.
+  //
+  // NOTE (bot-check reuse): this same playSimulatedAd() is now ALSO used by
+  // openBotCheckAd() as a one-off verification gate. That path is NOT a
+  // rewarded ad — it intentionally grants no boost, no points, no currency.
+  // Only the watchAdBtn click handler below grants a reward.
   const AD_WINDOW_MS = 24*3600*1000;
 
   function checkAdsWindowReset(){
@@ -5358,6 +5406,9 @@
     if(captchaActive) return;
     checkAdsWindowReset();
     playSimulatedAd(()=>{
+      // Watch-Ad reward path (NOT the bot-check path). This is the
+      // rewarded-ad flow: it credits the watched-ad counter and can
+      // activate the multi-hour ad boost — unchanged.
       state.adsWatchedToday += 1;
       addPoints(1);
       if(state.adsWatchedToday >= REWARDS_CONFIG.adsRequiredForBoost){
