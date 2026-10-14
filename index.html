@@ -1081,7 +1081,7 @@
     </div>
     <div class="balance-chip">
       <div class="balance-num" id="topBalance">0.0000</div>
-      <div class="balance-label" id="balanceLabelText">m.PXN MINED</div>
+      <div class="balance-label" id="balanceLabelText">AVAILABLE m.PXN</div>
       <div class="balance-usd" id="topBalanceUsd">≈ $0.0000</div>
     </div>
   </div>
@@ -2758,13 +2758,23 @@ const REWARDS_CONFIG = {
   const DEFAULT_BASE_SPEED = 0.05;
 
 function currentSpeed(){
-    const ownedBoost = (state.inventory || []).reduce((s,u)=> s + (u.applied ? (u.speed||0) : 0), 0);
-    const base = DEFAULT_BASE_SPEED + ownedBoost;
-    let speed = (base + (state.referrals * REWARDS_CONFIG.referralSpeedBonus)) * levelBoostMultiplier();
-    // Non-stacking boost: only the single STRONGEST active boost applies —
-    // Daily (1.5x), Tap (1.25x), and Ads (1.5x) never multiply together.
-    // Before this, all three active at once = 8x total multiplier, which
-    // made store miners irrelevant. Now max possible boost is 1.5x.
+    // Server-authoritative base rate: when the backend has given us a
+    // real mining_rate (via accrue-mining, which already includes base
+    // speed + miner boosts + referrals + level boost + any admin
+    // override), that value is the starting point. Only fall back to
+    // the local formula before the first sync (or if offline) — this
+    // way any change the admin makes in the panel shows up correctly
+    // on the frontend after the next 20s sync, without a reload.
+    let baseRate;
+    if(typeof serverMiningRate === "number" && isFinite(serverMiningRate)){
+      baseRate = serverMiningRate;
+    } else {
+      const ownedBoost = (state.inventory || []).reduce((s,u)=> s + (u.applied ? (u.speed||0) : 0), 0);
+      baseRate = (DEFAULT_BASE_SPEED + ownedBoost + (state.referrals * REWARDS_CONFIG.referralSpeedBonus)) * levelBoostMultiplier();
+    }
+
+    // Non-stacking boost: only the single STRONGEST active boost applies.
+    let speed = baseRate;
     let bestBoost = 1;
     if(state.boostUntil > Date.now())   bestBoost = Math.max(bestBoost, REWARDS_CONFIG.boostMultiplier);
     if(tapBoostUntil > Date.now())      bestBoost = Math.max(bestBoost, REWARDS_CONFIG.tapBoostMultiplier);
@@ -3112,9 +3122,9 @@ function currentSpeed(){
 
   function render(){
     renderMiningSessionCard();
-    document.getElementById("topBalance").textContent = fmt(state.minedBalance);
-    document.getElementById("balanceLabelText").textContent = TOKEN_SYMBOL + " MINED";
-    document.getElementById("topBalanceUsd").textContent = fmtUsd(state.minedBalance);
+    document.getElementById("topBalance").textContent = fmt(state.claimedTotal);
+    document.getElementById("balanceLabelText").textContent = "AVAILABLE " + TOKEN_SYMBOL;
+    document.getElementById("topBalanceUsd").textContent = fmtUsd(state.claimedTotal);
   
     document.getElementById("mineGreetName").textContent = PLAYER_NAME;
     document.getElementById("mineAvatar").textContent = PLAYER_NAME.replace("@","").charAt(0).toUpperCase() || "P";
