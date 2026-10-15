@@ -1206,7 +1206,7 @@
       <div class="panel daily-banner" id="boostCard">
         <div class="daily-banner-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#ff9b3d" stroke-width="1.8"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg></div>
         <div class="daily-banner-body">
-          <div class="daily-banner-title">Daily Boost <span class="tap-badge" id="tapBoostBadge">2x · 10s</span></div>
+          <div class="daily-banner-title">Hourly Boost <span class="tap-badge" id="tapBoostBadge">2x · 10s</span></div>
           <div class="daily-banner-sub" id="boostCardSub">+2x mining speed for 30 min</div>
           <div class="daily-banner-sub" id="boostTimer" style="color:var(--good); margin-top:2px;">AVAILABLE</div>
         </div>
@@ -3138,26 +3138,53 @@ function buildRateBreakdownHtml(){
 
   const subtotal = (baseSpeedValue * levelMult) + minerBoost + refBonus;
 
-  // Which active boost (only strongest applies)
   const now = Date.now();
-  let boostLabel = "None";
-  let boostMult = 1;
-  if(state.boostUntil > now && REWARDS_CONFIG.boostMultiplier >= boostMult){
-    boostMult = REWARDS_CONFIG.boostMultiplier;
-    boostLabel = "Daily Boost (" + Math.ceil((state.boostUntil - now)/60000) + "m left)";
-  }
-  if(tapBoostUntil > now && REWARDS_CONFIG.tapBoostMultiplier > boostMult){
-    boostMult = REWARDS_CONFIG.tapBoostMultiplier;
-    boostLabel = "Tap Boost (" + Math.ceil((tapBoostUntil - now)/1000) + "s left)";
-  }
-  if(state.adBoostUntil > now && REWARDS_CONFIG.adBoostMultiplier > boostMult){
-    boostMult = REWARDS_CONFIG.adBoostMultiplier;
-    boostLabel = "Ad Boost (" + Math.ceil((state.adBoostUntil - now)/3600000) + "h left)";
-  }
 
-  const total = subtotal * boostMult;
+  // ── Hourly Boost status ──
+  const hourlyActive = state.boostUntil > now;
+  const hourlyMult = REWARDS_CONFIG.boostMultiplier;
+  const hourlyLabel = hourlyActive
+    ? "ACTIVE · " + Math.ceil((state.boostUntil - now)/60000) + "m left"
+    : "Inactive";
+
+  // ── Tap Boost status ──
+  const tapActive = tapBoostUntil > now;
+  const tapMult = REWARDS_CONFIG.tapBoostMultiplier;
+  const tapLabel = tapActive
+    ? "ACTIVE · " + Math.ceil((tapBoostUntil - now)/1000) + "s left"
+    : "Inactive";
+
+  // ── Ads Boost status ──
+  const adActive = state.adBoostUntil > now;
+  const adMult = REWARDS_CONFIG.adBoostMultiplier;
+  const adLabel = adActive
+    ? "ACTIVE · " + Math.ceil((state.adBoostUntil - now)/3600000) + "h left"
+    : "Inactive";
+
+  // ── Determine which boost (if any) is actually applied to the total ──
+  // Non-stacking rule: only the STRONGEST active boost applies.
+  let appliedMult = 1;
+  let appliedLabel = "None";
+  if(hourlyActive && hourlyMult >= appliedMult){ appliedMult = hourlyMult; appliedLabel = "Hourly Boost"; }
+  if(tapActive && tapMult > appliedMult){ appliedMult = tapMult; appliedLabel = "Tap Boost"; }
+  if(adActive && adMult > appliedMult){ appliedMult = adMult; appliedLabel = "Ad Boost"; }
+
+  const total = subtotal * appliedMult;
   const rowStyle = "display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line);";
   const numStyle = "font-family:'Chakra Petch',sans-serif;";
+
+  // Helper for rendering a boost row (label + status + ×mult)
+  function boostRow(name, active, mult, statusLabel){
+    const statusColor = active ? "var(--good)" : "var(--steel)";
+    const multText = active ? " ×" + mult : "";
+    const appliedMark = (active && appliedLabel === name) ? " ✓" : "";
+    return `
+      <div style="${rowStyle}">
+        <span style="color:var(--steel);">${name}</span>
+        <span style="${numStyle} color:${statusColor}; font-size:11.5px;">${statusLabel}${multText}${appliedMark}</span>
+      </div>
+    `;
+  }
 
   return `
     <div style="${rowStyle}">
@@ -3180,16 +3207,18 @@ function buildRateBreakdownHtml(){
       <span style="color:var(--steel);">Subtotal</span>
       <span style="${numStyle}">${fmt(subtotal)} m.PXN/sec</span>
     </div>
-    <div style="${rowStyle}">
-      <span style="color:var(--steel);">Active boost</span>
-      <span style="${numStyle} color:var(--good);">${boostLabel}${boostMult > 1 ? " ×" + boostMult : ""}</span>
-    </div>
+
+    <div style="margin-top:10px; padding-top:4px; font-family:'Chakra Petch',sans-serif; font-size:11px; letter-spacing:0.06em; color:var(--steel);">ACTIVE BOOSTS (only strongest applies)</div>
+    ${boostRow("Hourly Boost", hourlyActive, hourlyMult, hourlyLabel)}
+    ${boostRow("Tap Boost", tapActive, tapMult, tapLabel)}
+    ${boostRow("Ad Boost", adActive, adMult, adLabel)}
+
     <div style="display:flex; justify-content:space-between; padding:10px 0 0; font-weight:700; font-size:14px;">
       <span>TOTAL</span>
       <span style="${numStyle} color:var(--cyan);">${fmt(total)} m.PXN/sec</span>
     </div>
     <div style="margin-top:12px; font-size:11px; color:var(--steel); line-height:1.5;">
-      Level boost applies to base speed only. Only the single strongest active boost is applied at once.
+      ✓ = applied to the total. Only one boost applies at a time — the strongest active one. Level boost applies to base speed only.
     </div>
   `;
 }
