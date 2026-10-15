@@ -217,15 +217,27 @@ function computeMiningRate(
     return adminSpeedOverride;
   }
 
-  const base = config.base_speed + appliedMinerSpeed + referralCount * config.referral_speed_bonus;
-  let rate = base * levelBoostMultiplier(level, config.level_boost_percent);
+  // Level boost applies ONLY to base_speed — miner speed and referral
+  // bonus are added linearly, NOT multiplied by the level multiplier.
+  // This mirrors the frontend's currentSpeed() formula exactly, so
+  // the displayed rate and the actual accrued rate always match.
+  const levelBoostedBase = config.base_speed * levelBoostMultiplier(level, config.level_boost_percent);
+  const referralBonus = referralCount * config.referral_speed_bonus;
+  let rate = levelBoostedBase + appliedMinerSpeed + referralBonus;
 
-  if (boostUntil && new Date(boostUntil).getTime() > now.getTime()) {
-    rate *= config.boost_multiplier;
+  // Non-stacking: only the SINGLE STRONGEST active boost applies.
+  // Hourly Boost and Ad Boost never multiply together. (Tap Boost is
+  // intentionally excluded — it stays client/session-only by design,
+  // same as before.)
+  let bestBoost = 1;
+  const nowMs = now.getTime();
+  if (boostUntil && new Date(boostUntil).getTime() > nowMs) {
+    bestBoost = Math.max(bestBoost, config.boost_multiplier);
   }
-  if (adBoostUntil && new Date(adBoostUntil).getTime() > now.getTime()) {
-    rate *= config.ad_boost_multiplier;
+  if (adBoostUntil && new Date(adBoostUntil).getTime() > nowMs) {
+    bestBoost = Math.max(bestBoost, config.ad_boost_multiplier);
   }
+  rate *= bestBoost;
 
   return rate;
 }
@@ -561,6 +573,7 @@ Deno.serve(async (req: Request) => {
     applied_seconds: outcome.appliedSeconds,
     mining_rate: outcome.miningRate,
     accrued_amount: outcome.accruedAmount,
+    base_speed: config.base_speed,
     mining_state: outcome.updatedRow,
   });
 });
