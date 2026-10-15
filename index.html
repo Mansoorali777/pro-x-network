@@ -1193,8 +1193,8 @@
             <button class="btn" id="mineLevelUpBtn" style="padding:6px 10px; font-size:11px;">UP</button>
           </div>
         </div>
-        <div class="panel stat2-box">
-          <div class="eyebrow">MINING RATE</div>
+        <div class="panel stat2-box" id="rateBox" style="cursor:pointer;">
+          <div class="eyebrow">MINING RATE <span style="color:var(--steel); font-size:9px;">· TAP FOR DETAILS</span></div>
           <div class="stat-val cyan" id="rateDisplay" style="font-size:14px;">0.0000 <span style="color:var(--amber); font-size:11px;">m.PXN/sec</span></div>
         </div>
         <div class="panel stat2-box">
@@ -1563,7 +1563,14 @@
       <button class="btn" id="walletGateSubmitBtn" style="width:100%;">CONNECT WALLET</button>
     </div>
   </div>
-
+<div class="modal-overlay" id="rateBreakdownOverlay" style="z-index:52;">
+  <div class="panel modal-box" style="max-width:360px; text-align:left; padding:20px;">
+    <div class="eyebrow">MINING RATE BREAKDOWN</div>
+    <div style="font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:15px; margin-top:6px;">How your rate is calculated</div>
+    <div id="rateBreakdownContent" style="margin-top:14px; font-size:12.5px; line-height:1.7;"></div>
+    <button class="btn full" id="rateBreakdownCloseBtn" style="margin-top:16px;">CLOSE</button>
+  </div>
+</div>
   <div class="modal-overlay" id="banOverlay" style="z-index:60;">
     <div class="panel modal-box">
       <div class="eyebrow">ACCOUNT STATUS</div>
@@ -2758,23 +2765,20 @@ const REWARDS_CONFIG = {
   const DEFAULT_BASE_SPEED = 0.05;
 
 function currentSpeed(){
-    // Server-authoritative base rate: when the backend has given us a
-    // real mining_rate (via accrue-mining, which already includes base
-    // speed + miner boosts + referrals + level boost + any admin
-    // override), that value is the starting point. Only fall back to
-    // the local formula before the first sync (or if offline) — this
-    // way any change the admin makes in the panel shows up correctly
-    // on the frontend after the next 20s sync, without a reload.
-    let baseRate;
-    if(typeof serverMiningRate === "number" && isFinite(serverMiningRate)){
-      baseRate = serverMiningRate;
-    } else {
-      const ownedBoost = (state.inventory || []).reduce((s,u)=> s + (u.applied ? (u.speed||0) : 0), 0);
-      baseRate = (DEFAULT_BASE_SPEED + ownedBoost + (state.referrals * REWARDS_CONFIG.referralSpeedBonus)) * levelBoostMultiplier();
-    }
+    // Level boost applies ONLY to base speed, not to miner or referral
+    // bonuses. Admin-controlled base speed comes from the server via
+    // serverBaseSpeed (read in syncMiningRateFromBackend), falling back
+    // to DEFAULT_BASE_SPEED before the first successful sync.
+    const ownedBoost = (state.inventory || []).reduce((s,u)=> s + (u.applied ? (u.speed||0) : 0), 0);
+    const referralBonus = state.referrals * REWARDS_CONFIG.referralSpeedBonus;
+    const baseSpeedValue = (typeof serverBaseSpeed === "number" && isFinite(serverBaseSpeed))
+      ? serverBaseSpeed
+      : DEFAULT_BASE_SPEED;
+    // Level boost only multiplies the base — miner/referral stay linear
+    const levelBoostedBase = baseSpeedValue * levelBoostMultiplier();
+    let speed = levelBoostedBase + ownedBoost + referralBonus;
 
-    // Non-stacking boost: only the single STRONGEST active boost applies.
-    let speed = baseRate;
+    // Non-stacking active boost — only the single STRONGEST applies
     let bestBoost = 1;
     if(state.boostUntil > Date.now())   bestBoost = Math.max(bestBoost, REWARDS_CONFIG.boostMultiplier);
     if(tapBoostUntil > Date.now())      bestBoost = Math.max(bestBoost, REWARDS_CONFIG.tapBoostMultiplier);
@@ -2796,6 +2800,7 @@ function currentSpeed(){
   // below (accrue()) — this only affects what the "MINING RATE" UI displays.
   let serverMiningRate = null;
 
+  let serverBaseSpeed = null;  // admin-controlled base speed from backend
   // ---------- timed mining sessions (0057_mining_sessions.sql) ----------
   // mining_session_started_at / mining_session_ends_at are read from the
   // same accrue-mining response used for serverMiningRate/serverReferralCount
@@ -2953,6 +2958,14 @@ function currentSpeed(){
       const result = await ProXBackend.fetchAccrueMining();
       if(result.ok && result.data && typeof result.data.mining_rate === "number"){
         serverMiningRate = result.data.mining_rate;
+        // Try to read admin-controlled base speed from the response (if the
+// backend accrue-mining sends it). This makes admin panel's base
+// speed change reach every player without a reload, for all players
+// old and new — as long as accrue-mining includes base_speed.
+if(typeof result.data.base_speed !== "undefined"){
+    const bs = Number(result.data.base_speed);
+    if(Number.isFinite(bs)) serverBaseSpeed = bs;
+}
         const backendState = result.data.mining_state;
         if(backendState && typeof backendState.pxn_balance !== "undefined"){
           const backendBalance = Number(backendState.pxn_balance);
@@ -3102,6 +3115,107 @@ function currentSpeed(){
    * handler (POST start-mining-session) and the backend's own
    * mining_session_ends_at.
    */
+  // ---------- rate breakdown popup ----------
+// Opens when the user taps the MINING RATE stat box. Shows exactly
+// which component contributes how much to the total mining rate —
+// base (with level boost), applied miners, referrals, and the single
+// best active boost. Uses the SAME formula as currentSpeed() so the
+// total always matches the displayed rate.
+let rateBreakdownOpen = false;
+
+function buildRateBreakdownHtml(){
+  const baseSpeedValue = (typeof serverBaseSpeed === "number" && isFinite(serverBaseSpeed))
+    ? serverBaseSpeed
+    : DEFAULT_BASE_SPEED;
+  const levelMult = levelBoostMultiplier();
+  const levelBonus = baseSpeedValue * (levelMult - 1);
+
+  const applied = (state.inventory || []).filter(i => i.applied);
+  const minerBoost = applied.reduce((s,u) => s + (Number(u.speed) || 0), 0);
+
+  const refCount = effectiveReferralCount();
+  const refBonus = refCount * REWARDS_CONFIG.referralSpeedBonus;
+
+  const subtotal = (baseSpeedValue * levelMult) + minerBoost + refBonus;
+
+  // Which active boost (only strongest applies)
+  const now = Date.now();
+  let boostLabel = "None";
+  let boostMult = 1;
+  if(state.boostUntil > now && REWARDS_CONFIG.boostMultiplier >= boostMult){
+    boostMult = REWARDS_CONFIG.boostMultiplier;
+    boostLabel = "Daily Boost (" + Math.ceil((state.boostUntil - now)/60000) + "m left)";
+  }
+  if(tapBoostUntil > now && REWARDS_CONFIG.tapBoostMultiplier > boostMult){
+    boostMult = REWARDS_CONFIG.tapBoostMultiplier;
+    boostLabel = "Tap Boost (" + Math.ceil((tapBoostUntil - now)/1000) + "s left)";
+  }
+  if(state.adBoostUntil > now && REWARDS_CONFIG.adBoostMultiplier > boostMult){
+    boostMult = REWARDS_CONFIG.adBoostMultiplier;
+    boostLabel = "Ad Boost (" + Math.ceil((state.adBoostUntil - now)/3600000) + "h left)";
+  }
+
+  const total = subtotal * boostMult;
+  const rowStyle = "display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line);";
+  const numStyle = "font-family:'Chakra Petch',sans-serif;";
+
+  return `
+    <div style="${rowStyle}">
+      <span style="color:var(--steel);">Base speed</span>
+      <span style="${numStyle}">${fmt(baseSpeedValue)} m.PXN/sec</span>
+    </div>
+    <div style="${rowStyle}">
+      <span style="color:var(--steel);">Level boost (Lv ${state.level})</span>
+      <span style="${numStyle} color:var(--amber);">×${levelMult.toFixed(2)} (+${fmt(levelBonus)})</span>
+    </div>
+    <div style="${rowStyle}">
+      <span style="color:var(--steel);">Miners (${applied.length} applied)</span>
+      <span style="${numStyle} color:var(--cyan);">+${fmt(minerBoost)} m.PXN/sec</span>
+    </div>
+    <div style="${rowStyle}">
+      <span style="color:var(--steel);">Referrals (${refCount})</span>
+      <span style="${numStyle} color:var(--cyan);">+${fmt(refBonus)} m.PXN/sec</span>
+    </div>
+    <div style="${rowStyle}">
+      <span style="color:var(--steel);">Subtotal</span>
+      <span style="${numStyle}">${fmt(subtotal)} m.PXN/sec</span>
+    </div>
+    <div style="${rowStyle}">
+      <span style="color:var(--steel);">Active boost</span>
+      <span style="${numStyle} color:var(--good);">${boostLabel}${boostMult > 1 ? " ×" + boostMult : ""}</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; padding:10px 0 0; font-weight:700; font-size:14px;">
+      <span>TOTAL</span>
+      <span style="${numStyle} color:var(--cyan);">${fmt(total)} m.PXN/sec</span>
+    </div>
+    <div style="margin-top:12px; font-size:11px; color:var(--steel); line-height:1.5;">
+      Level boost applies to base speed only. Only the single strongest active boost is applied at once.
+    </div>
+  `;
+}
+
+function renderRateBreakdown(){
+  if(!rateBreakdownOpen) return;
+  const el = document.getElementById("rateBreakdownContent");
+  if(el) el.innerHTML = buildRateBreakdownHtml();
+}
+
+function openRateBreakdown(){
+  rateBreakdownOpen = true;
+  renderRateBreakdown();
+  document.getElementById("rateBreakdownOverlay").classList.add("show");
+}
+
+function closeRateBreakdown(){
+  rateBreakdownOpen = false;
+  document.getElementById("rateBreakdownOverlay").classList.remove("show");
+}
+
+document.getElementById("rateBox").addEventListener("click", openRateBreakdown);
+document.getElementById("rateBreakdownCloseBtn").addEventListener("click", closeRateBreakdown);
+document.getElementById("rateBreakdownOverlay").addEventListener("click", (e) => {
+  if(e.target.id === "rateBreakdownOverlay") closeRateBreakdown();
+});
   function renderMiningSessionCard(){
     const sub = document.getElementById("miningSessionSub");
     const btn = document.getElementById("startMiningSessionBtn");
@@ -3131,7 +3245,8 @@ function currentSpeed(){
     const speed = effectiveDisplayRate();
     document.getElementById("rateDisplay").innerHTML = fmt(speed) + ' <span>' + TOKEN_SYMBOL + ' / SEC</span>';
     document.getElementById("rigUsd").textContent = fmtUsd(speed * 86400) + " / day";
-
+// Keep the rate breakdown popup in sync while it's open
+renderRateBreakdown();
     const tapBadge = document.getElementById("tapBoostBadge");
     const core = document.getElementById("coreBtn");
     const blobLabel = document.getElementById("blobLabel");
